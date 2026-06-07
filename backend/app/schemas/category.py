@@ -27,6 +27,19 @@ class CategoryUpdate(BaseModel):
     outlet_id: UUID | None = None
 
 
+class CategoryReorderItem(BaseModel):
+    """Single item in a reorder request."""
+
+    id: UUID
+    sort_order: int = Field(ge=0)
+
+
+class CategoryReorder(BaseModel):
+    """Payload for reordering multiple categories."""
+
+    items: list[CategoryReorderItem]
+
+
 class CategoryRead(CategoryBase, TimestampSchema):
     """Category response payload."""
 
