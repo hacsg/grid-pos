@@ -1,0 +1,42 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.egg
+dist/
+build/
+
+# Node
+node_modules/
+**/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.hprof
+
+# Java / Kotlin
+*.class
+*.jar
+*.war
+*.nar
