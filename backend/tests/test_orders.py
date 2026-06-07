@@ -7,6 +7,8 @@ from uuid import UUID
 import pytest
 from httpx import AsyncClient
 
+from sqlalchemy import select
+
 from app.models.order import Order, OrderStatus
 from app.schemas.order import OrderItemCreate, SelectedModifier
 
@@ -522,21 +524,22 @@ class TestOrderNumberAutoIncrement:
         """Verifies that order_number returns to 0001 when the day changes.
         We simulate this by manually adjusting the created_at timestamps.
         """
-        from sqlalchemy import update
-
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
 
         # Create first order today
         order1_resp = await client.post("/api/orders", json=payload)
         assert order1_resp.json()["order_number"] == "0001"
 
-        # Move that order to yesterday
+        # Move that order to yesterday by loading and updating the ORM object
         yesterday = datetime.now(UTC) - timedelta(days=1)
-        await db_session.execute(
-            update(Order).where(Order.id == order1_resp.json()["id"]).values(created_at=yesterday)
+        result = await db_session.execute(
+            select(Order).where(Order.id == UUID(order1_resp.json()["id"]))
         )
+        order_obj = result.scalar_one()
+        order_obj.created_at = yesterday
         await db_session.commit()
 
         # Create another order — should get 0001 again since yesterday's is ignored
         order2_resp = await client.post("/api/orders", json=payload)
+        assert order2_resp.status_code == 201
         assert order2_resp.json()["order_number"] == "0001"
