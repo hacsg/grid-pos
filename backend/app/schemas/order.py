@@ -47,6 +47,9 @@ class OrderCreate(BaseModel):
     status: OrderStatus = OrderStatus.pending
     payment_method: str | None = Field(default=None, max_length=40)
     payment_reference: str | None = Field(default=None, max_length=255)
+    loyalty_member_id: UUID | None = None
+    loyalty_points_redeemed: int | None = Field(default=None, ge=0)
+    loyalty_discount: Money | None = Field(default=None, ge=0)
 
 
 class OrderStatusUpdate(BaseModel):
@@ -68,6 +71,10 @@ class OrderRead(TimestampSchema):
     status: OrderStatus
     payment_method: str | None
     payment_reference: str | None
+    loyalty_member_id: UUID | None = None
+    loyalty_points_earned: int | None = None
+    loyalty_points_redeemed: int | None = None
+    loyalty_discount: Money | None = None
     items: list[OrderItemRead] = []
 
 
@@ -94,6 +101,10 @@ class OrderSummaryRead(ORMModel):
     status: OrderStatus
     payment_method: str | None
     payment_reference: str | None
+    loyalty_member_id: UUID | None = None
+    loyalty_points_earned: int | None = None
+    loyalty_points_redeemed: int | None = None
+    loyalty_discount: Money | None = None
     created_at: datetime
     updated_at: datetime
 

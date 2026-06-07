@@ -4,7 +4,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Numeric, String
+from sqlalchemy import ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -51,6 +51,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     payment_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
     payment_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    loyalty_member_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    loyalty_points_earned: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    loyalty_points_redeemed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    loyalty_discount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
 
     outlet = relationship("Outlet", back_populates="orders")
     staff = relationship("Staff", back_populates="orders")

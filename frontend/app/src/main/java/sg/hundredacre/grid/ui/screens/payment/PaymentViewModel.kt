@@ -12,9 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import sg.hundredacre.grid.payments.PaymentRepository
-import sg.hundredacre.grid.payments.PaymentState
-import sg.hundredacre.grid.payments.StripeTerminalManager
-import sg.hundredacre.grid.payments.TerminalState
+import sg.hundredacre.grid.payments.UiPaymentState
 import sg.hundredacre.grid.printing.PrintRepository
 import javax.inject.Inject
 
@@ -32,7 +30,6 @@ sealed class PrintState {
 @HiltViewModel
 class PaymentViewModel @Inject constructor(
     private val paymentRepository: PaymentRepository,
-    private val stripeTerminalManager: StripeTerminalManager,
     private val printRepository: PrintRepository
 ) : ViewModel() {
 
@@ -41,30 +38,23 @@ class PaymentViewModel @Inject constructor(
         private const val AUTO_ADVANCE_DELAY_MS = 5000L
     }
 
-    val paymentState: StateFlow<PaymentState> = paymentRepository.paymentState
+    val paymentState: StateFlow<UiPaymentState> = paymentRepository.paymentState
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = PaymentState.Idle
-        )
-
-    val terminalState: StateFlow<TerminalState> = stripeTerminalManager.terminalState
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = TerminalState.Uninitialized
+            initialValue = UiPaymentState.Idle
         )
 
     private val _printState = MutableStateFlow<PrintState>(PrintState.Idle)
     val printState: StateFlow<PrintState> = _printState.asStateFlow()
 
     init {
-        // Initialize Stripe Terminal SDK on first launch
+        // Initialize the payment repository (loads saved provider preference)
         viewModelScope.launch {
             try {
-                stripeTerminalManager.initialize()
+                paymentRepository.initialize()
             } catch (e: Exception) {
-                Log.e(TAG, "Terminal init failed", e)
+                Log.e(TAG, "Payment repo init failed", e)
             }
         }
     }
@@ -84,10 +74,8 @@ class PaymentViewModel @Inject constructor(
      * Cancel the current payment flow.
      */
     fun cancelPayment() {
-        viewModelScope.launch {
-            paymentRepository.cancelPayment()
-            _printState.value = PrintState.Idle
-        }
+        paymentRepository.cancelPayment()
+        _printState.value = PrintState.Idle
     }
 
     /**
@@ -99,7 +87,7 @@ class PaymentViewModel @Inject constructor(
     }
 
     /**
-     * Called by the UI when PaymentState.Success is displayed.
+     * Called by the UI when UiPaymentState.Success is displayed.
      * Triggers receipt printing, then auto-advances after completion.
      *
      * @param onAdvance Callback to navigate to the next screen (new order / menu).

@@ -22,6 +22,7 @@ android {
         }
 
         buildConfigField("boolean", "STRIPE_TEST_MODE", "true")
+        buildConfigField("String", "DEFAULT_PAYMENT_PROVIDER", "\"STRIPE_TAP_TO_PAY\"")
     }
 
     buildTypes {

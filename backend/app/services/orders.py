@@ -112,7 +112,8 @@ async def _recalculate_order_totals(db: AsyncSession, order: Order) -> None:
         line_total = quantize_money(item.unit_price * item.quantity)
         subtotal += line_total
     order.subtotal = quantize_money(subtotal)
-    order.total = order.subtotal
+    discount = order.loyalty_discount or Decimal("0.00")
+    order.total = quantize_money(subtotal - discount)
 
 
 def _validate_order_not_paid(order: Order) -> None:
@@ -161,6 +162,9 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         status=payload.status,
         payment_method=payload.payment_method,
         payment_reference=payload.payment_reference,
+        loyalty_member_id=payload.loyalty_member_id,
+        loyalty_points_redeemed=payload.loyalty_points_redeemed,
+        loyalty_discount=payload.loyalty_discount,
     )
 
     subtotal = Decimal("0.00")
@@ -170,7 +174,8 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         order.items.append(order_item)
 
     order.subtotal = quantize_money(subtotal)
-    order.total = order.subtotal
+    discount = payload.loyalty_discount or Decimal("0.00")
+    order.total = quantize_money(subtotal - discount)
     db.add(order)
     await db.commit()
 

@@ -62,7 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import sg.hundredacre.grid.payments.PaymentState
+import sg.hundredacre.grid.payments.UiPaymentState
 import sg.hundredacre.grid.ui.components.GridPrimaryButton
 import sg.hundredacre.grid.ui.components.GridSecondaryButton
 import sg.hundredacre.grid.ui.theme.GridBackground
@@ -87,7 +87,6 @@ fun PaymentScreen(
     viewModel: PaymentViewModel = hiltViewModel()
 ) {
     val paymentState by viewModel.paymentState.collectAsStateWithLifecycle()
-    val terminalState by viewModel.terminalState.collectAsStateWithLifecycle()
     val printState by viewModel.printState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -103,7 +102,7 @@ fun PaymentScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (paymentState is PaymentState.Collecting) {
+                        if (paymentState is UiPaymentState.Collecting) {
                             viewModel.cancelPayment()
                         }
                         onNavigateBack()
@@ -128,7 +127,7 @@ fun PaymentScreen(
                 .padding(padding)
         ) {
             when (val state = paymentState) {
-                is PaymentState.Idle -> {
+                is UiPaymentState.Idle -> {
                     PaymentIdleContent(
                         totalAmountCents = totalAmountCents,
                         onTapToPay = { viewModel.startPayment(totalAmountCents) },
@@ -137,18 +136,17 @@ fun PaymentScreen(
                     )
                 }
 
-                is PaymentState.Collecting -> {
+                is UiPaymentState.Collecting -> {
                     PaymentCollectingContent(
-                        terminalState = terminalState,
                         onCancel = { viewModel.cancelPayment() }
                     )
                 }
 
-                is PaymentState.Processing -> {
+                is UiPaymentState.Processing -> {
                     PaymentProcessingContent()
                 }
 
-                is PaymentState.Success -> {
+                is UiPaymentState.Success -> {
                     PaymentSuccessContent(
                         amountCents = totalAmountCents,
                         paymentIntentId = state.paymentIntentId,
@@ -160,7 +158,7 @@ fun PaymentScreen(
                     )
                 }
 
-                is PaymentState.Error -> {
+                is UiPaymentState.Error -> {
                     PaymentErrorContent(
                         message = state.message,
                         onRetry = { viewModel.resetState() },
@@ -343,7 +341,6 @@ private fun TapToPayButton(onClick: () -> Unit) {
 
 @Composable
 private fun PaymentCollectingContent(
-    terminalState: sg.hundredacre.grid.payments.TerminalState,
     onCancel: () -> Unit
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -356,11 +353,6 @@ private fun PaymentCollectingContent(
         ),
         label = "pulse"
     )
-
-    val message = when (terminalState) {
-        is sg.hundredacre.grid.payments.TerminalState.Collecting -> terminalState.message
-        else -> "Tap your card or phone to the terminal"
-    }
 
     Column(
         modifier = Modifier
@@ -407,7 +399,7 @@ private fun PaymentCollectingContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = message,
+            text = "Tap your card or phone to the terminal",
             fontFamily = InterFontFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 20.sp,
@@ -418,7 +410,7 @@ private fun PaymentCollectingContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Hold your card or device near the NFC reader",
+            text = "Hold your card or device near the reader",
             fontFamily = InterFontFamily,
             fontWeight = FontWeight.Normal,
             fontSize = 14.sp,
