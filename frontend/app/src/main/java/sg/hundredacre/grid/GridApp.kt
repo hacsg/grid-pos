@@ -4,9 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import sg.hundredacre.grid.ui.screens.cart.CartScreen
 import sg.hundredacre.grid.ui.screens.login.LoginScreen
 import sg.hundredacre.grid.ui.screens.menu.MenuScreen
-import sg.hundredacre.grid.ui.screens.cart.CartScreen
 import sg.hundredacre.grid.ui.screens.payment.PaymentScreen
 
 object Routes {
@@ -52,7 +52,8 @@ fun GridApp() {
         }
         composable(Routes.PAYMENT) {
             PaymentScreen(
-                onPaymentComplete = {
+                totalAmountCents = 0L, // TODO: pass actual cart total from CartRepository
+                onPaymentComplete = { paymentIntentId ->
                     navController.navigate(Routes.MENU) {
                         popUpTo(Routes.MENU) { inclusive = true }
                     }

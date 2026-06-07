@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import sg.hundredacre.grid.data.api.PaymentApiService
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -15,7 +16,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val BASE_URL = "https://api.hundredacre.com.sg/api/"
+    private const val BASE_URL = "https://api.hundredacre.com.sg/"
 
     @Provides
     @Singleton
@@ -40,5 +41,11 @@ object NetworkModule {
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun providePaymentApiService(retrofit: Retrofit): PaymentApiService {
+        return retrofit.create(PaymentApiService::class.java)
     }
 }

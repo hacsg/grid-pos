@@ -20,6 +20,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("boolean", "STRIPE_TEST_MODE", "true")
     }
 
     buildTypes {
@@ -43,6 +45,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -105,6 +108,9 @@ dependencies {
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Stripe Terminal SDK
+    implementation("com.stripe:stripecardreader-android:3.9.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

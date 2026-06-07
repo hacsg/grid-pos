@@ -21,6 +21,12 @@
         android:theme="@style/Theme.GridPOS"
         tools:targetApi="34">
 
+        <!-- Stripe Terminal foreground service for Bluetooth reader connection -->
+        <service
+            android:name="com.stripe.stripeterminal.service.TerminalService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
