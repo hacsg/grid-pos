@@ -17,6 +17,19 @@ import type {
   StaffPerformance,
   DateRange,
   PaginatedResponse,
+  DailyReport,
+  WeeklyReport,
+  MonthlyReport,
+  ProductReport,
+  StaffReport,
+  OutletReport,
+  DailyReportParams,
+  WeeklyReportParams,
+  MonthlyReportParams,
+  ProductReportParams,
+  StaffReportParams,
+  OutletReportParams,
+  CsvExportParams,
 } from '@/types';
 
 const api = axios.create({
@@ -237,9 +250,39 @@ export const getStaffPerformance = async (dateRange: DateRange): Promise<StaffPe
   return data;
 };
 
-export const exportCsv = async (reportType: string, dateRange: DateRange): Promise<Blob> => {
-  const { data } = await api.get(`/reports/export/${reportType}`, {
-    params: dateRange,
+export const getDailyReport = async (params?: DailyReportParams): Promise<DailyReport> => {
+  const { data } = await api.get('/reports/daily', { params });
+  return data;
+};
+
+export const getWeeklyReport = async (params?: WeeklyReportParams): Promise<WeeklyReport> => {
+  const { data } = await api.get('/reports/weekly', { params });
+  return data;
+};
+
+export const getMonthlyReport = async (params?: MonthlyReportParams): Promise<MonthlyReport> => {
+  const { data } = await api.get('/reports/monthly', { params });
+  return data;
+};
+
+export const getProductReport = async (params?: ProductReportParams): Promise<ProductReport> => {
+  const { data } = await api.get('/reports/products', { params });
+  return data;
+};
+
+export const getStaffReport = async (params?: StaffReportParams): Promise<StaffReport> => {
+  const { data } = await api.get('/reports/staff', { params });
+  return data;
+};
+
+export const getOutletReport = async (params?: OutletReportParams): Promise<OutletReport> => {
+  const { data } = await api.get('/reports/outlets', { params });
+  return data;
+};
+
+export const exportReportCSV = async (params?: CsvExportParams): Promise<Blob> => {
+  const { data } = await api.get('/reports/export/csv', {
+    params,
     responseType: 'blob',
   });
   return data;

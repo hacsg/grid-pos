@@ -12,6 +12,7 @@ app = FastAPI(title=settings.app_name)
 app.include_router(outlets.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
+app.include_router(staff.auth_router, prefix="/api")
 app.include_router(staff.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 

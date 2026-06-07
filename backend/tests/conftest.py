@@ -20,7 +20,10 @@ from app.models import (  # noqa: F401  — registers models on Base.metadata
     ModifierGroup,
     Outlet,
     Product,
+    Staff,
 )
+from app.models.staff import StaffRole
+from app.utils.hashing import hash_pin
 
 # ---------------------------------------------------------------------------
 # Use an in-memory SQLite database for all tests.
@@ -137,6 +140,151 @@ async def modifier_group(db_session: AsyncSession, product: Any) -> Any:
 async def modifier(db_session: AsyncSession, modifier_group: Any) -> Any:
     """Create a default modifier for tests that need one."""
     obj = Modifier(name="Large", price_adjustment=1.50, modifier_group_id=modifier_group.id)
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+# ---------------------------------------------------------------------------
+# Staff fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def admin_staff(db_session: AsyncSession, outlet: Any) -> Any:
+    """Create an admin staff member for the default outlet."""
+    obj = Staff(
+        name="Admin User",
+        role=StaffRole.admin,
+        outlet_id=outlet.id,
+        pin_hash=hash_pin("0000"),
+        is_active=True,
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def manager_staff(db_session: AsyncSession, outlet: Any) -> Any:
+    """Create a manager staff member for the default outlet."""
+    obj = Staff(
+        name="Manager User",
+        role=StaffRole.manager,
+        outlet_id=outlet.id,
+        pin_hash=hash_pin("1111"),
+        is_active=True,
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def supervisor_staff(db_session: AsyncSession, outlet: Any) -> Any:
+    """Create a supervisor staff member for the default outlet."""
+    obj = Staff(
+        name="Supervisor User",
+        role=StaffRole.supervisor,
+        outlet_id=outlet.id,
+        pin_hash=hash_pin("2222"),
+        is_active=True,
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def cashier_staff(db_session: AsyncSession, outlet: Any) -> Any:
+    """Create a cashier staff member for the default outlet."""
+    obj = Staff(
+        name="Cashier User",
+        role=StaffRole.cashier,
+        outlet_id=outlet.id,
+        pin_hash=hash_pin("1234"),
+        is_active=True,
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def inactive_staff(db_session: AsyncSession, outlet: Any) -> Any:
+    """Create an inactive staff member."""
+    obj = Staff(
+        name="Inactive User",
+        role=StaffRole.cashier,
+        outlet_id=outlet.id,
+        pin_hash=hash_pin("9999"),
+        is_active=False,
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def admin_token(admin_staff: Any) -> str:
+    """Return a valid JWT for the admin staff member."""
+    from app.utils.auth import create_access_token
+
+    return create_access_token(
+        subject=admin_staff.id,
+        role=admin_staff.role.value,
+        outlet_id=admin_staff.outlet_id,
+    )
+
+
+@pytest_asyncio.fixture
+async def manager_token(manager_staff: Any) -> str:
+    """Return a valid JWT for the manager staff member."""
+    from app.utils.auth import create_access_token
+
+    return create_access_token(
+        subject=manager_staff.id,
+        role=manager_staff.role.value,
+        outlet_id=manager_staff.outlet_id,
+    )
+
+
+@pytest_asyncio.fixture
+async def supervisor_token(supervisor_staff: Any) -> str:
+    """Return a valid JWT for the supervisor staff member."""
+    from app.utils.auth import create_access_token
+
+    return create_access_token(
+        subject=supervisor_staff.id,
+        role=supervisor_staff.role.value,
+        outlet_id=supervisor_staff.outlet_id,
+    )
+
+
+@pytest_asyncio.fixture
+async def cashier_token(cashier_staff: Any) -> str:
+    """Return a valid JWT for the cashier staff member."""
+    from app.utils.auth import create_access_token
+
+    return create_access_token(
+        subject=cashier_staff.id,
+        role=cashier_staff.role.value,
+        outlet_id=cashier_staff.outlet_id,
+    )
+
+
+@pytest_asyncio.fixture
+async def another_outlet(db_session: AsyncSession) -> Any:
+    """Create a second outlet for tests that need cross-outlet scenarios."""
+    from app.models.outlet import Outlet
+
+    obj = Outlet(name="Another Outlet", address="456 Oak Ave")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)

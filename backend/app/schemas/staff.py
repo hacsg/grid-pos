@@ -24,31 +24,43 @@ class StaffCreate(StaffBase):
 
 
 class StaffUpdate(BaseModel):
-    """Payload for updating a staff member."""
+    """Payload for updating a staff member (PIN updates forbidden here)."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    pin: str | None = Field(default=None, pattern=r"^\d{4}$")
     role: StaffRole | None = None
     outlet_id: UUID | None = None
     is_active: bool | None = None
 
 
-class StaffLogin(BaseModel):
-    """Payload for staff PIN login."""
+class StaffLoginRequest(BaseModel):
+    """Payload for staff PIN login (no name required — PIN + outlet identifies staff)."""
 
-    outlet_id: UUID
-    name: str = Field(min_length=1, max_length=120)
     pin: str = Field(pattern=r"^\d{4}$")
+    outlet_id: UUID
 
 
 class StaffRead(StaffBase, TimestampSchema):
     """Staff response payload without PIN hash."""
 
 
-class TokenRead(BaseModel):
-    """Bearer token response payload."""
+class TokenResponse(BaseModel):
+    """Bearer token response with staff details and expiry."""
 
     access_token: str
     token_type: str = "bearer"
     staff: StaffRead
+    expires_in: int = 3600
 
+
+class TokenRefreshResponse(BaseModel):
+    """Bearer token response for refresh endpoint."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = 3600
+
+
+class PinResetRequest(BaseModel):
+    """Payload for resetting a staff member's PIN."""
+
+    new_pin: str = Field(pattern=r"^\d{4}$")

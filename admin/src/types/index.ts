@@ -162,3 +162,142 @@ export interface DateRange {
   start_date: string;
   end_date: string;
 }
+
+// === Report Types ===
+
+export interface PaymentBreakdown {
+  card: number;
+  paynow: number;
+  cash: number;
+}
+
+export interface HourlySale {
+  hour: string; // e.g. "09:00", "10:00"
+  revenue: number;
+  transactions: number;
+}
+
+export interface DailyReport {
+  total_revenue: number;
+  total_transactions: number;
+  avg_ticket_size: number;
+  revenue_change_percent: number;
+  transactions_change_percent: number;
+  avg_ticket_change_percent: number;
+  payment_breakdown: PaymentBreakdown;
+  hourly_sales: HourlySale[];
+}
+
+export interface WeeklyReport {
+  total_revenue: number;
+  total_transactions: number;
+  avg_ticket_size: number;
+  revenue_change_percent: number;
+  daily_breakdown: HourlySale[];
+}
+
+export interface MonthlyReport {
+  total_revenue: number;
+  total_transactions: number;
+  avg_ticket_size: number;
+  revenue_change_percent: number;
+  transactions_change_percent: number;
+  avg_ticket_change_percent: number;
+  payment_breakdown: PaymentBreakdown;
+  daily_breakdown: { date: string; revenue: number; transactions: number }[];
+}
+
+export interface CategoryBreakdown {
+  category_name: string;
+  revenue: number;
+  quantity_sold: number;
+  percentage: number;
+}
+
+export interface ProductPerformanceItem {
+  product_id: string;
+  product_name: string;
+  units_sold: number;
+  revenue: number;
+  avg_modifiers_per_order: number;
+  category_name: string;
+}
+
+export interface ProductReport {
+  top_by_revenue: ProductPerformanceItem[];
+  top_by_quantity: ProductPerformanceItem[];
+  category_breakdown: CategoryBreakdown[];
+  product_details: ProductPerformanceItem[];
+}
+
+export interface StaffPerformanceItem {
+  staff_id: string;
+  staff_name: string;
+  transactions: number;
+  revenue: number;
+  avg_ticket: number;
+}
+
+export interface StaffHourlyBreakdown {
+  staff_id: string;
+  staff_name: string;
+  hour: string;
+  transactions: number;
+  revenue: number;
+}
+
+export interface StaffReport {
+  leaderboard: StaffPerformanceItem[];
+  hourly_breakdown: StaffHourlyBreakdown[];
+}
+
+export interface OutletComparisonItem {
+  outlet_id: string;
+  outlet_name: string;
+  revenue: number;
+  transactions: number;
+  avg_ticket: number;
+  top_product: string;
+}
+
+export interface OutletReport {
+  outlets: OutletComparisonItem[];
+}
+
+export interface DailyReportParams {
+  outlet_id?: string;
+  date?: string;
+}
+
+export interface WeeklyReportParams {
+  outlet_id?: string;
+  week?: string;
+}
+
+export interface MonthlyReportParams {
+  outlet_id?: string;
+  month?: string;
+}
+
+export interface ProductReportParams {
+  outlet_id?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface StaffReportParams {
+  outlet_id?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface OutletReportParams {
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface CsvExportParams {
+  outlet_id?: string;
+  date_from?: string;
+  date_to?: string;
+}

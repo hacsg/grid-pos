@@ -71,6 +71,17 @@ class OrderRead(TimestampSchema):
     items: list[OrderItemRead] = []
 
 
+class OrderRefundCreate(BaseModel):
+    """Payload for refunding an order."""
+
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class OrderAddItem(OrderItemCreate):
+    """Payload for adding an item to an existing order."""
+    pass
+
+
 class OrderSummaryRead(ORMModel):
     """Compact order response payload."""
 
