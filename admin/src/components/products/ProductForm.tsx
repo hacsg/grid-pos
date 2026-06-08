@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -33,6 +34,7 @@ export default function ProductForm({
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -44,6 +46,16 @@ export default function ProductForm({
       available: product?.available ?? true,
     },
   });
+
+  useEffect(() => {
+    reset({
+      name: product?.name || '',
+      description: product?.description || '',
+      price: product?.price || 0,
+      category_id: product?.category_id || '',
+      available: product?.available ?? true,
+    });
+  }, [product, reset]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

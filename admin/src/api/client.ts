@@ -81,6 +81,7 @@ export const getProducts = async (params?: {
         price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
         available: p.is_available ?? true,
         description: p.description || '',
+        category_id: p.category_id || p.category?.id || '',
         category_name: p.category?.name || '',
       }))
     : [];
