@@ -92,3 +92,18 @@ data class ProductWithModifiers(
     val product: Product,
     val modifiers: List<ProductModifier> = emptyList()
 )
+
+// ──────────────────────────────────────────────
+// SHIFT RECORDS
+// ──────────────────────────────────────────────
+
+@Entity(tableName = "shift_records")
+data class ShiftRecord(
+    @PrimaryKey val shiftId: String = "",
+    val staffId: String = "",
+    val clockIn: Long = 0,
+    val clockOut: Long? = null,
+    val durationMinutes: Int? = null,
+    val ordersProcessed: Int? = 0,
+    val totalSales: Double? = 0.0
+)

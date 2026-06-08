@@ -8,7 +8,9 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import sg.hundredacre.grid.data.api.OrderApiService
 import sg.hundredacre.grid.data.api.PaymentApiService
+import sg.hundredacre.grid.data.api.ShiftApiService
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -47,5 +49,17 @@ object NetworkModule {
     @Singleton
     fun providePaymentApiService(retrofit: Retrofit): PaymentApiService {
         return retrofit.create(PaymentApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideShiftApiService(retrofit: Retrofit): ShiftApiService {
+        return retrofit.create(ShiftApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideOrderApiService(retrofit: Retrofit): OrderApiService {
+        return retrofit.create(OrderApiService::class.java)
     }
 }

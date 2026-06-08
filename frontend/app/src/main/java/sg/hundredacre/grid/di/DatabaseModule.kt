@@ -11,7 +11,9 @@ import sg.hundredacre.grid.data.local.CartDao
 import sg.hundredacre.grid.data.local.CategoryDao
 import sg.hundredacre.grid.data.local.GridDatabase
 import sg.hundredacre.grid.data.local.OrderDao
+import sg.hundredacre.grid.data.local.OrderSyncDao
 import sg.hundredacre.grid.data.local.ProductDao
+import sg.hundredacre.grid.data.local.ShiftDao
 import javax.inject.Singleton
 
 @Module
@@ -40,4 +42,10 @@ object DatabaseModule {
 
     @Provides
     fun provideOrderDao(database: GridDatabase): OrderDao = database.orderDao()
+
+    @Provides
+    fun provideShiftDao(database: GridDatabase): ShiftDao = database.shiftDao()
+
+    @Provides
+    fun provideOrderSyncDao(database: GridDatabase): OrderSyncDao = database.orderSyncDao()
 }

@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
+  getSalesSummary,
+  getSalesByOutlet,
   getDailyReport,
   getWeeklyReport,
   getMonthlyReport,
@@ -8,6 +10,7 @@ import {
   getOutletReport,
 } from '@/api/client';
 import type {
+  DateRange,
   DailyReportParams,
   WeeklyReportParams,
   MonthlyReportParams,
@@ -15,6 +18,21 @@ import type {
   StaffReportParams,
   OutletReportParams,
 } from '@/types';
+
+export function useSalesSummary() {
+  return useQuery({
+    queryKey: ['reports', 'sales-summary'],
+    queryFn: () => getSalesSummary(),
+  });
+}
+
+export function useSalesByOutlet(dateRange?: DateRange) {
+  return useQuery({
+    queryKey: ['reports', 'sales-by-outlet', dateRange],
+    queryFn: () => getSalesByOutlet(dateRange!),
+    enabled: !!dateRange,
+  });
+}
 
 export function useDailyReport(params?: DailyReportParams) {
   return useQuery({

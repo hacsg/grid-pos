@@ -41,7 +41,7 @@ fun CartItemRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(76.dp)
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -77,9 +77,9 @@ fun CartItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End
         ) {
-            // Price
+            // Price — S$ for Singapore
             Text(
-                text = "$${String.format("%.2f", unitPrice * quantity)}",
+                text = "S$${String.format("%.2f", unitPrice * quantity)}",
                 fontFamily = InterFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,

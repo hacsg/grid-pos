@@ -7,6 +7,7 @@ from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.product import Product
+from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "OrderStatus",
     "Outlet",
     "Product",
+    "Shift",
     "Staff",
     "StaffRole",
 ]

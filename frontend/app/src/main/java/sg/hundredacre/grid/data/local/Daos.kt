@@ -73,6 +73,9 @@ interface OrderDao {
     @Query("SELECT * FROM orders ORDER BY createdAt DESC")
     fun getAllOrders(): Flow<List<sg.hundredacre.grid.data.models.Order>>
 
+    @Query("SELECT * FROM orders WHERE id = :orderId")
+    suspend fun getOrderById(orderId: Long): sg.hundredacre.grid.data.models.Order?
+
     @Insert
     suspend fun insertOrder(order: sg.hundredacre.grid.data.models.Order): Long
 
@@ -81,4 +84,7 @@ interface OrderDao {
 
     @Query("SELECT * FROM order_items WHERE orderId = :orderId")
     fun getOrderItems(orderId: Long): Flow<List<sg.hundredacre.grid.data.models.OrderItem>>
+
+    @Query("SELECT * FROM order_items WHERE orderId = :orderId")
+    suspend fun getOrderItemsList(orderId: Long): List<sg.hundredacre.grid.data.models.OrderItem>
 }

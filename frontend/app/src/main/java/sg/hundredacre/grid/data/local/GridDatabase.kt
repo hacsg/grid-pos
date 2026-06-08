@@ -8,6 +8,7 @@ import sg.hundredacre.grid.data.models.Order
 import sg.hundredacre.grid.data.models.OrderItem
 import sg.hundredacre.grid.data.models.Product
 import sg.hundredacre.grid.data.models.ProductModifier
+import sg.hundredacre.grid.data.models.ShiftRecord
 
 @Database(
     entities = [
@@ -16,9 +17,11 @@ import sg.hundredacre.grid.data.models.ProductModifier
         ProductModifier::class,
         CartItem::class,
         Order::class,
-        OrderItem::class
+        OrderItem::class,
+        ShiftRecord::class,
+        OrderSyncEntity::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = true
 )
 abstract class GridDatabase : RoomDatabase() {
@@ -26,4 +29,6 @@ abstract class GridDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun cartDao(): CartDao
     abstract fun orderDao(): OrderDao
+    abstract fun shiftDao(): ShiftDao
+    abstract fun orderSyncDao(): OrderSyncDao
 }
