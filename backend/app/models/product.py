@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -17,6 +17,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "products"
 
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     category_id: Mapped[UUID] = mapped_column(
         Uuid,

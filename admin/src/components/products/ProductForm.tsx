@@ -9,7 +9,7 @@ import type { Product, Category, ProductModifierAssignment } from '@/types';
 
 const productSchema = z.object({
   name: z.string().min(1, 'Product name is required'),
-  description: z.string().min(1, 'Description is required'),
+  description: z.string(),
   price: z.coerce.number().positive('Price must be positive'),
   category_id: z.string().min(1, 'Category is required'),
   available: z.boolean(),

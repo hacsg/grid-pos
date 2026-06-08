@@ -14,6 +14,7 @@ class ProductBase(BaseModel):
     """Shared product fields."""
 
     name: str = Field(min_length=1, max_length=160)
+    description: str | None = None
     price: Money
     category_id: UUID
     image_url: str | None = Field(default=None, max_length=500)
@@ -28,6 +29,7 @@ class ProductUpdate(BaseModel):
     """Payload for updating a product."""
 
     name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
     price: Money | None = None
     category_id: UUID | None = None
     image_url: str | None = Field(default=None, max_length=500)
