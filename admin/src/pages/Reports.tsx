@@ -355,19 +355,19 @@ export default function Reports() {
   const showOutletComparison = !outletId;
 
   // ── Payment Breakdown Pie Data ──
-  const paymentPieData = useMemo(
-    () => [
-      { name: 'Card', value: dailyReport.payment_breakdown.card, color: COLORS.primary },
-      { name: 'PayNow', value: dailyReport.payment_breakdown.paynow, color: COLORS.success },
-      { name: 'Cash', value: dailyReport.payment_breakdown.cash, color: COLORS.warning },
-    ],
-    [dailyReport.payment_breakdown],
-  );
+  const paymentPieData = useMemo(() => {
+    const pb = dailyReport.payment_breakdown || { card: 0, paynow: 0, cash: 0 };
+    return [
+      { name: 'Card', value: pb.card, color: COLORS.primary },
+      { name: 'PayNow', value: pb.paynow, color: COLORS.success },
+      { name: 'Cash', value: pb.cash, color: COLORS.warning },
+    ];
+  }, [dailyReport.payment_breakdown]);
 
   // ── Category Donut Data ──
   const categoryDonutData = useMemo(
     () =>
-      productReport.category_breakdown.map((c, i) => ({
+      (productReport.category_breakdown || []).map((c, i) => ({
         name: c.category_name,
         value: c.revenue,
         color: PIE_COLORS[i % PIE_COLORS.length],
@@ -378,11 +378,12 @@ export default function Reports() {
   // ── Staff Hourly Grouped ──
   const staffHourlyData = useMemo(() => {
     const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
-    const staffNames = [...new Set(staffReport.hourly_breakdown.map((s) => s.staff_name))];
+    const hourly = staffReport.hourly_breakdown || [];
+    const staffNames = [...new Set(hourly.map((s) => s.staff_name))];
     return hours.map((hour) => {
       const row: any = { hour };
       staffNames.forEach((name) => {
-        const found = staffReport.hourly_breakdown.find((s) => s.staff_name === name && s.hour === hour);
+        const found = hourly.find((s) => s.staff_name === name && s.hour === hour);
         row[name] = found?.transactions || 0;
       });
       return row;
@@ -390,13 +391,13 @@ export default function Reports() {
   }, [staffReport.hourly_breakdown]);
 
   const staffNames = useMemo(
-    () => [...new Set(staffReport.hourly_breakdown.map((s) => s.staff_name))],
+    () => [...new Set((staffReport.hourly_breakdown || []).map((s) => s.staff_name))],
     [staffReport.hourly_breakdown],
   );
 
   // ── Product Table Sort ──
   const sortedProductDetails = useMemo(() => {
-    const details = [...productReport.product_details];
+    const details = [...(productReport.product_details || [])];
     details.sort((a, b) => {
       let cmp = 0;
       switch (productSortKey) {
@@ -422,8 +423,9 @@ export default function Reports() {
 
   // ── Staff Comparison ──
   const staffCompareData = useMemo(() => {
-    const a = staffReport.leaderboard.find((s) => s.staff_id === staffCompareA);
-    const b = staffReport.leaderboard.find((s) => s.staff_id === staffCompareB);
+    const leaderboard = staffReport.leaderboard || [];
+    const a = leaderboard.find((s) => s.staff_id === staffCompareA);
+    const b = leaderboard.find((s) => s.staff_id === staffCompareB);
     return { a, b };
   }, [staffReport.leaderboard, staffCompareA, staffCompareB]);
 
@@ -903,7 +905,7 @@ export default function Reports() {
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : staffReport.leaderboard.length === 0 ? (
+            ) : (staffReport.leaderboard || []).length === 0 ? (
               <EmptyState icon={Users} title="No staff data" description="No staff performance data available" />
             ) : (
               <div className="space-y-3">
@@ -996,7 +998,7 @@ export default function Reports() {
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">Select staff</option>
-                  {staffReport.leaderboard.map((s) => (
+                  {(staffReport.leaderboard || []).map((s) => (
                     <option key={s.staff_id} value={s.staff_id}>
                       {s.staff_name}
                     </option>
@@ -1011,7 +1013,7 @@ export default function Reports() {
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">Select staff</option>
-                  {staffReport.leaderboard.map((s) => (
+                  {(staffReport.leaderboard || []).map((s) => (
                     <option key={s.staff_id} value={s.staff_id}>
                       {s.staff_name}
                     </option>
@@ -1188,7 +1190,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {outletReport.outlets.map((outlet) => (
+                      {(outletReport.outlets || []).map((outlet) => (
                         <tr key={outlet.outlet_id} className="border-b border-gray-50 transition-colors hover:bg-surface/50">
                           <td className="px-4 py-3 text-sm font-medium text-text">{outlet.outlet_name}</td>
                           <td className="px-4 py-3 text-right text-sm text-text">{formatCurrency(outlet.revenue)}</td>
