@@ -3,8 +3,6 @@
 import logging
 from pathlib import Path
 
-from sqlalchemy import text
-
 from app.database import engine
 
 logger = logging.getLogger(__name__)
@@ -13,7 +11,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 
 
 async def run_sql_migrations() -> None:
-    """Execute all .sql files in migrations/ in sorted order."""
+    """Execute all .sql files in migrations/ in sorted order using raw asyncpg."""
     if not MIGRATIONS_DIR.is_dir():
         return
 
@@ -21,8 +19,10 @@ async def run_sql_migrations() -> None:
     if not migration_files:
         return
 
-    async with engine.begin() as connection:
+    async with engine.begin() as conn:
+        # Get the raw asyncpg connection to support multi-statement SQL
+        raw_conn = await conn.get_raw_connection()
         for migration_file in migration_files:
             sql = migration_file.read_text(encoding="utf-8")
             logger.info("Running migration: %s", migration_file.name)
-            await connection.execute(text(sql))
+            await raw_conn.execute(sql)
