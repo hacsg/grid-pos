@@ -105,14 +105,14 @@ export interface Category {
   id: string;
   name: string;
   sort_order: number;
-  outlet_ids: string[];
+  outlet_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface CategoryFormData {
   name: string;
-  outlet_ids: string[];
+  outlet_id?: string | null;
 }
 
 export interface Order {
@@ -147,41 +147,37 @@ export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'refunded';
 export interface Staff {
   id: string;
   name: string;
-  email: string;
   role: StaffRole;
-  pin: string;
   outlet_id: string;
   outlet_name: string;
   active: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export type StaffRole = 'admin' | 'manager' | 'cashier' | 'kitchen';
 
 export interface StaffFormData {
   name: string;
-  email: string;
   role: StaffRole;
   outlet_id: string;
-  pin: string;
+  pin?: string;
+  is_active?: boolean;
 }
 
 export interface Outlet {
   id: string;
   name: string;
   address: string;
-  phone: string;
-  email: string;
-  active: boolean;
+  phone: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface OutletFormData {
   name: string;
   address: string;
-  phone: string;
-  email: string;
-  active: boolean;
+  phone?: string | null;
 }
 
 export interface SalesSummary {

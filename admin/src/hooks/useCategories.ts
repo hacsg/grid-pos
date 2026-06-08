@@ -25,10 +25,11 @@ export function useCreateCategory() {
   });
 }
 
-export function useUpdateCategory(id: string) {
+export function useUpdateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<CategoryFormData>) => updateCategory(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<CategoryFormData> }) =>
+      updateCategory(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
     },

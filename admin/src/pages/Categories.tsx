@@ -1,31 +1,41 @@
-import { useCategories as useCategoriesQuery } from '@/hooks/useCategories';
-import Card from '@/components/ui/Card';
+import {
+  useCategories,
+  useCreateCategory,
+  useUpdateCategory,
+  useDeleteCategory,
+  useReorderCategories,
+} from '@/hooks/useCategories';
+import { useOutlets } from '@/hooks/useOutlets';
 import CategoryManager from '@/components/products/CategoryManager';
-import type { Outlet } from '@/types';
-
-const mockOutlets: Outlet[] = [
-  { id: '1', name: 'Main Street', address: '123 Main St', phone: '555-0100', email: 'main@gridpos.com', active: true, created_at: '2024-01-01' },
-  { id: '2', name: 'Downtown', address: '456 Oak Ave', phone: '555-0101', email: 'downtown@gridpos.com', active: true, created_at: '2024-01-01' },
-];
+import type { CategoryFormData } from '@/types';
 
 export default function Categories() {
-  const { data: categoriesData, isLoading } = useCategoriesQuery();
-  const categories = categoriesData?.data || [];
+  const { data: categoriesData, isLoading } = useCategories();
+  const { data: outletsData } = useOutlets();
 
-  const handleCreate = (data: { name: string; outlet_ids: string[] }) => {
-    console.log('Create category:', data);
+  const createCategory = useCreateCategory();
+  const updateCategory = useUpdateCategory();
+  const deleteCategory = useDeleteCategory();
+  const reorderCategories = useReorderCategories();
+
+  const categories = categoriesData?.data || [];
+  const outlets = outletsData?.data || [];
+
+  const handleCreate = (data: CategoryFormData) => {
+    createCategory.mutate(data);
   };
 
-  const handleUpdate = (id: string, data: { name: string; outlet_ids: string[] }) => {
-    console.log('Update category:', id, data);
+  const handleUpdate = (id: string, data: CategoryFormData) => {
+    updateCategory.mutate({ id, data });
   };
 
   const handleDelete = (id: string) => {
-    console.log('Delete category:', id);
+    if (!window.confirm('Delete this category?')) return;
+    deleteCategory.mutate(id);
   };
 
   const handleReorder = (ids: string[]) => {
-    console.log('Reorder categories:', ids);
+    reorderCategories.mutate(ids);
   };
 
   return (
@@ -40,7 +50,7 @@ export default function Categories() {
       <div className="max-w-2xl">
         <CategoryManager
           categories={categories}
-          outlets={mockOutlets}
+          outlets={outlets}
           loading={isLoading}
           onCreate={handleCreate}
           onUpdate={handleUpdate}

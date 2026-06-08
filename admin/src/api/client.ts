@@ -147,7 +147,21 @@ export const getCategories = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Category>> => {
   const { data } = await api.get('/categories', { params });
-  return data;
+  const items = Array.isArray(data) ? data : [];
+  const normalized: Category[] = items.map((c: Record<string, unknown>) => ({
+    id: c.id as string,
+    name: c.name as string,
+    sort_order: (c.sort_order as number) ?? 0,
+    outlet_id: (c.outlet_id as string | null) ?? null,
+    created_at: c.created_at as string,
+    updated_at: c.updated_at as string,
+  }));
+  return {
+    data: normalized,
+    total: normalized.length,
+    page: 1,
+    limit: normalized.length || 100,
+  };
 };
 
 export const createCategory = async (category: CategoryFormData): Promise<Category> => {
@@ -168,7 +182,8 @@ export const deleteCategory = async (id: string): Promise<void> => {
 };
 
 export const reorderCategories = async (ids: string[]): Promise<void> => {
-  await api.put('/categories/reorder', { ids });
+  const items = ids.map((id, index) => ({ id, sort_order: index }));
+  await api.patch('/categories/reorder', { items });
   toast.success('Categories reordered successfully');
 };
 
@@ -213,8 +228,31 @@ export const getStaffList = async (params?: {
   limit?: number;
   outlet_id?: string;
 }): Promise<PaginatedResponse<Staff>> => {
-  const { data } = await api.get('/staff', { params });
-  return data;
+  const [{ data: staffData }, { data: outletsData }] = await Promise.all([
+    api.get('/staff', { params }),
+    api.get('/outlets'),
+  ]);
+  const outlets = Array.isArray(outletsData) ? outletsData : [];
+  const outletMap = new Map(
+    outlets.map((o: Record<string, unknown>) => [o.id as string, o.name as string])
+  );
+  const items = Array.isArray(staffData) ? staffData : [];
+  const normalized: Staff[] = items.map((s: Record<string, unknown>) => ({
+    id: s.id as string,
+    name: s.name as string,
+    role: s.role as Staff['role'],
+    outlet_id: s.outlet_id as string,
+    outlet_name: outletMap.get(s.outlet_id as string) ?? '',
+    active: (s.is_active as boolean) ?? true,
+    created_at: s.created_at as string,
+    updated_at: s.updated_at as string,
+  }));
+  return {
+    data: normalized,
+    total: normalized.length,
+    page: 1,
+    limit: normalized.length || 100,
+  };
 };
 
 export const createStaff = async (staff: StaffFormData): Promise<Staff> => {
@@ -235,7 +273,7 @@ export const deleteStaff = async (id: string): Promise<void> => {
 };
 
 export const resetStaffPin = async (id: string, newPin: string): Promise<void> => {
-  await api.post(`/staff/${id}/reset-pin`, { pin: newPin });
+  await api.post(`/staff/${id}/reset-pin`, { new_pin: newPin });
   toast.success('PIN reset successfully');
 };
 
@@ -245,7 +283,21 @@ export const getOutlets = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Outlet>> => {
   const { data } = await api.get('/outlets', { params });
-  return data;
+  const items = Array.isArray(data) ? data : [];
+  const normalized: Outlet[] = items.map((o: Record<string, unknown>) => ({
+    id: o.id as string,
+    name: o.name as string,
+    address: o.address as string,
+    phone: (o.phone as string | null) ?? null,
+    created_at: o.created_at as string,
+    updated_at: o.updated_at as string,
+  }));
+  return {
+    data: normalized,
+    total: normalized.length,
+    page: 1,
+    limit: normalized.length || 100,
+  };
 };
 
 export const createOutlet = async (outlet: OutletFormData): Promise<Outlet> => {

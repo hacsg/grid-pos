@@ -10,8 +10,8 @@ interface CategoryManagerProps {
   categories: Category[];
   outlets: Outlet[];
   loading: boolean;
-  onCreate: (data: { name: string; outlet_ids: string[] }) => void;
-  onUpdate: (id: string, data: { name: string; outlet_ids: string[] }) => void;
+  onCreate: (data: { name: string; outlet_id: string | null }) => void;
+  onUpdate: (id: string, data: { name: string; outlet_id: string | null }) => void;
   onDelete: (id: string) => void;
   onReorder: (ids: string[]) => void;
 }
@@ -28,25 +28,25 @@ export default function CategoryManager({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [name, setName] = useState('');
-  const [selectedOutlets, setSelectedOutlets] = useState<string[]>([]);
+  const [outletId, setOutletId] = useState<string | null>(null);
 
   const openCreateModal = () => {
     setEditingCategory(null);
     setName('');
-    setSelectedOutlets([]);
+    setOutletId(null);
     setIsModalOpen(true);
   };
 
   const openEditModal = (category: Category) => {
     setEditingCategory(category);
     setName(category.name);
-    setSelectedOutlets(category.outlet_ids || []);
+    setOutletId(category.outlet_id);
     setIsModalOpen(true);
   };
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    const data = { name: name.trim(), outlet_ids: selectedOutlets };
+    const data = { name: name.trim(), outlet_id: outletId };
     if (editingCategory) {
       onUpdate(editingCategory.id, data);
     } else {
@@ -55,12 +55,9 @@ export default function CategoryManager({
     setIsModalOpen(false);
   };
 
-  const toggleOutlet = (outletId: string) => {
-    setSelectedOutlets((prev) =>
-      prev.includes(outletId)
-        ? prev.filter((id) => id !== outletId)
-        : [...prev, outletId]
-    );
+  const getOutletName = (id: string | null) => {
+    if (!id) return null;
+    return outlets.find((o) => o.id === id)?.name ?? null;
   };
 
   return (
@@ -88,8 +85,9 @@ export default function CategoryManager({
                 <p className="text-sm font-medium text-text">{category.name}</p>
                 <p className="text-xs text-text-muted">
                   Order: {category.sort_order}
-                  {category.outlet_ids?.length > 0 &&
-                    ` · ${category.outlet_ids.length} outlet(s)`}
+                  {category.outlet_id
+                    ? ` · ${getOutletName(category.outlet_id) ?? 'Assigned outlet'}`
+                    : ' · All outlets'}
                 </p>
               </div>
               <div className="flex items-center gap-1">
@@ -131,27 +129,20 @@ export default function CategoryManager({
           />
 
           {outlets.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-text">Assign to Outlets</label>
-              <div className="space-y-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text">Assign to Outlet</label>
+              <select
+                value={outletId ?? ''}
+                onChange={(e) => setOutletId(e.target.value || null)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">All outlets (global)</option>
                 {outlets.map((outlet) => (
-                  <label
-                    key={outlet.id}
-                    className="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2 cursor-pointer hover:bg-surface"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedOutlets.includes(outlet.id)}
-                      onChange={() => toggleOutlet(outlet.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    <div>
-                      <p className="text-sm font-medium text-text">{outlet.name}</p>
-                      <p className="text-xs text-text-muted">{outlet.address}</p>
-                    </div>
-                  </label>
+                  <option key={outlet.id} value={outlet.id}>
+                    {outlet.name}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
 
