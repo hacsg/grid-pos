@@ -1217,3 +1217,298 @@ img {
     color: #000000;
   }
 }
+
+/* ========================================
+   Customer Display (second screen /display)
+   Dark, large, minimal, premium
+   ======================================== */
+
+.customer-display {
+  position: fixed;
+  inset: 0;
+  background: #0a0a0a;
+  color: #f5f5f5;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+.display-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 48px 56px;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.display-idle,
+.display-order,
+.display-processing,
+.display-thanks {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 280ms ease;
+}
+
+/* Brand mark */
+.display-mark {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #0a0a0a;
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 20px;
+}
+
+.display-mark.small {
+  width: 64px;
+  height: 64px;
+  font-size: 26px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+}
+
+.display-brand-name {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #c9c9c9;
+  margin-bottom: 12px;
+}
+
+.display-welcome {
+  font-size: 28px;
+  font-weight: 500;
+  color: #a3a3a3;
+}
+
+/* Order view */
+.display-order {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding-top: 20px;
+}
+
+.display-order-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 32px;
+}
+
+.display-order-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #b3b3b3;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.display-loyalty {
+  font-size: 15px;
+  color: #8a8a8a;
+  margin-top: 4px;
+}
+
+.display-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-bottom: 24px;
+}
+
+.display-item {
+  border-bottom: 1px solid #222;
+  padding: 18px 0;
+}
+
+.display-item:first-child {
+  padding-top: 0;
+}
+
+.display-item:last-child {
+  border-bottom: 0;
+}
+
+.display-item-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.display-item-name {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.display-qty {
+  font-weight: 600;
+  color: #c9c9c9;
+  margin-right: 8px;
+}
+
+.display-item-price {
+  font-size: 26px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.display-modifiers {
+  margin-top: 8px;
+  padding-left: 2px;
+  font-size: 16px;
+  color: #8a8a8a;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.display-totals {
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid #333;
+}
+
+.display-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 52px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.display-total-row span {
+  font-size: 28px;
+  font-weight: 500;
+  color: #b3b3b3;
+}
+
+/* Processing */
+.display-processing {
+  gap: 12px;
+}
+
+.display-processing-text {
+  font-size: 28px;
+  font-weight: 500;
+  color: #c9c9c9;
+  margin-top: 8px;
+}
+
+.display-processing-total {
+  font-size: 64px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  margin-top: 12px;
+}
+
+/* Thanks / complete */
+.display-thanks {
+  gap: 8px;
+}
+
+.display-thanks-title {
+  font-size: 56px;
+  font-weight: 600;
+  margin-top: 8px;
+  letter-spacing: -0.5px;
+}
+
+.display-thanks-total {
+  font-size: 64px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  margin-top: 8px;
+}
+
+.display-points {
+  margin-top: 12px;
+  font-size: 22px;
+  font-weight: 500;
+  color: #a3a3a3;
+}
+
+.display-reset-hint {
+  margin-top: 20px;
+  font-size: 18px;
+  color: #777;
+}
+
+/* Smooth state transitions for content swaps */
+.customer-display .display-order,
+.customer-display .display-processing,
+.customer-display .display-thanks {
+  animation: display-fade-in 220ms ease both;
+}
+
+@keyframes display-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Large screen tweaks */
+@media (min-width: 1600px) {
+  .display-content {
+    padding: 64px 80px;
+  }
+  .display-item-name,
+  .display-item-price {
+    font-size: 30px;
+  }
+  .display-total-row {
+    font-size: 64px;
+  }
+  .display-thanks-title {
+    font-size: 68px;
+  }
+  .display-thanks-total,
+  .display-processing-total {
+    font-size: 80px;
+  }
+}
+
+/* Very small / portrait customer screens */
+@media (max-width: 900px) {
+  .display-content {
+    padding: 32px 28px;
+  }
+  .display-mark {
+    width: 72px;
+    height: 72px;
+    font-size: 32px;
+  }
+  .display-item-name,
+  .display-item-price {
+    font-size: 22px;
+  }
+  .display-total-row {
+    font-size: 42px;
+  }
+  .display-thanks-title {
+    font-size: 42px;
+  }
+  .display-thanks-total,
+  .display-processing-total {
+    font-size: 52px;
+  }
+}

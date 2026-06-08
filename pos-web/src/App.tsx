@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
 import { WifiOff } from 'lucide-react';
@@ -7,6 +8,7 @@ import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
 import ProductGrid from '@/components/ProductGrid';
+import CustomerDisplay from '@/display/CustomerDisplay';
 import {
   getCategories,
   getProducts,
@@ -17,6 +19,7 @@ import {
 } from '@/api/client';
 import type { CartItem, CartModifier, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { broadcast } from '@/display/channel';
 
 const SESSION_KEY = 'grid_pos_staff_session';
 const PARKED_CART_KEY = 'grid_pos_parked_cart';
@@ -58,6 +61,46 @@ function lineKey(product: Product, modifiers: CartModifier[]): string {
     .sort()
     .join('|');
   return `${product.id}:${modifierKey}`;
+}
+
+function buildDisplaySnapshot(
+  items: CartItem[],
+  totals: Totals,
+  discount: Discount | null,
+  loyalty: LoyaltySelection | null
+) {
+  const displayItems = items.map((item) => {
+    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
+    const lineTotal = (money(item.product.price) + modifierTotal) * item.quantity;
+    return {
+      name: item.product.name,
+      quantity: item.quantity,
+      lineTotal,
+      modifiers: item.modifiers.map((m) => m.modifier_name),
+    };
+  });
+
+  return {
+    items: displayItems,
+    subtotal: totals.subtotal,
+    discount: totals.discount,
+    loyaltyDiscount: totals.loyaltyDiscount,
+    total: totals.total,
+    loyaltyCustomerName: loyalty?.customer?.name,
+  };
+}
+
+function syncDisplay(
+  items: CartItem[],
+  totals: Totals,
+  discount: Discount | null,
+  loyalty: LoyaltySelection | null
+) {
+  try {
+    broadcast({ type: 'ORDER_UPDATE', payload: buildDisplaySnapshot(items, totals, discount, loyalty) });
+  } catch {
+    // Never block cashier on display broadcast
+  }
 }
 
 function PosWorkspace() {
@@ -122,6 +165,11 @@ function PosWorkspace() {
       total,
     };
   }, [cartItems, discount, loyalty]);
+
+  // Broadcast order state to customer display (non-blocking)
+  useEffect(() => {
+    syncDisplay(cartItems, totals, discount, loyalty);
+  }, [cartItems, discount, loyalty, totals]);
 
   function handleLogin(nextSession: StaffSession) {
     setSession(nextSession);
@@ -271,7 +319,14 @@ function PosWorkspace() {
           onDiscount={toggleDiscount}
           onLoyalty={() => setLoyaltyOpen(true)}
           onClear={clearCart}
-          onCheckout={() => setPaymentOpen(true)}
+          onCheckout={() => {
+            try {
+              broadcast({ type: 'PAYMENT_START', payload: { total: totals.total } });
+            } catch {
+              // non-blocking
+            }
+            setPaymentOpen(true);
+          }}
         />
       </main>
       <LoyaltySheet
@@ -301,10 +356,19 @@ function PosWorkspace() {
   );
 }
 
+function PosApp() {
+  return <PosWorkspace />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <PosWorkspace />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<PosApp />} />
+          <Route path="/display" element={<CustomerDisplay />} />
+        </Routes>
+      </BrowserRouter>
       <Toaster
         position="top-right"
         toastOptions={{

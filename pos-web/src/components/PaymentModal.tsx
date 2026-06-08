@@ -11,6 +11,7 @@ import {
 } from '@/api/client';
 import type { CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
   open: boolean;
@@ -204,6 +205,21 @@ export default function PaymentModal({
       };
       setReceipt(snapshot);
       setStep('complete');
+
+      // Notify customer display (non-blocking)
+      try {
+        broadcast({
+          type: 'PAYMENT_COMPLETE',
+          payload: {
+            total: totals.total,
+            pointsEarned: paidOrder.loyalty_points_earned ?? null,
+          },
+        });
+        broadcast({ type: 'ORDER_COMPLETE' });
+      } catch {
+        // ignore — display is optional
+      }
+
       onOrderComplete();
       toast.success('Order paid');
     } finally {
