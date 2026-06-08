@@ -75,7 +75,16 @@ export const getProducts = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Product>> => {
   const { data } = await api.get('/products', { params });
-  return data;
+  const normalized = Array.isArray(data) 
+    ? data.map((p: any) => ({
+        ...p,
+        price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
+        available: p.is_available ?? true,
+        description: p.description || '',
+        category_name: p.category?.name || '',
+      }))
+    : [];
+  return { data: normalized, total: normalized.length, page: 1, limit: normalized.length || 100 };
 };
 
 export const getProduct = async (id: string): Promise<Product> => {
