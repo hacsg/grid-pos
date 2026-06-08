@@ -1,5 +1,7 @@
 """Order request and response schemas."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -8,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.models.order import OrderStatus
 from app.schemas.common import Money, ORMModel, TimestampSchema, UUIDSchema
+from app.schemas.voucher import OrderVoucherRead
 
 
 class SelectedModifier(BaseModel):
@@ -51,6 +54,8 @@ class OrderCreate(BaseModel):
     loyalty_points_redeemed: int | None = Field(default=None, ge=0)
     loyalty_discount: Money | None = Field(default=None, ge=0)
     customer_id: str | None = Field(default=None, max_length=120)
+    # Voucher codes to apply atomically at order creation time
+    voucher_codes: list[str] | None = Field(default=None, max_length=20)
 
 
 class OrderStatusUpdate(BaseModel):
@@ -77,6 +82,9 @@ class OrderRead(TimestampSchema):
     loyalty_points_redeemed: int | None = None
     loyalty_discount: Money | None = None
     items: list[OrderItemRead] = []
+    # Applied vouchers (populated when present)
+    applied_vouchers: list[OrderVoucherRead] | None = None
+    voucher_discount: Money | None = None
 
 
 class OrderRefundCreate(BaseModel):

@@ -39,6 +39,8 @@ import type {
   ProductModifierAssignment,
   ProductModifierAssignmentCreate,
   ProductModifierAssignmentUpdate,
+  Voucher,
+  VoucherCreate,
 } from '@/types';
 
 const api = axios.create({
@@ -391,6 +393,29 @@ export const exportReportCSV = async (params?: CsvExportParams): Promise<Blob> =
     responseType: 'blob',
   });
   return data;
+};
+
+// Vouchers
+export const getVouchers = async (params?: {
+  type?: 'cdc' | 'acre_group';
+  redeemed?: boolean;
+  limit?: number;
+}): Promise<Voucher[]> => {
+  const { data } = await api.get('/vouchers', { params });
+  const list = Array.isArray(data) ? data : [];
+  return list.map((v: any) => ({
+    ...v,
+    amount: typeof v.amount === 'string' ? parseFloat(v.amount) : (v.amount ?? 0),
+  }));
+};
+
+export const createVoucher = async (payload: VoucherCreate): Promise<Voucher> => {
+  const { data } = await api.post('/vouchers', payload);
+  toast.success('Voucher created');
+  return {
+    ...data,
+    amount: typeof data.amount === 'string' ? parseFloat(data.amount) : (data.amount ?? 0),
+  };
 };
 
 // ---------------------------------------------------------------------------

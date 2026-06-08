@@ -19,6 +19,7 @@ from app.schemas.order import (
     OrderStatusUpdate,
     OrderSummaryRead,
 )
+from app.schemas.voucher import VoucherApplyRequest
 from app.services.orders import (
     add_item_to_order_service,
     create_order as create_order_service,
@@ -27,6 +28,7 @@ from app.services.orders import (
     remove_item_from_order_service,
     update_order_status_service,
 )
+from app.services.vouchers import apply_vouchers_to_order, load_applied_vouchers_for_order
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -138,3 +140,22 @@ async def remove_order_item(
 ) -> Order:
     """Remove an item from a pending order."""
     return await remove_item_from_order_service(db, order_id, item_id)
+@router.post("/{order_id}/vouchers", response_model=OrderRead)
+async def apply_vouchers_to_order_endpoint(
+    order_id: UUID,
+    payload: VoucherApplyRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Order:
+    """Apply voucher codes to a pending order (reduces total, records redemption)."""
+    await apply_vouchers_to_order(db, order_id=order_id, codes=payload.codes)
+    order = await load_order_or_404(db, order_id)
+    return await _enrich_order_response(db, order)
+
+
+async def _enrich_order_response(db: AsyncSession, order: Order) -> Order:
+    """Attach voucher application details to order for response serialization."""
+    applied = await load_applied_vouchers_for_order(db, order.id)
+    order.applied_vouchers = applied  # type: ignore[attr-defined]
+    voucher_sum = sum((a["amount_applied"] for a in applied), 0.0)
+    order.voucher_discount = voucher_sum if voucher_sum else None  # type: ignore[attr-defined]
+    return order

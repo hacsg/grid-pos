@@ -98,6 +98,7 @@ export interface OrderCreate {
   loyalty_points_redeemed?: number | null;
   loyalty_discount?: number | null;
   customer_id?: string | null;
+  voucher_codes?: string[] | null;
 }
 
 export interface OrderRead extends Timestamped {
@@ -113,6 +114,14 @@ export interface OrderRead extends Timestamped {
   loyalty_points_earned?: number | null;
   loyalty_points_redeemed?: number | null;
   loyalty_discount?: number | string | null;
+  voucher_discount?: number | string | null;
+  applied_vouchers?: Array<{
+    id: string;
+    voucher_id: string;
+    code: string;
+    type: 'cdc' | 'acre_group';
+    amount_applied: number | string;
+  }> | null;
   items: Array<{
     id: string;
     product_id: string;
@@ -366,4 +375,61 @@ export async function redeemLoyalty(
     points_to_redeem: pointsToRedeem,
   });
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Vouchers
+// ---------------------------------------------------------------------------
+
+export type VoucherType = 'cdc' | 'acre_group';
+
+export interface VoucherRead extends Timestamped {
+  code: string;
+  type: VoucherType;
+  amount: number | string;
+  redeemed_at?: string | null;
+  redeemed_by_staff_id?: string | null;
+  outlet_id?: string | null;
+  order_id?: string | null;
+}
+
+export interface VoucherValidateResponse {
+  id: string;
+  code: string;
+  type: VoucherType;
+  amount: number | string;
+  is_valid: boolean;
+}
+
+export interface AppliedVoucher {
+  id: string;
+  voucher_id: string;
+  code: string;
+  type: VoucherType;
+  amount_applied: number | string;
+  created_at?: string | null;
+}
+
+export interface VoucherApplyPayload {
+  codes: string[];
+}
+
+export async function validateVoucher(code: string): Promise<VoucherValidateResponse> {
+  const { data } = await api.post<VoucherValidateResponse>('/vouchers/validate', { code: code.trim() });
+  return data;
+}
+
+export async function applyVouchersToOrder(orderId: string, codes: string[]): Promise<OrderRead> {
+  const { data } = await api.post<OrderRead>(`/orders/${orderId}/vouchers`, { codes });
+  return data;
+}
+
+export async function createVoucher(payload: { code: string; type?: VoucherType; amount: number }): Promise<VoucherRead> {
+  const { data } = await api.post<VoucherRead>('/vouchers', payload);
+  return data;
+}
+
+export async function listVouchers(params?: { type?: VoucherType; redeemed?: boolean; limit?: number }): Promise<VoucherRead[]> {
+  const { data } = await api.get<VoucherRead[] | { data: VoucherRead[] }>('/vouchers', { params });
+  return Array.isArray(data) ? data : (data as any).data ?? [];
 }

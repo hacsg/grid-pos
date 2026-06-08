@@ -9,6 +9,7 @@ from app.models.outlet import Outlet
 from app.models.product import Product
 from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
+from app.models.voucher import OrderVoucher, Voucher, VoucherType
 
 __all__ = [
     "Category",
@@ -18,10 +19,13 @@ __all__ = [
     "Order",
     "OrderItem",
     "OrderStatus",
+    "OrderVoucher",
     "Outlet",
     "Product",
     "ProductModifierGroup",
     "Shift",
     "Staff",
     "StaffRole",
+    "Voucher",
+    "VoucherType",
 ]

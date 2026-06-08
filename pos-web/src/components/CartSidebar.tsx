@@ -6,12 +6,13 @@ import {
   Minus,
   PauseCircle,
   Plus,
+  Ticket,
   Trash2,
   UserRound,
   X,
 } from 'lucide-react';
 import { formatCurrency, money } from '@/api/client';
-import type { CartItem, Discount, LoyaltySelection, Totals } from '@/types';
+import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 
 interface CartSidebarProps {
@@ -19,6 +20,7 @@ interface CartSidebarProps {
   totals: Totals;
   discount: Discount | null;
   loyalty: LoyaltySelection | null;
+  vouchers: AppliedVoucher[];
   isOpen: boolean;
   onToggleOpen: () => void;
   onIncrement: (lineId: string) => void;
@@ -27,6 +29,7 @@ interface CartSidebarProps {
   onPark: () => void;
   onDiscount: () => void;
   onLoyalty: () => void;
+  onVouchers: () => void;
   onClear: () => void;
   onCheckout: () => void;
 }
@@ -41,6 +44,7 @@ export default function CartSidebar({
   totals,
   discount,
   loyalty,
+  vouchers,
   isOpen,
   onToggleOpen,
   onIncrement,
@@ -49,6 +53,7 @@ export default function CartSidebar({
   onPark,
   onDiscount,
   onLoyalty,
+  onVouchers,
   onClear,
   onCheckout,
 }: CartSidebarProps) {
@@ -100,6 +105,12 @@ export default function CartSidebar({
             {loyalty.reward.name}
           </span>
         )}
+        {vouchers.map((v) => (
+          <span className="cart-chip" key={v.code}>
+            <Ticket size={15} aria-hidden="true" />
+            {v.type === 'cdc' ? 'CDC' : 'Acre Group'} {formatCurrency(v.amount)}
+          </span>
+        ))}
       </div>
 
       <div className="cart-items">
@@ -184,6 +195,12 @@ export default function CartSidebar({
             <strong>-{formatCurrency(totals.loyaltyDiscount)}</strong>
           </div>
         )}
+        {totals.voucherDiscount > 0 && (
+          <div>
+            <span>Vouchers</span>
+            <strong>-{formatCurrency(totals.voucherDiscount)}</strong>
+          </div>
+        )}
         <div className="total-row">
           <span>Total</span>
           <strong>{formatCurrency(totals.total)}</strong>
@@ -202,6 +219,10 @@ export default function CartSidebar({
         <button className="secondary-button" type="button" onClick={onLoyalty}>
           <UserRound size={18} aria-hidden="true" />
           Loyalty
+        </button>
+        <button className="secondary-button" type="button" onClick={onVouchers}>
+          <Ticket size={18} aria-hidden="true" />
+          Voucher
         </button>
         <button className="secondary-button danger-text" type="button" onClick={onClear} disabled={items.length === 0}>
           <Trash2 size={18} aria-hidden="true" />

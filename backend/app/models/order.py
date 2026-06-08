@@ -59,4 +59,12 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     outlet = relationship("Outlet", back_populates="orders")
     staff = relationship("Staff", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    order_voucher_links = relationship(
+        "OrderVoucher", back_populates="order", cascade="all, delete-orphan"
+    )
+    vouchers = relationship(
+        "Voucher",
+        back_populates="order",
+        foreign_keys="Voucher.order_id",
+    )
 

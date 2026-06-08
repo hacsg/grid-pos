@@ -360,3 +360,27 @@ export interface CsvExportParams {
   date_from?: string;
   date_to?: string;
 }
+// --- Vouchers ---
+export type VoucherType = 'cdc' | 'acre_group';
+
+export interface Voucher {
+  id: string;
+  code: string;
+  type: VoucherType;
+  amount: number;
+  redeemed_at?: string | null;
+  redeemed_by_staff_id?: string | null;
+  outlet_id?: string | null;
+  order_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  outlet_name?: string;
+  staff_name?: string;
+  order_number?: string;
+}
+
+export interface VoucherCreate {
+  code: string;
+  type?: VoucherType;
+  amount: number;
+}

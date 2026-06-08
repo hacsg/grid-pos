@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CreditCard, Printer, Receipt, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
+  applyVouchersToOrder,
   createOrder,
   formatCurrency,
   money,
@@ -9,7 +10,7 @@ import {
   updateOrderStatus,
   type OrderRead,
 } from '@/api/client';
-import type { CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { broadcast } from '@/display/channel';
 
@@ -20,6 +21,7 @@ interface PaymentModalProps {
   totals: Totals;
   discount: Discount | null;
   loyalty: LoyaltySelection | null;
+  vouchers: AppliedVoucher[];
   onClose: () => void;
   onOrderComplete: () => void;
 }
@@ -31,6 +33,7 @@ interface ReceiptSnapshot {
   order: OrderRead;
   items: CartItem[];
   totals: Totals;
+  vouchers: AppliedVoucher[];
   paymentMode: PaymentMode;
   cashAmount: number;
   cardAmount: number;
@@ -48,6 +51,14 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     ];
   });
 
+  const voucherLines: string[] = [];
+  if (receipt.vouchers && receipt.vouchers.length > 0) {
+    voucherLines.push(`Vouchers redeemed: ${formatCurrency(receipt.totals.voucherDiscount || receipt.vouchers.reduce((s, v) => s + v.amount, 0))}`);
+    receipt.vouchers.forEach((v) => {
+      voucherLines.push(`  ${v.type === 'cdc' ? 'CDC' : 'Acre Group'} ${v.code} -${formatCurrency(v.amount)}`);
+    });
+  }
+
   return [
     'Grid POS',
     session.outlet.name,
@@ -58,9 +69,12 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     '',
     `Subtotal ${formatCurrency(receipt.totals.subtotal)}`,
     `Discount -${formatCurrency(receipt.totals.discount + receipt.totals.loyaltyDiscount)}`,
+    ...(receipt.totals.voucherDiscount > 0 ? [`Vouchers -${formatCurrency(receipt.totals.voucherDiscount)}`] : []),
     `Total ${formatCurrency(receipt.totals.total)}`,
     `Payment ${receipt.paymentMode}`,
     receipt.changeDue > 0 ? `Change ${formatCurrency(receipt.changeDue)}` : '',
+    '',
+    ...voucherLines,
     '',
     'Thank you',
   ]
@@ -112,6 +126,7 @@ export default function PaymentModal({
   totals,
   discount,
   loyalty,
+  vouchers,
   onClose,
   onOrderComplete,
 }: PaymentModalProps) {
@@ -164,6 +179,8 @@ export default function PaymentModal({
     try {
       setSubmitting(true);
       const paymentReference = `POS-${Date.now()}`;
+      const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
+
       const pendingOrder = await createOrder({
         outlet_id: session.outlet.id,
         staff_id: session.staff.id,
@@ -174,6 +191,7 @@ export default function PaymentModal({
         loyalty_points_redeemed: loyalty?.reward?.points ?? null,
         loyalty_discount: totals.discount + totals.loyaltyDiscount > 0 ? totals.discount + totals.loyaltyDiscount : null,
         customer_id: loyalty?.customer.customer_id ?? null,
+        voucher_codes: voucherCodes,
         items: items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -188,6 +206,15 @@ export default function PaymentModal({
         await redeemLoyalty(loyalty.customer.member_id, pendingOrder.id, loyalty.reward.points);
       }
 
+      // If backend didn't apply via create (older path), ensure applied. Safe no-op if already applied.
+      if (voucherCodes && voucherCodes.length > 0 && (!pendingOrder.applied_vouchers || pendingOrder.applied_vouchers.length === 0)) {
+        try {
+          await applyVouchersToOrder(pendingOrder.id, voucherCodes);
+        } catch {
+          // ignore — creation path should have handled it
+        }
+      }
+
       const paidOrder = await updateOrderStatus(pendingOrder.id, {
         status: 'paid',
         payment_method: mode,
@@ -198,6 +225,7 @@ export default function PaymentModal({
         order: paidOrder,
         items,
         totals,
+        vouchers,
         paymentMode: mode,
         cashAmount: cashDue,
         cardAmount,
@@ -334,6 +362,12 @@ export default function PaymentModal({
                     <strong>-{formatCurrency(totals.loyaltyDiscount)}</strong>
                   </div>
                 )}
+                {vouchers.length > 0 && (
+                  <div>
+                    <span>Vouchers ({vouchers.length})</span>
+                    <strong>-{formatCurrency(totals.voucherDiscount)}</strong>
+                  </div>
+                )}
                 <div>
                   <span>Total</span>
                   <strong>{formatCurrency(totals.total)}</strong>
@@ -390,6 +424,11 @@ export default function PaymentModal({
                   <span>Total</span>
                   <strong>{formatCurrency(receipt.totals.total)}</strong>
                 </div>
+                {receipt.vouchers && receipt.vouchers.length > 0 && (
+                  <div className="receipt-vouchers" style={{ marginTop: 8, fontSize: '12px', opacity: 0.85 }}>
+                    Vouchers redeemed: {formatCurrency(receipt.totals.voucherDiscount || 0)}
+                  </div>
+                )}
               </section>
 
               <footer className="sheet-actions">

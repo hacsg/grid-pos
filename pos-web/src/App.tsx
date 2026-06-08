@@ -8,6 +8,7 @@ import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
 import ProductGrid from '@/components/ProductGrid';
+import VoucherSheet from '@/components/VoucherSheet';
 import CustomerDisplay from '@/display/CustomerDisplay';
 import {
   getCategories,
@@ -17,7 +18,7 @@ import {
   type LoyaltyReward,
   type Product,
 } from '@/api/client';
-import type { CartItem, CartModifier, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { broadcast } from '@/display/channel';
 
@@ -67,7 +68,8 @@ function buildDisplaySnapshot(
   items: CartItem[],
   totals: Totals,
   discount: Discount | null,
-  loyalty: LoyaltySelection | null
+  loyalty: LoyaltySelection | null,
+  vouchers: AppliedVoucher[] = []
 ) {
   const displayItems = items.map((item) => {
     const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
@@ -80,11 +82,14 @@ function buildDisplaySnapshot(
     };
   });
 
+  const voucherDiscount = vouchers.reduce((s, v) => s + v.amount, 0);
+
   return {
     items: displayItems,
     subtotal: totals.subtotal,
     discount: totals.discount,
     loyaltyDiscount: totals.loyaltyDiscount,
+    voucherDiscount,
     total: totals.total,
     loyaltyCustomerName: loyalty?.customer?.name,
   };
@@ -94,10 +99,11 @@ function syncDisplay(
   items: CartItem[],
   totals: Totals,
   discount: Discount | null,
-  loyalty: LoyaltySelection | null
+  loyalty: LoyaltySelection | null,
+  vouchers: AppliedVoucher[] = []
 ) {
   try {
-    broadcast({ type: 'ORDER_UPDATE', payload: buildDisplaySnapshot(items, totals, discount, loyalty) });
+    broadcast({ type: 'ORDER_UPDATE', payload: buildDisplaySnapshot(items, totals, discount, loyalty, vouchers) });
   } catch {
     // Never block cashier on display broadcast
   }
@@ -110,7 +116,9 @@ function PosWorkspace() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [loyalty, setLoyalty] = useState<LoyaltySelection | null>(null);
+  const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -157,20 +165,22 @@ function PosWorkspace() {
     const tax = 0;
     const cartDiscount = discount?.kind === 'percent' ? subtotal * (discount.amount / 100) : discount?.amount ?? 0;
     const loyaltyDiscount = loyalty?.reward?.discount_amount ?? 0;
-    const total = Math.max(0, subtotal + tax - cartDiscount - loyaltyDiscount);
+    const voucherDiscount = vouchers.reduce((s, v) => s + v.amount, 0);
+    const total = Math.max(0, subtotal + tax - cartDiscount - loyaltyDiscount - voucherDiscount);
     return {
       subtotal,
       tax,
       discount: cartDiscount,
       loyaltyDiscount,
+      voucherDiscount,
       total,
     };
-  }, [cartItems, discount, loyalty]);
+  }, [cartItems, discount, loyalty, vouchers]);
 
   // Broadcast order state to customer display (non-blocking)
   useEffect(() => {
-    syncDisplay(cartItems, totals, discount, loyalty);
-  }, [cartItems, discount, loyalty, totals]);
+    syncDisplay(cartItems, totals, discount, loyalty, vouchers);
+  }, [cartItems, discount, loyalty, vouchers, totals]);
 
   function handleLogin(nextSession: StaffSession) {
     setSession(nextSession);
@@ -184,6 +194,7 @@ function PosWorkspace() {
     setCartItems([]);
     setDiscount(null);
     setLoyalty(null);
+    setVouchers([]);
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem('auth_token');
   }
@@ -232,6 +243,7 @@ function PosWorkspace() {
     setCartItems([]);
     setDiscount(null);
     setLoyalty(null);
+    setVouchers([]);
   }
 
   function parkCart() {
@@ -247,6 +259,7 @@ function PosWorkspace() {
         items: cartItems,
         discount,
         loyalty,
+        vouchers,
       })
     );
     clearCart();
@@ -273,10 +286,24 @@ function PosWorkspace() {
     setLoyalty({ customer: loyalty.customer, reward });
   }
 
+  function handleApplyVoucher(v: AppliedVoucher) {
+    tapFeedback();
+    setVouchers((prev) => {
+      if (prev.some((p) => p.code.toUpperCase() === v.code.toUpperCase())) return prev;
+      return [...prev, v];
+    });
+  }
+
+  function handleRemoveVoucher(code: string) {
+    tapFeedback();
+    setVouchers((prev) => prev.filter((v) => v.code !== code));
+  }
+
   function handleOrderComplete() {
     setCartItems([]);
     setDiscount(null);
     setLoyalty(null);
+    setVouchers([]);
     setCartOpen(false);
   }
 
@@ -311,6 +338,7 @@ function PosWorkspace() {
           totals={totals}
           discount={discount}
           loyalty={loyalty}
+          vouchers={vouchers}
           isOpen={cartOpen}
           onToggleOpen={() => setCartOpen((open) => !open)}
           onIncrement={(lineId) => updateQuantity(lineId, 1)}
@@ -319,6 +347,7 @@ function PosWorkspace() {
           onPark={parkCart}
           onDiscount={toggleDiscount}
           onLoyalty={() => setLoyaltyOpen(true)}
+          onVouchers={() => setVoucherOpen(true)}
           onClear={clearCart}
           onCheckout={() => {
             try {
@@ -343,6 +372,14 @@ function PosWorkspace() {
         }}
         onContinue={() => setLoyaltyOpen(false)}
       />
+      <VoucherSheet
+        open={voucherOpen}
+        applied={vouchers}
+        onClose={() => setVoucherOpen(false)}
+        onApply={handleApplyVoucher}
+        onRemove={handleRemoveVoucher}
+        onContinue={() => setVoucherOpen(false)}
+      />
       <PaymentModal
         open={paymentOpen}
         session={session}
@@ -350,6 +387,7 @@ function PosWorkspace() {
         totals={totals}
         discount={discount}
         loyalty={loyalty}
+        vouchers={vouchers}
         onClose={() => setPaymentOpen(false)}
         onOrderComplete={handleOrderComplete}
       />

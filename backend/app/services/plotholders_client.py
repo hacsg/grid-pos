@@ -133,6 +133,55 @@ class PlotholdersClient:
         """Redeem a Plotholders voucher."""
         return await self._request("POST", f"/api/vouchers/{voucher_id}/redeem")
 
+    async def get_voucher(self, voucher_ref: str) -> dict[str, Any] | None:
+        """Return a Plotholders voucher by id or code.
+
+        Tries direct path first, then falls back to query param lookup.
+        """
+        ref = voucher_ref.strip()
+        # Try treating as path id/code
+        data = await self._request(
+            "GET",
+            f"/api/vouchers/{ref}",
+            allow_not_found=True,
+        )
+        if data:
+            return data if isinstance(data, dict) else None
+
+        # Fallback: list query (if supported by upstream)
+        try:
+            list_data = await self._request(
+                "GET",
+                "/api/vouchers",
+                params={"code": ref},
+                allow_not_found=True,
+            )
+        except PlotholdersAPIError:
+            list_data = None
+
+        if list_data is None:
+            return None
+
+        vouchers: list[dict[str, Any]] = []
+        if isinstance(list_data, list):
+            vouchers = [v for v in list_data if isinstance(v, dict)]
+        elif isinstance(list_data, dict):
+            for key in ("vouchers", "data", "results", "items"):
+                val = list_data.get(key)
+                if isinstance(val, list):
+                    vouchers = [v for v in val if isinstance(v, dict)]
+                    break
+            if not vouchers and "id" in list_data:
+                vouchers = [list_data]
+
+        for v in vouchers:
+            code_val = v.get("code") or v.get("id") or v.get("voucher_code")
+            if isinstance(code_val, str) and code_val.lower() == ref.lower():
+                return v
+            if v.get("id") == ref:
+                return v
+        return vouchers[0] if vouchers else None
+
     async def redeem_reward(self, reward_id: str) -> dict[str, Any]:
         """Redeem a Plotholders reward."""
         return await self._request("POST", f"/api/rewards/{reward_id}/redeem")

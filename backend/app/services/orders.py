@@ -16,8 +16,10 @@ from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.product import Product
 from app.models.staff import Staff
+from app.models.voucher import OrderVoucher, Voucher
 from app.schemas.order import OrderCreate, OrderItemCreate
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
+from app.services.vouchers import apply_vouchers_to_order
 
 CENT = Decimal("0.01")
 logger = logging.getLogger(__name__)
@@ -109,14 +111,33 @@ async def _build_order_item(db: AsyncSession, item: OrderItemCreate, outlet_id: 
 
 
 async def _recalculate_order_totals(db: AsyncSession, order: Order) -> None:
-    """Recalculate subtotal and total from the order's existing items."""
+    """Recalculate subtotal and total from the order's existing items and applied vouchers."""
     subtotal = Decimal("0.00")
     for item in order.items:
         line_total = quantize_money(item.unit_price * item.quantity)
         subtotal += line_total
     order.subtotal = quantize_money(subtotal)
-    discount = order.loyalty_discount or Decimal("0.00")
-    order.total = quantize_money(subtotal - discount)
+
+    loyalty_discount = order.loyalty_discount or Decimal("0.00")
+
+    # Sum any already-linked order vouchers (for in-place mutations like add/remove item)
+    voucher_total = Decimal("0.00")
+    if order.order_voucher_links:
+        for ov in order.order_voucher_links:
+            voucher_total += ov.amount_applied
+    else:
+        # Fallback: query if links not loaded
+        result = await db.execute(
+            select(func.coalesce(func.sum(OrderVoucher.amount_applied), 0)).where(
+                OrderVoucher.order_id == order.id
+            )
+        )
+        voucher_total = result.scalar_one() or Decimal("0.00")
+
+    computed_total = subtotal - loyalty_discount - voucher_total
+    if computed_total < 0:
+        computed_total = Decimal("0.00")
+    order.total = quantize_money(computed_total)
 
 
 def _validate_order_not_paid(order: Order) -> None:
@@ -182,6 +203,19 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
     db.add(order)
     await db.commit()
 
+    # Apply vouchers provided at creation time (after order row exists)
+    if payload.voucher_codes:
+        try:
+            await apply_vouchers_to_order(
+                db,
+                order_id=order.id,
+                codes=payload.voucher_codes,
+                staff=staff,
+            )
+        except HTTPException:
+            # Re-raise so caller sees validation errors (e.g. already redeemed)
+            raise
+
     if payload.customer_id:
         try:
             await PlotholdersClient().record_purchase(
@@ -195,17 +229,17 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
 
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order.id)
     )
     return result.scalar_one()
 
 
 async def load_order_or_404(db: AsyncSession, order_id: UUID) -> Order:
-    """Load an order with items or raise a 404 response."""
+    """Load an order with items (and voucher links) or raise a 404 response."""
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order_id)
     )
     order = result.scalar_one_or_none()
@@ -233,7 +267,7 @@ async def update_order_status_service(
 
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order.id)
     )
     return result.scalar_one()
@@ -256,7 +290,7 @@ async def refund_order_service(
 
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order.id)
     )
     return result.scalar_one()
@@ -274,7 +308,7 @@ async def add_item_to_order_service(db: AsyncSession, order_id: UUID, item: Orde
 
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order.id)
     )
     return result.scalar_one()
@@ -297,7 +331,7 @@ async def remove_item_from_order_service(db: AsyncSession, order_id: UUID, item_
 
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order.id)
     )
     return result.scalar_one()

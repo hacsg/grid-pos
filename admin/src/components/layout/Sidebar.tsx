@@ -8,6 +8,7 @@ import {
   Users,
   Store,
   BarChart3,
+  Ticket,
 } from 'lucide-react';
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/orders', icon: ShoppingCart, label: 'Orders' },
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/outlets', icon: Store, label: 'Outlets' },
+  { to: '/vouchers', icon: Ticket, label: 'Vouchers' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
 ];
 

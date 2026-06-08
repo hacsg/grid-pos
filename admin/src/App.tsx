@@ -10,6 +10,7 @@ import Orders from '@/pages/Orders';
 import Staff from '@/pages/Staff';
 import Outlets from '@/pages/Outlets';
 import Reports from '@/pages/Reports';
+import Vouchers from '@/pages/Vouchers';
 import Login from '@/pages/Login';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="staff" element={<Staff />} />
             <Route path="outlets" element={<Outlets />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="vouchers" element={<Vouchers />} />
           </Route>
         </Routes>
       </BrowserRouter>
