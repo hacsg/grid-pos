@@ -1,0 +1,19 @@
+{
+  "name": "Grid POS",
+  "short_name": "Grid POS",
+  "description": "Grid POS cashier web app for dual-screen Windows POS terminals.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8f5f0",
+  "theme_color": "#2f6f3e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
