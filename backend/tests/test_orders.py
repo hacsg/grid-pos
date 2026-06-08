@@ -92,6 +92,35 @@ class TestCreateOrder:
         resp = await client.post("/api/orders", json=payload)
         assert resp.status_code == 404
 
+    async def test_create_with_customer_id_records_plotholders_purchase(
+        self, client: AsyncClient, outlet, cashier_staff, product, monkeypatch
+    ) -> None:
+        recorded: dict[str, object] = {}
+
+        class FakePlotholdersClient:
+            async def record_purchase(self, **payload) -> dict[str, object]:
+                recorded.update(payload)
+                return {"id": "moment_1"}
+
+        monkeypatch.setattr("app.services.orders.PlotholdersClient", FakePlotholdersClient)
+
+        resp = await client.post(
+            "/api/orders",
+            json={
+                "outlet_id": str(outlet.id),
+                "staff_id": str(cashier_staff.id),
+                "customer_id": "cus_1",
+                "items": [{"product_id": str(product.id), "quantity": 1}],
+            },
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert recorded["customer_id"] == "cus_1"
+        assert recorded["order_id"] == UUID(data["id"])
+        assert str(recorded["amount"]) == "9.99"
+        assert recorded["outlet"] == outlet.name
+
 
 class TestListOrders:
     """GET /api/orders"""

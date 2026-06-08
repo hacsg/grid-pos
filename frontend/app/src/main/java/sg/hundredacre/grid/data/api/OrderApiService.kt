@@ -17,10 +17,11 @@ data class OrderRequest(
     val status: String,
     val staff_id: String,
     val created_at: Long,
-    val items: List<OrderItemRequest>
+    val items: List<OrderItemRequest>,
+    val customer_id: String? = null
 ) {
     companion object {
-        fun from(order: Order, items: List<OrderItem>): OrderRequest {
+        fun from(order: Order, items: List<OrderItem>, customerId: String? = null): OrderRequest {
             return OrderRequest(
                 order_number = order.orderNumber,
                 total_amount = order.totalAmount,
@@ -28,7 +29,8 @@ data class OrderRequest(
                 status = order.status,
                 staff_id = order.staffId,
                 created_at = order.createdAt,
-                items = items.map { OrderItemRequest.from(it) }
+                items = items.map { OrderItemRequest.from(it) },
+                customer_id = customerId
             )
         }
     }

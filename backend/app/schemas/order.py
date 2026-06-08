@@ -50,6 +50,7 @@ class OrderCreate(BaseModel):
     loyalty_member_id: UUID | None = None
     loyalty_points_redeemed: int | None = Field(default=None, ge=0)
     loyalty_discount: Money | None = Field(default=None, ge=0)
+    customer_id: str | None = Field(default=None, max_length=120)
 
 
 class OrderStatusUpdate(BaseModel):
@@ -107,4 +108,3 @@ class OrderSummaryRead(ORMModel):
     loyalty_discount: Money | None = None
     created_at: datetime
     updated_at: datetime
-

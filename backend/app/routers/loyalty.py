@@ -1,6 +1,8 @@
 """Loyalty management API routes."""
 
-from fastapi import APIRouter, Depends
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -16,8 +18,55 @@ from app.schemas.loyalty import (
     LoyaltySignupResponse,
 )
 from app.services.loyalty import LoyaltyService
+from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
+
+
+def get_plotholders_client() -> PlotholdersClient:
+    """Build a Plotholders client for request handlers."""
+    return PlotholdersClient()
+
+
+def _plotholders_http_exception(exc: PlotholdersAPIError) -> HTTPException:
+    """Map upstream Plotholders failures to API responses."""
+    if exc.status_code is not None and 400 <= exc.status_code < 500:
+        detail = exc.response_body or str(exc)
+        return HTTPException(status_code=exc.status_code, detail=detail)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Plotholders API is unavailable",
+    )
+
+
+@router.get("/lookup")
+async def lookup_plotholders_customer(
+    phone: str | None = Query(default=None, min_length=1),
+    referral_code: str | None = Query(default=None, min_length=1),
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+) -> dict[str, Any]:
+    """Proxy Plotholders customer lookup by phone or referral code."""
+    if bool(phone) == bool(referral_code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide exactly one of phone or referral_code",
+        )
+
+    try:
+        customer = (
+            await plotholders.lookup_by_phone(phone)
+            if phone is not None
+            else await plotholders.lookup_by_referral_code(referral_code or "")
+        )
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc
+
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Customer not found", "signup_available": True},
+        )
+    return customer
 
 
 @router.post("/lookup", response_model=LoyaltyMemberProfile)
@@ -68,17 +117,58 @@ async def redeem_points(
     )
 
 
-@router.post("/signup", response_model=LoyaltySignupResponse, status_code=201)
+@router.post("/signup", status_code=201)
 async def signup_member(
     payload: LoyaltySignupRequest,
     db: AsyncSession = Depends(get_db),
-) -> LoyaltySignupResponse:
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+) -> dict[str, Any] | LoyaltySignupResponse:
     """Create a new loyalty program member.
 
     Returns basic profile with zero points and bronze tier.
     """
+    uses_plotholders_payload = any(
+        value is not None
+        for value in (payload.email, payload.birthday, payload.referred_by_code)
+    )
+    if uses_plotholders_payload or payload.name is None:
+        try:
+            return await plotholders.create_customer(
+                phone=payload.phone,
+                email=payload.email,
+                name=payload.name,
+                birthday=payload.birthday,
+                referred_by_code=payload.referred_by_code,
+            )
+        except PlotholdersAPIError as exc:
+            raise _plotholders_http_exception(exc) from exc
+
     return await LoyaltyService.signup(
         db,
         name=payload.name,
         phone=payload.phone,
     )
+
+
+@router.post("/redeem-voucher/{voucher_id}")
+async def redeem_voucher(
+    voucher_id: str,
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+) -> dict[str, Any]:
+    """Proxy Plotholders voucher redemption."""
+    try:
+        return await plotholders.redeem_voucher(voucher_id)
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc
+
+
+@router.post("/redeem-reward/{reward_id}")
+async def redeem_reward(
+    reward_id: str,
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+) -> dict[str, Any]:
+    """Proxy Plotholders reward redemption."""
+    try:
+        return await plotholders.redeem_reward(reward_id)
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc

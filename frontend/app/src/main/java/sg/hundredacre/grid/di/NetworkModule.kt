@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import sg.hundredacre.grid.data.api.LoyaltyApiService
 import sg.hundredacre.grid.data.api.OrderApiService
 import sg.hundredacre.grid.data.api.PaymentApiService
 import sg.hundredacre.grid.data.api.ShiftApiService
@@ -61,5 +62,11 @@ object NetworkModule {
     @Singleton
     fun provideOrderApiService(retrofit: Retrofit): OrderApiService {
         return retrofit.create(OrderApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLoyaltyApiService(retrofit: Retrofit): LoyaltyApiService {
+        return retrofit.create(LoyaltyApiService::class.java)
     }
 }

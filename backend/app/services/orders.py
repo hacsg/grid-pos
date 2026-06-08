@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -16,8 +17,10 @@ from app.models.outlet import Outlet
 from app.models.product import Product
 from app.models.staff import Staff
 from app.schemas.order import OrderCreate, OrderItemCreate
+from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 
 CENT = Decimal("0.01")
+logger = logging.getLogger(__name__)
 
 # Valid status transitions: current -> set of allowed next statuses
 _ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
@@ -178,6 +181,17 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
     order.total = quantize_money(subtotal - discount)
     db.add(order)
     await db.commit()
+
+    if payload.customer_id:
+        try:
+            await PlotholdersClient().record_purchase(
+                customer_id=payload.customer_id,
+                order_id=order.id,
+                amount=order.total,
+                outlet=outlet.name,
+            )
+        except PlotholdersAPIError:
+            logger.exception("Unable to record Plotholders purchase for order %s", order.id)
 
     result = await db.execute(
         select(Order)

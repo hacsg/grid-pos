@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import sg.hundredacre.grid.data.api.CustomerData
 import sg.hundredacre.grid.ui.components.CartItemRow
 import sg.hundredacre.grid.ui.components.GridPrimaryButton
 import sg.hundredacre.grid.ui.components.GridSecondaryButton
@@ -58,11 +59,11 @@ import sg.hundredacre.grid.ui.components.ProductCard
 import sg.hundredacre.grid.ui.screens.checkout.DiscountResult
 import sg.hundredacre.grid.ui.screens.checkout.DiscountSheet
 import sg.hundredacre.grid.ui.screens.checkout.IsCartItem
-import sg.hundredacre.grid.ui.screens.checkout.LoyaltyLookupSheet
 import sg.hundredacre.grid.ui.screens.checkout.LoyaltyRedemptionResult
 import sg.hundredacre.grid.ui.screens.checkout.ParkOrderDialog
 import sg.hundredacre.grid.ui.screens.checkout.ParkedOrder
 import sg.hundredacre.grid.ui.screens.checkout.ParkedOrdersScreen
+import sg.hundredacre.grid.ui.loyalty.LoyaltyBottomSheet
 import sg.hundredacre.grid.ui.theme.GridBackground
 import sg.hundredacre.grid.ui.theme.GridBorder
 import sg.hundredacre.grid.ui.theme.GridBorderMedium
@@ -96,6 +97,7 @@ fun MenuScreen(
     // ── Loyalty state ──
     var showLoyaltySheet by remember { mutableStateOf(false) }
     var activeLoyaltyRedemption by remember { mutableStateOf<LoyaltyRedemptionResult?>(null) }
+    var activeLoyaltyCustomer by remember { mutableStateOf<CustomerData?>(null) }
 
     // ── Parked orders state ──
     val parkedOrders = remember { mutableStateListOf<ParkedOrder>() }
@@ -234,7 +236,11 @@ fun MenuScreen(
                                 Icon(
                                     imageVector = Icons.Default.CardMembership,
                                     contentDescription = "Loyalty",
-                                    tint = if (activeLoyaltyRedemption != null) GridPrimary else GridTextSecondary
+                                    tint = if (activeLoyaltyCustomer != null || activeLoyaltyRedemption != null) {
+                                        GridPrimary
+                                    } else {
+                                        GridTextSecondary
+                                    }
                                 )
                             }
 
@@ -297,6 +303,7 @@ fun MenuScreen(
                 cartItems = cartItems,
                 activeDiscount = activeDiscount,
                 activeLoyaltyRedemption = activeLoyaltyRedemption,
+                activeLoyaltyCustomer = activeLoyaltyCustomer,
                 onIncrement = { index ->
                     val item = cartItems[index]
                     cartItems[index] = item.copy(quantity = item.quantity + 1)
@@ -313,6 +320,7 @@ fun MenuScreen(
                     cartItems.clear()
                     activeDiscount = null
                     activeLoyaltyRedemption = null
+                    activeLoyaltyCustomer = null
                 },
                 onHoldOrder = {
                     if (cartItems.isNotEmpty()) {
@@ -381,14 +389,12 @@ fun MenuScreen(
             }
         )
 
-        // ── Loyalty Lookup Bottom Sheet ──
-        LoyaltyLookupSheet(
+        // ── Plotholders Loyalty Bottom Sheet ──
+        LoyaltyBottomSheet(
             isVisible = showLoyaltySheet,
-            subtotal = subtotal,
             onDismiss = { showLoyaltySheet = false },
-            onRedeem = { result ->
-                activeLoyaltyRedemption = result
-                showLoyaltySheet = false
+            onCustomerSelected = { customer ->
+                activeLoyaltyCustomer = customer
             }
         )
 
@@ -418,6 +424,7 @@ fun MenuScreen(
                 cartItems.clear()
                 activeDiscount = null
                 activeLoyaltyRedemption = null
+                activeLoyaltyCustomer = null
                 showParkDialog = false
             }
         )
@@ -487,6 +494,7 @@ private fun CartSidebar(
     cartItems: MutableList<CartItem>,
     activeDiscount: DiscountResult?,
     activeLoyaltyRedemption: LoyaltyRedemptionResult?,
+    activeLoyaltyCustomer: CustomerData?,
     onIncrement: (Int) -> Unit,
     onDecrement: (Int) -> Unit,
     onClear: () -> Unit,
@@ -564,7 +572,7 @@ private fun CartSidebar(
         HorizontalDivider(color = GridBorder, thickness = 1.dp)
 
         // ── Discount/Loyalty chips (compact) ──
-        if (activeDiscount != null || activeLoyaltyRedemption != null) {
+        if (activeDiscount != null || activeLoyaltyRedemption != null || activeLoyaltyCustomer != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -583,6 +591,23 @@ private fun CartSidebar(
                             fontSize = 11.sp,
                             color = GridSuccess,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+                activeLoyaltyCustomer?.let { customer ->
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = GridPrimary.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = "${customer.name ?: "Loyalty"} - ${customer.tier ?: "member"}",
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 11.sp,
+                            color = GridPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

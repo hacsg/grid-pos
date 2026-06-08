@@ -66,8 +66,11 @@ class LoyaltyRedeemResponse(BaseModel):
 class LoyaltySignupRequest(BaseModel):
     """Payload for creating a new loyalty member."""
 
-    name: str = Field(min_length=1, max_length=120)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
     phone: str = Field(min_length=6, max_length=20)
+    email: str | None = Field(default=None, max_length=255)
+    birthday: str | None = Field(default=None, max_length=20)
+    referred_by_code: str | None = Field(default=None, min_length=1, max_length=40)
 
 
 class LoyaltySignupResponse(BaseModel):
