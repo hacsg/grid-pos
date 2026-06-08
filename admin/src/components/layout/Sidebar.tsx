@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
+  SlidersHorizontal,
   Tags,
   ShoppingCart,
   Users,
@@ -12,6 +13,7 @@ import {
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/products', icon: Package, label: 'Products' },
+  { to: '/modifiers', icon: SlidersHorizontal, label: 'Modifiers' },
   { to: '/categories', icon: Tags, label: 'Categories' },
   { to: '/orders', icon: ShoppingCart, label: 'Orders' },
   { to: '/staff', icon: Users, label: 'Staff' },

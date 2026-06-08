@@ -28,10 +28,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
     category = relationship("Category", back_populates="products")
-    modifier_groups = relationship(
-        "ModifierGroup",
+    modifier_group_assignments = relationship(
+        "ProductModifierGroup",
         back_populates="product",
         cascade="all, delete-orphan",
+        order_by="ProductModifierGroup.display_order",
     )
     order_items = relationship("OrderItem", back_populates="product")
 

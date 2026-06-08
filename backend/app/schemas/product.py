@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.category import CategoryRead
 from app.schemas.common import Money, TimestampSchema
-from app.schemas.modifier import ModifierGroupRead
+from app.schemas.modifier import ProductModifierAssignmentRead
 
 
 class ProductBase(BaseModel):
@@ -39,10 +39,10 @@ class ProductRead(ProductBase, TimestampSchema):
 
 
 class ProductDetailRead(ProductRead):
-    """Product response payload with category and modifier groups."""
+    """Product response payload with category and assigned modifier groups."""
 
     category: CategoryRead
-    modifier_groups: list[ModifierGroupRead] = []
+    modifier_groups: list[ProductModifierAssignmentRead] = []
 
 
 class ProductAvailabilityUpdate(BaseModel):

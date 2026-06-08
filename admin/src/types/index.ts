@@ -10,18 +10,81 @@ export interface Product {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  modifier_groups: ModifierGroup[];
+  modifier_groups: ProductModifierAssignment[];
+}
+
+// --- Modifier Management Types ---
+export interface ModifierOption {
+  id: string;
+  name: string;
+  price_adjustment: number;
+  display_order: number;
+  is_available: boolean;
+  created_at: string;
 }
 
 export interface ModifierGroup {
   id: string;
   name: string;
-  min_select: number;
-  max_select: number;
-  required: boolean;
-  items: ModifierItem[];
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  options: ModifierOption[];
 }
 
+export interface ModifierGroupCreate {
+  name: string;
+  description?: string | null;
+}
+
+export interface ModifierGroupUpdate {
+  name?: string;
+  description?: string | null;
+}
+
+export interface ModifierOptionCreate {
+  name: string;
+  price_adjustment?: number;
+  display_order?: number;
+  is_available?: boolean;
+}
+
+export interface ModifierOptionUpdate {
+  name?: string;
+  price_adjustment?: number;
+  display_order?: number;
+  is_available?: boolean;
+}
+
+// --- Product Assignment Types ---
+export interface ProductModifierAssignment {
+  id: string;
+  group_id: string;
+  group_name: string;
+  group_description?: string | null;
+  min_select: number;
+  max_select: number;
+  is_required: boolean;
+  display_order: number;
+  options: ModifierOption[];
+}
+
+export interface ProductModifierAssignmentCreate {
+  group_id: string;
+  min_select?: number;
+  max_select?: number;
+  is_required?: boolean;
+  display_order?: number;
+}
+
+export interface ProductModifierAssignmentUpdate {
+  min_select?: number;
+  max_select?: number;
+  is_required?: boolean;
+  display_order?: number;
+}
+
+// Legacy aliases for any internal references (kept for compatibility in this migration)
 export interface ModifierItem {
   id: string;
   name: string;

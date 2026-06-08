@@ -5,6 +5,7 @@ import Layout from '@/components/layout/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Products from '@/pages/Products';
 import Categories from '@/pages/Categories';
+import Modifiers from '@/pages/Modifiers';
 import Orders from '@/pages/Orders';
 import Staff from '@/pages/Staff';
 import Outlets from '@/pages/Outlets';
@@ -45,6 +46,7 @@ export default function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="products" element={<Products />} />
+            <Route path="modifiers" element={<Modifiers />} />
             <Route path="categories" element={<Categories />} />
             <Route path="orders" element={<Orders />} />
             <Route path="staff" element={<Staff />} />

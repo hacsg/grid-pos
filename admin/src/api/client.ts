@@ -30,6 +30,15 @@ import type {
   StaffReportParams,
   OutletReportParams,
   CsvExportParams,
+  ModifierGroup,
+  ModifierGroupCreate,
+  ModifierGroupUpdate,
+  ModifierOption,
+  ModifierOptionCreate,
+  ModifierOptionUpdate,
+  ProductModifierAssignment,
+  ProductModifierAssignmentCreate,
+  ProductModifierAssignmentUpdate,
 } from '@/types';
 
 const api = axios.create({
@@ -83,6 +92,13 @@ export const getProducts = async (params?: {
         description: p.description || '',
         category_id: p.category_id || p.category?.id || '',
         category_name: p.category?.name || '',
+        modifier_groups: (p.modifier_groups || []).map((mg: any) => ({
+          ...mg,
+          options: (mg.options || []).map((o: any) => ({
+            ...o,
+            price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : (o.price_adjustment ?? 0),
+          })),
+        })),
       }))
     : [];
   return { data: normalized, total: normalized.length, page: 1, limit: normalized.length || 100 };
@@ -306,6 +322,94 @@ export const exportReportCSV = async (params?: CsvExportParams): Promise<Blob> =
     responseType: 'blob',
   });
   return data;
+};
+
+// ---------------------------------------------------------------------------
+// Modifiers
+// ---------------------------------------------------------------------------
+
+export const getModifierGroups = async (): Promise<ModifierGroup[]> => {
+  const { data } = await api.get('/modifier-groups');
+  // Normalize price_adjustment (may arrive as string) to number
+  return (Array.isArray(data) ? data : []).map((g: any) => ({
+    ...g,
+    options: (g.options || []).map((o: any) => ({
+      ...o,
+      price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : o.price_adjustment,
+    })),
+  }));
+};
+
+export const createModifierGroup = async (payload: ModifierGroupCreate): Promise<ModifierGroup> => {
+  const { data } = await api.post('/modifier-groups', payload);
+  toast.success('Modifier group created');
+  return data;
+};
+
+export const updateModifierGroup = async (id: string, payload: ModifierGroupUpdate): Promise<ModifierGroup> => {
+  const { data } = await api.put(`/modifier-groups/${id}`, payload);
+  toast.success('Modifier group updated');
+  return data;
+};
+
+export const deleteModifierGroup = async (id: string): Promise<void> => {
+  await api.delete(`/modifier-groups/${id}`);
+  toast.success('Modifier group deleted');
+};
+
+export const createModifierOption = async (groupId: string, payload: ModifierOptionCreate): Promise<ModifierOption> => {
+  const { data } = await api.post(`/modifier-groups/${groupId}/options`, payload);
+  return {
+    ...data,
+    price_adjustment: typeof data.price_adjustment === 'string' ? parseFloat(data.price_adjustment) : data.price_adjustment,
+  };
+};
+
+export const updateModifierOption = async (id: string, payload: ModifierOptionUpdate): Promise<ModifierOption> => {
+  const { data } = await api.put(`/modifier-options/${id}`, payload);
+  return {
+    ...data,
+    price_adjustment: typeof data.price_adjustment === 'string' ? parseFloat(data.price_adjustment) : data.price_adjustment,
+  };
+};
+
+export const deleteModifierOption = async (id: string): Promise<void> => {
+  await api.delete(`/modifier-options/${id}`);
+};
+
+export const getProductModifierGroups = async (productId: string): Promise<ProductModifierAssignment[]> => {
+  const { data } = await api.get(`/products/${productId}/modifier-groups`);
+  return (Array.isArray(data) ? data : []).map((a: any) => ({
+    ...a,
+    options: (a.options || []).map((o: any) => ({
+      ...o,
+      price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : o.price_adjustment,
+    })),
+  }));
+};
+
+export const assignModifierGroupToProduct = async (
+  productId: string,
+  payload: ProductModifierAssignmentCreate
+): Promise<ProductModifierAssignment> => {
+  const { data } = await api.post(`/products/${productId}/modifier-groups`, payload);
+  toast.success('Modifier group assigned');
+  return data;
+};
+
+export const updateProductModifierAssignment = async (
+  productId: string,
+  assignmentId: string,
+  payload: ProductModifierAssignmentUpdate
+): Promise<ProductModifierAssignment> => {
+  const { data } = await api.put(`/products/${productId}/modifier-groups/${assignmentId}`, payload);
+  toast.success('Assignment updated');
+  return data;
+};
+
+export const unassignModifierGroupFromProduct = async (productId: string, assignmentId: string): Promise<void> => {
+  await api.delete(`/products/${productId}/modifier-groups/${assignmentId}`);
+  toast.success('Modifier group unassigned');
 };
 
 export default api;

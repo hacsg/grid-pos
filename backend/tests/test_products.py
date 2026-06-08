@@ -64,11 +64,12 @@ class TestGetProduct:
         assert resp.status_code == 200
         assert resp.json()["category"]["name"] == "Test Category"
 
-    async def test_includes_modifier_groups(self, client: AsyncClient, product, modifier_group) -> None:
+    async def test_includes_modifier_groups(self, client: AsyncClient, product, modifier_group, product_modifier_assignment) -> None:
         resp = await client.get(f"/api/products/{product.id}")
         assert resp.status_code == 200
-        assert len(resp.json()["modifier_groups"]) == 1
-        assert resp.json()["modifier_groups"][0]["name"] == "Size"
+        mgs = resp.json()["modifier_groups"]
+        assert len(mgs) == 1
+        assert mgs[0]["group_name"] == "Size"
 
 
 class TestCreateProduct:

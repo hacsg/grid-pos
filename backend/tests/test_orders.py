@@ -33,7 +33,7 @@ class TestCreateOrder:
     """POST /api/orders"""
 
     async def test_create_with_multiple_items_and_modifiers(
-        self, client: AsyncClient, outlet, cashier_staff, product, modifier
+        self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:
         payload = {
             "outlet_id": str(outlet.id),
@@ -203,7 +203,7 @@ class TestGetOrder:
     """GET /api/orders/{id}"""
 
     async def test_get_single_order_with_items(
-        self, client: AsyncClient, outlet, cashier_staff, product, modifier
+        self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:
         payload = {
             "outlet_id": str(outlet.id),

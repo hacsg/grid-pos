@@ -1,84 +1,102 @@
-"""Modifier request and response schemas."""
+"""Modifier group, option, and assignment schemas."""
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
-from app.schemas.common import Money, TimestampSchema
+from app.schemas.common import Money, TimestampSchema, UUIDSchema
 
 
-class ModifierBase(BaseModel):
-    """Shared modifier fields."""
+class ModifierOptionBase(BaseModel):
+    """Shared modifier option fields."""
 
     name: str = Field(min_length=1, max_length=120)
     price_adjustment: Money = Decimal("0.00")
+    display_order: int = Field(default=0, ge=0)
+    is_available: bool = True
 
 
-class ModifierCreate(ModifierBase):
-    """Payload for creating a modifier."""
+class ModifierOptionCreate(ModifierOptionBase):
+    """Payload for creating an option within a group."""
 
-    modifier_group_id: UUID
+    pass
 
 
-class ModifierUpdate(BaseModel):
-    """Payload for updating a modifier."""
+class ModifierOptionUpdate(BaseModel):
+    """Payload for updating a modifier option."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     price_adjustment: Money | None = None
+    display_order: int | None = Field(default=None, ge=0)
+    is_available: bool | None = None
 
 
-class ModifierRead(ModifierBase, TimestampSchema):
-    """Modifier response payload."""
+class ModifierOptionRead(UUIDSchema):
+    """Modifier option response payload."""
 
-    modifier_group_id: UUID
+    name: str
+    price_adjustment: Money
+    display_order: int
+    is_available: bool
+    created_at: datetime
 
 
 class ModifierGroupBase(BaseModel):
     """Shared modifier group fields."""
 
     name: str = Field(min_length=1, max_length=120)
-    required: bool = False
-    min_select: int = Field(default=0, ge=0)
-    max_select: int = Field(default=1, ge=1)
-
-    @model_validator(mode="after")
-    def validate_selection_bounds(self) -> "ModifierGroupBase":
-        """Validate minimum and maximum selection bounds."""
-        if self.min_select > self.max_select:
-            raise ValueError("min_select cannot exceed max_select")
-        if self.required and self.min_select == 0:
-            raise ValueError("required modifier groups must have min_select greater than 0")
-        return self
+    description: str | None = Field(default=None, max_length=500)
 
 
 class ModifierGroupCreate(ModifierGroupBase):
     """Payload for creating a modifier group."""
 
-    product_id: UUID
+    pass
 
 
 class ModifierGroupUpdate(BaseModel):
     """Payload for updating a modifier group."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    required: bool | None = None
+    description: str | None = Field(default=None, max_length=500)
+
+
+class ModifierGroupRead(TimestampSchema, ModifierGroupBase):
+    """Modifier group response with nested options."""
+
+    options: list[ModifierOptionRead] = []
+
+
+class ProductModifierAssignmentCreate(BaseModel):
+    """Payload for assigning a modifier group to a product."""
+
+    group_id: UUID
+    min_select: int = Field(default=1, ge=0)
+    max_select: int = Field(default=1, ge=1)
+    is_required: bool = True
+    display_order: int = Field(default=0, ge=0)
+
+
+class ProductModifierAssignmentUpdate(BaseModel):
+    """Payload for updating a product-group assignment."""
+
     min_select: int | None = Field(default=None, ge=0)
     max_select: int | None = Field(default=None, ge=1)
-
-    @model_validator(mode="after")
-    def validate_selection_bounds(self) -> "ModifierGroupUpdate":
-        """Validate selection bounds when both values are supplied."""
-        if self.min_select is not None and self.max_select is not None and self.min_select > self.max_select:
-            raise ValueError("min_select cannot exceed max_select")
-        if self.required is True and self.min_select == 0:
-            raise ValueError("required modifier groups must have min_select greater than 0")
-        return self
+    is_required: bool | None = None
+    display_order: int | None = Field(default=None, ge=0)
 
 
-class ModifierGroupRead(ModifierGroupBase, TimestampSchema):
-    """Modifier group response payload."""
+class ProductModifierAssignmentRead(UUIDSchema):
+    """Assignment of a modifier group to a product, with nested group/options."""
 
-    product_id: UUID
-    modifiers: list[ModifierRead] = []
+    group_id: UUID
+    group_name: str
+    group_description: str | None = None
+    min_select: int
+    max_select: int
+    is_required: bool
+    display_order: int
+    options: list[ModifierOptionRead] = []
 

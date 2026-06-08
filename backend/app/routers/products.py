@@ -3,13 +3,13 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.category import Category
-from app.models.modifier import Modifier, ModifierGroup
+from app.models.modifier import ModifierGroup, ModifierOption, ProductModifierGroup
 from app.models.outlet import Outlet
 from app.models.product import Product
 from app.schemas.category import (
@@ -19,14 +19,15 @@ from app.schemas.category import (
     CategoryUpdate,
 )
 from app.schemas.modifier import (
-    ModifierBase,
-    ModifierCreate,
-    ModifierGroupBase,
     ModifierGroupCreate,
     ModifierGroupRead,
     ModifierGroupUpdate,
-    ModifierRead,
-    ModifierUpdate,
+    ModifierOptionCreate,
+    ModifierOptionRead,
+    ModifierOptionUpdate,
+    ProductModifierAssignmentCreate,
+    ProductModifierAssignmentRead,
+    ProductModifierAssignmentUpdate,
 )
 from app.schemas.product import (
     ProductAvailabilityUpdate,
@@ -65,7 +66,9 @@ async def _load_product_or_404(db: AsyncSession, product_id: UUID) -> Product:
         select(Product)
         .options(
             selectinload(Product.category),
-            selectinload(Product.modifier_groups).selectinload(ModifierGroup.modifiers),
+            selectinload(Product.modifier_group_assignments).selectinload(
+                ProductModifierGroup.group
+            ).selectinload(ModifierGroup.options),
         )
         .where(Product.id == product_id)
     )
@@ -75,25 +78,63 @@ async def _load_product_or_404(db: AsyncSession, product_id: UUID) -> Product:
     return product
 
 
-async def _load_modifier_group_or_404(db: AsyncSession, modifier_group_id: UUID) -> ModifierGroup:
-    """Load a modifier group with modifiers or raise a 404 response."""
+async def _load_modifier_group_or_404(db: AsyncSession, group_id: UUID) -> ModifierGroup:
+    """Load a modifier group with options or raise a 404 response."""
     result = await db.execute(
         select(ModifierGroup)
-        .options(selectinload(ModifierGroup.modifiers))
-        .where(ModifierGroup.id == modifier_group_id)
+        .options(selectinload(ModifierGroup.options))
+        .where(ModifierGroup.id == group_id)
     )
-    modifier_group = result.scalar_one_or_none()
-    if modifier_group is None:
+    group = result.scalar_one_or_none()
+    if group is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier group not found")
-    return modifier_group
+    return group
 
 
-async def _load_modifier_or_404(db: AsyncSession, modifier_id: UUID) -> Modifier:
-    """Load a modifier by id or raise a 404 response."""
-    modifier = await db.get(Modifier, modifier_id)
-    if modifier is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier not found")
-    return modifier
+async def _load_modifier_option_or_404(db: AsyncSession, option_id: UUID) -> ModifierOption:
+    """Load a modifier option by id or raise a 404 response."""
+    option = await db.get(ModifierOption, option_id)
+    if option is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier option not found")
+    return option
+
+
+async def _load_assignment_or_404(
+    db: AsyncSession, assignment_id: UUID
+) -> ProductModifierGroup:
+    """Load a product-modifier-group assignment or raise 404."""
+    result = await db.execute(
+        select(ProductModifierGroup)
+        .options(
+            selectinload(ProductModifierGroup.group).selectinload(ModifierGroup.options)
+        )
+        .where(ProductModifierGroup.id == assignment_id)
+    )
+    assignment = result.scalar_one_or_none()
+    if assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found"
+        )
+    return assignment
+
+
+def _build_assignment_read(assignment: ProductModifierGroup) -> ProductModifierAssignmentRead:
+    """Build a nested assignment read model including group options."""
+    group = assignment.group
+    options = [
+        ModifierOptionRead.model_validate(opt) for opt in (group.options or [])
+    ]
+    return ProductModifierAssignmentRead(
+        id=assignment.id,
+        group_id=group.id,
+        group_name=group.name,
+        group_description=group.description,
+        min_select=assignment.min_select,
+        max_select=assignment.max_select,
+        is_required=assignment.is_required,
+        display_order=assignment.display_order,
+        options=options,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +267,11 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
     product = Product(**payload.model_dump())
     db.add(product)
     await db.commit()
-    return await _load_product_or_404(db, product.id)
+    product = await _load_product_or_404(db, product.id)
+    product.modifier_groups = [
+        _build_assignment_read(a) for a in (product.modifier_group_assignments or [])
+    ]
+    return product
 
 
 @router.get("/products", response_model=list[ProductDetailRead])
@@ -241,10 +286,13 @@ async def list_products(
     - **category_id** — filter by category
     - **is_available** — filter by availability status
     - **outlet_id** — filter by outlet (via category's outlet_id)
+    Modifier groups (with options) assigned to each product are included.
     """
     statement = select(Product).options(
         selectinload(Product.category),
-        selectinload(Product.modifier_groups).selectinload(ModifierGroup.modifiers),
+        selectinload(Product.modifier_group_assignments)
+        .selectinload(ProductModifierGroup.group)
+        .selectinload(ModifierGroup.options),
     )
     if category_id is not None:
         statement = statement.where(Product.category_id == category_id)
@@ -256,7 +304,13 @@ async def list_products(
         )
     statement = statement.order_by(Product.name)
     result = await db.execute(statement)
-    return list(result.scalars().unique().all())
+    products = list(result.scalars().unique().all())
+    # Re-attach computed modifier_groups for response serialization
+    for p in products:
+        p.modifier_groups = [
+            _build_assignment_read(a) for a in (p.modifier_group_assignments or [])
+        ]
+    return products
 
 
 @router.get("/products/{product_id}", response_model=ProductDetailRead)
@@ -265,7 +319,11 @@ async def get_product(product_id: UUID, db: AsyncSession = Depends(get_db)) -> P
 
     Raises 404 if the product does not exist.
     """
-    return await _load_product_or_404(db, product_id)
+    product = await _load_product_or_404(db, product_id)
+    product.modifier_groups = [
+        _build_assignment_read(a) for a in (product.modifier_group_assignments or [])
+    ]
+    return product
 
 
 @router.put("/products/{product_id}", response_model=ProductDetailRead)
@@ -286,8 +344,13 @@ async def update_product(
     for field, value in update_data.items():
         setattr(product, field, value)
     await db.commit()
+    # Ensure relationships (esp. category) are fresh for response
     await db.refresh(product)
-    return await _load_product_or_404(db, product.id)
+    product = await _load_product_or_404(db, product.id)
+    product.modifier_groups = [
+        _build_assignment_read(a) for a in (product.modifier_group_assignments or [])
+    ]
+    return product
 
 
 @router.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -318,139 +381,228 @@ async def toggle_product_availability(
     product = await _load_product_or_404(db, product_id)
     product.is_available = payload.is_available
     await db.commit()
-    return await _load_product_or_404(db, product.id)
+    product = await _load_product_or_404(db, product.id)
+    product.modifier_groups = [
+        _build_assignment_read(a) for a in (product.modifier_group_assignments or [])
+    ]
+    return product
 
 
 # ---------------------------------------------------------------------------
-# Modifier Groups
+# Modifier Groups (standalone)
 # ---------------------------------------------------------------------------
+
+
+@router.get("/modifier-groups", response_model=list[ModifierGroupRead])
+async def list_modifier_groups(db: AsyncSession = Depends(get_db)) -> list[ModifierGroup]:
+    """List all modifier groups with their options."""
+    result = await db.execute(
+        select(ModifierGroup)
+        .options(selectinload(ModifierGroup.options))
+        .order_by(ModifierGroup.name)
+    )
+    return list(result.scalars().all())
 
 
 @router.post(
-    "/products/{product_id}/modifier-groups",
+    "/modifier-groups",
     response_model=ModifierGroupRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_product_modifier_group(
-    product_id: UUID,
-    payload: ModifierGroupBase,
-    db: AsyncSession = Depends(get_db),
+async def create_modifier_group(
+    payload: ModifierGroupCreate, db: AsyncSession = Depends(get_db)
 ) -> ModifierGroup:
-    """Add a modifier group to a product.
-
-    The ``product_id`` in the URL path is used; any ``product_id`` in the
-    request body is ignored. Raises 404 if the product does not exist.
-    """
-    await _load_product_or_404(db, product_id)
-    modifier_group = ModifierGroup(**{**payload.model_dump(), "product_id": product_id})
-    db.add(modifier_group)
+    """Create a new modifier group."""
+    group = ModifierGroup(**payload.model_dump())
+    db.add(group)
     await db.commit()
-    return await _load_modifier_group_or_404(db, modifier_group.id)
+    return await _load_modifier_group_or_404(db, group.id)
 
 
-@router.put("/modifier-groups/{modifier_group_id}", response_model=ModifierGroupRead)
+@router.put("/modifier-groups/{group_id}", response_model=ModifierGroupRead)
 async def update_modifier_group(
-    modifier_group_id: UUID,
-    payload: ModifierGroupUpdate,
-    db: AsyncSession = Depends(get_db),
+    group_id: UUID, payload: ModifierGroupUpdate, db: AsyncSession = Depends(get_db)
 ) -> ModifierGroup:
-    """Update a modifier group.
-
-    Validates selection bounds before applying changes.
-    Raises 404 if the modifier group does not exist.
-    Raises 400 on invalid selection constraints.
-    """
-    modifier_group = await _load_modifier_group_or_404(db, modifier_group_id)
-    update_data = payload.model_dump(exclude_unset=True)
-    proposed_min = update_data.get("min_select", modifier_group.min_select)
-    proposed_max = update_data.get("max_select", modifier_group.max_select)
-    proposed_required = update_data.get("required", modifier_group.required)
-    if proposed_min > proposed_max:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="min_select cannot exceed max_select",
-        )
-    if proposed_required and proposed_min == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="required modifier groups must have min_select greater than 0",
-        )
-    for field, value in update_data.items():
-        setattr(modifier_group, field, value)
+    """Update a modifier group (name/description)."""
+    group = await _load_modifier_group_or_404(db, group_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(group, field, value)
     await db.commit()
-    return await _load_modifier_group_or_404(db, modifier_group.id)
+    return await _load_modifier_group_or_404(db, group.id)
 
 
-@router.delete("/modifier-groups/{modifier_group_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/modifier-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_modifier_group(
-    modifier_group_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    group_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> Response:
-    """Delete a modifier group and all its modifiers.
-
-    Raises 404 if the modifier group does not exist.
-    """
-    modifier_group = await _load_modifier_group_or_404(db, modifier_group_id)
-    await db.delete(modifier_group)
+    """Delete a modifier group (cascades to its options and product assignments)."""
+    group = await _load_modifier_group_or_404(db, group_id)
+    await db.delete(group)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
-# Modifiers
+# Modifier Options
 # ---------------------------------------------------------------------------
 
 
 @router.post(
-    "/modifier-groups/{group_id}/modifiers",
-    response_model=ModifierRead,
+    "/modifier-groups/{group_id}/options",
+    response_model=ModifierOptionRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_modifier_in_group(
-    group_id: UUID,
-    payload: ModifierBase,
-    db: AsyncSession = Depends(get_db),
-) -> Modifier:
-    """Add a modifier to a modifier group.
-
-    The ``modifier_group_id`` in the URL path is used; any
-    ``modifier_group_id`` in the request body is ignored. Raises 404 if the
-    modifier group does not exist.
-    """
+async def create_modifier_option(
+    group_id: UUID, payload: ModifierOptionCreate, db: AsyncSession = Depends(get_db)
+) -> ModifierOption:
+    """Add an option to a modifier group."""
     await _load_modifier_group_or_404(db, group_id)
-    modifier = Modifier(**{**payload.model_dump(), "modifier_group_id": group_id})
-    db.add(modifier)
+    option = ModifierOption(**{**payload.model_dump(), "group_id": group_id})
+    db.add(option)
     await db.commit()
-    await db.refresh(modifier)
-    return modifier
+    await db.refresh(option)
+    return option
 
 
-@router.put("/modifiers/{modifier_id}", response_model=ModifierRead)
-async def update_modifier(
-    modifier_id: UUID,
-    payload: ModifierUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> Modifier:
-    """Update a modifier.
-
-    Only supplied fields are updated. Raises 404 if the modifier does not
-    exist.
-    """
-    modifier = await _load_modifier_or_404(db, modifier_id)
+@router.put("/modifier-options/{option_id}", response_model=ModifierOptionRead)
+async def update_modifier_option(
+    option_id: UUID, payload: ModifierOptionUpdate, db: AsyncSession = Depends(get_db)
+) -> ModifierOption:
+    """Update a modifier option."""
+    option = await _load_modifier_option_or_404(db, option_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(modifier, field, value)
+        setattr(option, field, value)
     await db.commit()
-    await db.refresh(modifier)
-    return modifier
+    await db.refresh(option)
+    return option
 
 
-@router.delete("/modifiers/{modifier_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_modifier(modifier_id: UUID, db: AsyncSession = Depends(get_db)) -> Response:
-    """Delete a modifier.
+@router.delete("/modifier-options/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_modifier_option(
+    option_id: UUID, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """Delete a modifier option."""
+    option = await _load_modifier_option_or_404(db, option_id)
+    await db.delete(option)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    Raises 404 if the modifier does not exist.
+
+# ---------------------------------------------------------------------------
+# Product Modifier Group Assignments
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/products/{product_id}/modifier-groups",
+    response_model=list[ProductModifierAssignmentRead],
+)
+async def list_product_modifier_groups(
+    product_id: UUID, db: AsyncSession = Depends(get_db)
+) -> list[ProductModifierAssignmentRead]:
+    """List modifier groups currently assigned to a product."""
+    product = await _load_product_or_404(db, product_id)
+    assignments: list[ProductModifierAssignmentRead] = []
+    for a in product.modifier_group_assignments or []:
+        assignments.append(_build_assignment_read(a))
+    # sort by display_order then name for stability
+    assignments.sort(key=lambda x: (x.display_order, x.group_name))
+    return assignments
+
+
+@router.post(
+    "/products/{product_id}/modifier-groups",
+    response_model=ProductModifierAssignmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def assign_modifier_group_to_product(
+    product_id: UUID,
+    payload: ProductModifierAssignmentCreate,
+    db: AsyncSession = Depends(get_db),
+) -> ProductModifierAssignmentRead:
+    """Assign a modifier group to a product.
+
+    Body: { group_id, min_select, max_select, is_required, display_order }
     """
-    modifier = await _load_modifier_or_404(db, modifier_id)
-    await db.delete(modifier)
+    await _load_product_or_404(db, product_id)
+    await _load_modifier_group_or_404(db, payload.group_id)
+
+    # Prevent duplicate assignment
+    existing = await db.execute(
+        select(ProductModifierGroup).where(
+            ProductModifierGroup.product_id == product_id,
+            ProductModifierGroup.group_id == payload.group_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Modifier group already assigned to this product",
+        )
+
+    assignment = ProductModifierGroup(
+        product_id=product_id,
+        group_id=payload.group_id,
+        min_select=payload.min_select,
+        max_select=payload.max_select,
+        is_required=payload.is_required,
+        display_order=payload.display_order,
+    )
+    db.add(assignment)
+    await db.commit()
+    await db.refresh(assignment)
+    # reload with relations for response
+    assignment = await _load_assignment_or_404(db, assignment.id)
+    return _build_assignment_read(assignment)
+
+
+@router.put(
+    "/products/{product_id}/modifier-groups/{assignment_id}",
+    response_model=ProductModifierAssignmentRead,
+)
+async def update_product_modifier_assignment(
+    product_id: UUID,
+    assignment_id: UUID,
+    payload: ProductModifierAssignmentUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> ProductModifierAssignmentRead:
+    """Update assignment settings (min/max/required/display_order)."""
+    # Verify product exists (also ensures 404 for bad product)
+    await _load_product_or_404(db, product_id)
+    assignment = await _load_assignment_or_404(db, assignment_id)
+    if assignment.product_id != product_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found"
+        )
+
+    update_data = payload.model_dump(exclude_unset=True)
+    # Validate bounds if both provided or mixed with existing
+    new_min = update_data.get("min_select", assignment.min_select)
+    new_max = update_data.get("max_select", assignment.max_select)
+    if new_min > new_max:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_select cannot exceed max_select",
+        )
+
+    for field, value in update_data.items():
+        setattr(assignment, field, value)
+    await db.commit()
+    assignment = await _load_assignment_or_404(db, assignment.id)
+    return _build_assignment_read(assignment)
+
+
+@router.delete("/products/{product_id}/modifier-groups/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unassign_modifier_group_from_product(
+    product_id: UUID, assignment_id: UUID, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """Remove a modifier group assignment from a product."""
+    await _load_product_or_404(db, product_id)
+    assignment = await _load_assignment_or_404(db, assignment_id)
+    if assignment.product_id != product_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found"
+        )
+    await db.delete(assignment)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

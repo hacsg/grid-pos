@@ -31,6 +31,7 @@ class OrderItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     modifiers: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)
+    selected_modifiers: Mapped[list[dict]] = mapped_column(JSON, nullable=True, default=list)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     order = relationship("Order", back_populates="items")

@@ -17,10 +17,11 @@ from app.main import app
 from app.models import (  # noqa: F401  — registers models on Base.metadata
     Category,
     LoyaltyMember,
-    Modifier,
     ModifierGroup,
+    ModifierOption,
     Outlet,
     Product,
+    ProductModifierGroup,
     Staff,
 )
 from app.models.staff import StaffRole
@@ -128,9 +129,9 @@ async def product(db_session: AsyncSession, category: Any) -> Any:
 
 
 @pytest_asyncio.fixture
-async def modifier_group(db_session: AsyncSession, product: Any) -> Any:
-    """Create a default modifier group for tests that need one."""
-    obj = ModifierGroup(name="Size", product_id=product.id)
+async def modifier_group(db_session: AsyncSession) -> Any:
+    """Create a default standalone modifier group for tests."""
+    obj = ModifierGroup(name="Size", description="Choose size")
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)
@@ -138,9 +139,30 @@ async def modifier_group(db_session: AsyncSession, product: Any) -> Any:
 
 
 @pytest_asyncio.fixture
-async def modifier(db_session: AsyncSession, modifier_group: Any) -> Any:
-    """Create a default modifier for tests that need one."""
-    obj = Modifier(name="Large", price_adjustment=1.50, modifier_group_id=modifier_group.id)
+async def modifier_option(db_session: AsyncSession, modifier_group: Any) -> Any:
+    """Create a default modifier option for tests."""
+    obj = ModifierOption(
+        name="Large", price_adjustment=1.50, group_id=modifier_group.id, display_order=0
+    )
+    db_session.add(obj)
+    await db_session.commit()
+    await db_session.refresh(obj)
+    return obj
+
+
+@pytest_asyncio.fixture
+async def product_modifier_assignment(
+    db_session: AsyncSession, product: Any, modifier_group: Any
+) -> Any:
+    """Assign a modifier group to a product for tests."""
+    obj = ProductModifierGroup(
+        product_id=product.id,
+        group_id=modifier_group.id,
+        min_select=1,
+        max_select=1,
+        is_required=True,
+        display_order=0,
+    )
     db_session.add(obj)
     await db_session.commit()
     await db_session.refresh(obj)
