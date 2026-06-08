@@ -1,7 +1,9 @@
 """Voucher and OrderVoucher SQLAlchemy models."""
 
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
@@ -33,20 +35,20 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
-    redeemed_at: Mapped["datetime | None"] = mapped_column(nullable=True)
-    redeemed_by_staff_id: Mapped[UUID | None] = mapped_column(
+    redeemed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    redeemed_by_staff_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("staff.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    outlet_id: Mapped[UUID | None] = mapped_column(
+    outlet_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("outlets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    order_id: Mapped[UUID | None] = mapped_column(
+    order_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("orders.id", ondelete="SET NULL"),
         nullable=True,
