@@ -6,4 +6,10 @@ server {
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    location /api/ {
+        proxy_pass https://grid-backend-production-5fd0.up.railway.app;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
 }
