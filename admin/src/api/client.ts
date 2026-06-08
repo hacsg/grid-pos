@@ -87,11 +87,11 @@ export const getProducts = async (params?: {
   const normalized = Array.isArray(data) 
     ? data.map((p: any) => ({
         ...p,
-        name: p.name || '',
-        price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
+        name: p.name ?? '',
+        price: typeof p.price === 'string' ? parseFloat(p.price) : (p.price ?? 0),
         available: p.is_available ?? true,
-        description: p.description || '',
-        category_id: p.category_id || p.category?.id || '',
+        description: p.description ?? '',
+        category_id: p.category_id ?? p.category?.id ?? '',
         category_name: p.category?.name || '',
         modifier_groups: (p.modifier_groups || []).map((mg: any) => ({
           ...mg,
@@ -110,11 +110,11 @@ export const getProduct = async (id: string): Promise<Product> => {
   const p: any = data || {};
   return {
     ...p,
-    name: p.name || '',
-    price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
+    name: p.name ?? '',
+    price: typeof p.price === 'string' ? parseFloat(p.price) : (p.price ?? 0),
     available: p.is_available ?? true,
-    description: p.description || '',
-    category_id: p.category_id || p.category?.id || '',
+    description: p.description ?? '',
+    category_id: p.category_id ?? p.category?.id ?? '',
     category_name: p.category?.name || '',
     modifier_groups: (p.modifier_groups || []).map((mg: any) => ({
       ...mg,

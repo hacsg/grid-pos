@@ -36,15 +36,23 @@ export default function ProductForm({
     register,
     handleSubmit,
     formState: { errors },
+    reset,
   } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
-    values: {
-      name: product?.name || '',
-      description: product?.description || '',
-      price: product?.price || 0,
-      category_id: product?.category_id || '',
+    defaultValues: {
+      name: product?.name ?? '',
+      description: product?.description ?? '',
+      price: product?.price ?? 0,
+      category_id: product?.category_id ?? '',
       available: product?.available ?? true,
     },
+  });
+
+  console.log('[ProductForm] component function invoked (mount or re-render). product prop:', product?.id, {
+    name: product?.name,
+    description: product?.description,
+    price: product?.price,
+    category_id: product?.category_id,
   });
 
   // Modifier assignments (for existing product)
@@ -64,6 +72,21 @@ export default function ProductForm({
       setAssignments([]);
     }
   }, [product?.id]);
+
+  // Populate form fields (name, description, price, etc). Using defaultValues for sync init on mount + reset in effect for safety/timing.
+  // The key={editingProduct?.id} in parent forces remount when switching products so this runs with correct data.
+  // We log to debug whether editingProduct data is present when form mounts vs when reset runs.
+  useEffect(() => {
+    const formValues = {
+      name: product?.name ?? '',
+      description: product?.description ?? '',
+      price: product?.price ?? 0,
+      category_id: product?.category_id ?? '',
+      available: product?.available ?? true,
+    };
+    console.log('[ProductForm] useEffect for reset() — is form mounted? yes (effect ran). product?.id:', product?.id, 'resetting to:', formValues);
+    reset(formValues);
+  }, [product?.id, reset]);
 
   const assignedGroupIds = new Set(assignments.map((a) => a.group_id));
   const availableToAdd = modifierGroupsData.filter((g) => !assignedGroupIds.has(g.id));

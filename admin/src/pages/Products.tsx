@@ -47,6 +47,16 @@ export default function Products() {
   };
 
   const handleEdit = (product: Product) => {
+    console.log('[Products] handleEdit called, setting editingProduct:', product);
+    console.log('[Products] product fields snapshot:', {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      category_id: product.category_id,
+      available: product.available,
+      modifier_groups_count: product.modifier_groups?.length || 0,
+    });
     setEditingProduct(product);
     setIsFormOpen(true);
   };
