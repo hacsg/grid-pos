@@ -238,7 +238,7 @@ export default function Dashboard() {
   );
   const ordersQuery = useOrders(
     useMemo(
-      () => ({ limit: 5, start_date: dateStart, end_date: dateEnd }),
+      () => ({ limit: 5, date_from: dateStart, date_to: dateEnd }),
       [dateStart, dateEnd],
     ),
   );

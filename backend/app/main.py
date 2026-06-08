@@ -1,14 +1,25 @@
 """FastAPI application entry point."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import check_database_connection
+from app.migrations import run_sql_migrations
 from app.routers import loyalty, orders, outlets, products, reports, shift, staff
 from app.schemas.health import HealthRead
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Run SQL migrations before serving requests."""
+    await run_sql_migrations()
+    yield
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 # CORS — allow all origins for MVP (admin portal + web POS + local dev)
 app.add_middleware(

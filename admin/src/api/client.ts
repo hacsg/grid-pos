@@ -146,6 +146,16 @@ export const reorderCategories = async (ids: string[]): Promise<void> => {
   toast.success('Categories reordered successfully');
 };
 
+// Auth
+export const login = async (payload: {
+  name: string;
+  pin: string;
+  outlet_id: string;
+}): Promise<{ access_token: string; token_type: string; expires_in: number }> => {
+  const { data } = await api.post('/auth/login', payload);
+  return data;
+};
+
 // Orders
 export const getOrders = async (params?: {
   page?: number;
@@ -153,8 +163,8 @@ export const getOrders = async (params?: {
   status?: OrderStatus;
   outlet_id?: string;
   staff_id?: string;
-  start_date?: string;
-  end_date?: string;
+  date_from?: string;
+  date_to?: string;
 }): Promise<PaginatedResponse<Order>> => {
   const { data } = await api.get('/orders', { params });
   return data;

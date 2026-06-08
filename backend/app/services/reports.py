@@ -24,6 +24,7 @@ from app.schemas.report import (
     OutletReportResponse,
     ProductPerformance,
     ProductReportResponse,
+    SalesSummaryResponse,
     StaffPerformance,
     StaffReportResponse,
     WeeklyReportResponse,
@@ -78,6 +79,24 @@ def _apply_outlet_filter(stmt, outlet_id: UUID | None, *, model=Order):
     if outlet_id is not None:
         return stmt.where(model.outlet_id == outlet_id)
     return stmt
+
+
+# ---------------------------------------------------------------------------
+# Sales summary
+# ---------------------------------------------------------------------------
+
+
+async def get_sales_summary(db: AsyncSession, report_date: date) -> SalesSummaryResponse:
+    """Return total sales, order count, and average order value for a single day."""
+    start, end = _day_bounds(report_date)
+    revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id=None)
+    average = revenue / order_count if order_count > 0 else Decimal("0.00")
+    return SalesSummaryResponse(
+        total_sales=revenue,
+        order_count=order_count,
+        average_order_value=average.quantize(Decimal("0.01")),
+        date=report_date,
+    )
 
 
 # ---------------------------------------------------------------------------

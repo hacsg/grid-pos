@@ -12,6 +12,7 @@ from app.schemas.report import (
     MonthlyReportResponse,
     OutletReportResponse,
     ProductReportResponse,
+    SalesSummaryResponse,
     StaffReportResponse,
     WeeklyReportResponse,
 )
@@ -20,11 +21,19 @@ from app.services.reports import (
     get_monthly_report,
     get_outlet_report,
     get_product_report,
+    get_sales_summary,
     get_staff_report,
     get_weekly_report,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+@router.get("/sales-summary", response_model=SalesSummaryResponse)
+async def sales_summary(db: AsyncSession = Depends(get_db)) -> SalesSummaryResponse:
+    """Return today's total sales, order count, and average order value."""
+    today = datetime.now(UTC).date()
+    return await get_sales_summary(db, today)
 
 
 @router.get("/daily", response_model=DailyReportResponse)

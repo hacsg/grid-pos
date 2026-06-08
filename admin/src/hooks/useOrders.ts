@@ -12,8 +12,8 @@ export function useOrders(params?: {
   status?: OrderStatus;
   outlet_id?: string;
   staff_id?: string;
-  start_date?: string;
-  end_date?: string;
+  date_from?: string;
+  date_to?: string;
 }) {
   return useQuery({
     queryKey: ['orders', params],

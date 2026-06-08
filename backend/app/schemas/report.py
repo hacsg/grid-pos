@@ -123,3 +123,12 @@ class OutletReportResponse(BaseModel):
     """Outlet comparison report."""
 
     outlets: list[OutletComparison] = Field(default_factory=list)
+
+
+class SalesSummaryResponse(BaseModel):
+    """Today's sales summary for the admin dashboard."""
+
+    total_sales: Money = Decimal("0.00")
+    order_count: int = 0
+    average_order_value: Money = Decimal("0.00")
+    date: date
