@@ -150,7 +150,7 @@ export const reorderCategories = async (ids: string[]): Promise<void> => {
 export const login = async (payload: {
   name: string;
   pin: string;
-  outlet_id: string;
+  outlet_id?: string;
 }): Promise<{ access_token: string; token_type: string; expires_in: number }> => {
   const { data } = await api.post('/auth/login', payload);
   return data;

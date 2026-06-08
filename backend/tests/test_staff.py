@@ -67,6 +67,15 @@ class TestLogin:
         resp = await client.post("/api/auth/login", json=payload)
         assert resp.status_code == 422
 
+    async def test_admin_login_without_outlet(self, client: AsyncClient, admin_staff) -> None:
+        """POST /api/auth/login without outlet_id searches by name + PIN (admin flow)."""
+        resp = await client.post("/api/auth/login", json={"name": "Admin User", "pin": "0000"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "access_token" in data
+        assert data["staff"]["id"] == str(admin_staff.id)
+        assert data["staff"]["role"] == "admin"
+
 
 # ============================================================================
 # Token Refresh — POST /api/auth/refresh

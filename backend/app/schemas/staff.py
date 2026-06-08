@@ -33,10 +33,15 @@ class StaffUpdate(BaseModel):
 
 
 class StaffLoginRequest(BaseModel):
-    """Payload for staff PIN login (no name required — PIN + outlet identifies staff)."""
+    """Payload for staff PIN login.
 
-    pin: str = Field(pattern=r"^\d{4}$")
-    outlet_id: UUID
+    - If outlet_id provided: POS cashier flow (PIN matches any active staff at outlet).
+    - If outlet_id omitted: admin flow (name + PIN matches across all outlets).
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    pin: str = Field(min_length=4, max_length=6)
+    outlet_id: UUID | None = None
 
 
 class StaffRead(StaffBase, TimestampSchema):

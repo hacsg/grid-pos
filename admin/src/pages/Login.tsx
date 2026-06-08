@@ -1,45 +1,24 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { Delete, LockKeyhole } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import api, { login } from '@/api/client';
-import type { Outlet } from '@/types';
+import { login } from '@/api/client';
 
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
-
-async function fetchOutlets(): Promise<Outlet[]> {
-  const { data } = await api.get('/outlets');
-  return Array.isArray(data) ? data : (data.data ?? []);
-}
 
 export default function Login() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
-  const [outletId, setOutletId] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const outletsQuery = useQuery({
-    queryKey: ['outlets', 'login'],
-    queryFn: fetchOutlets,
-  });
-
-  const outlets = outletsQuery.data ?? [];
 
   useEffect(() => {
     if (localStorage.getItem('auth_token')) {
       navigate('/', { replace: true });
     }
   }, [navigate]);
-
-  useEffect(() => {
-    if (!outletId && outlets.length > 0) {
-      setOutletId(outlets[0].id);
-    }
-  }, [outlets, outletId]);
 
   function pressPinKey(key: string) {
     if (key === 'clear') {
@@ -60,10 +39,6 @@ export default function Login() {
       toast.error('Enter your name');
       return;
     }
-    if (!outletId) {
-      toast.error('Select an outlet');
-      return;
-    }
     if (pin.length !== 4) {
       toast.error('Enter a 4-digit PIN');
       return;
@@ -74,7 +49,7 @@ export default function Login() {
       const response = await login({
         name: name.trim(),
         pin,
-        outlet_id: outletId,
+        // no outlet_id for admin login
       });
       localStorage.setItem('auth_token', response.access_token);
       navigate('/', { replace: true });
@@ -108,25 +83,6 @@ export default function Login() {
             autoComplete="name"
             disabled={loading}
           />
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="outlet" className="text-sm font-medium text-text">
-              Outlet
-            </label>
-            <select
-              id="outlet"
-              value={outletId}
-              onChange={(event) => setOutletId(event.target.value)}
-              disabled={outletsQuery.isLoading || loading || outlets.length === 0}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              {outlets.map((outlet) => (
-                <option key={outlet.id} value={outlet.id}>
-                  {outlet.name}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-text">
@@ -178,7 +134,7 @@ export default function Login() {
             type="submit"
             size="lg"
             loading={loading}
-            disabled={!name.trim() || !outletId || pin.length !== 4}
+            disabled={!name.trim() || pin.length !== 4}
             className="w-full"
           >
             Sign in

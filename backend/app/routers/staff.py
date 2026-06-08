@@ -64,18 +64,31 @@ async def login_staff(
     payload: StaffLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    """Authenticate a staff member by outlet and PIN, returning a JWT.
+    """Authenticate a staff member.
 
-    Because multiple staff can share an outlet, we iterate over all active
-    staff at that outlet and return the first one whose PIN matches.
+    - If outlet_id provided: POS cashier flow — search by outlet + PIN.
+    - If outlet_id NOT provided: admin flow — search by name + PIN across all outlets.
     """
-    result = await db.execute(
-        select(Staff).where(
-            Staff.outlet_id == payload.outlet_id,
-            Staff.is_active.is_(True),
+    if payload.outlet_id:
+        # POS cashier flow: search by outlet + PIN
+        query = select(Staff).where(
+            Staff.outlet_id == payload.outlet_id, Staff.is_active.is_(True)
         )
-    )
+    else:
+        # Admin flow: search by name + PIN across all outlets
+        if not payload.name:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        query = select(Staff).where(
+            Staff.name.ilike(f"%{payload.name}%"), Staff.is_active.is_(True)
+        )
+
+    result = await db.execute(query)
     staff_members = list(result.scalars().all())
+
     matched = None
     for staff in staff_members:
         if verify_pin(payload.pin, staff.pin_hash):
