@@ -33,7 +33,7 @@ function productStock(product: Product): { label: string; state: 'in' | 'low' | 
 }
 
 function hasModifiers(product: Product): boolean {
-  return product.modifier_groups?.some((group) => group.modifiers.length > 0) ?? false;
+  return product.modifier_groups?.some((group) => group.modifiers?.length > 0) ?? false;
 }
 
 function modifierPrice(modifier: Modifier): string {
@@ -42,6 +42,21 @@ function modifierPrice(modifier: Modifier): string {
     return 'Included';
   }
   return `+${formatCurrency(price)}`;
+}
+
+function requiredMinimum(group: ModifierGroup): number {
+  return group.required ? Math.max(group.min_select, 1) : group.min_select;
+}
+
+function selectionRule(group: ModifierGroup): string {
+  const minimum = requiredMinimum(group);
+  if (minimum === group.max_select) {
+    return `Choose exactly ${minimum}`;
+  }
+  if (minimum > 0) {
+    return `Choose ${minimum}-${group.max_select}`;
+  }
+  return `Up to ${group.max_select}`;
 }
 
 export default function ProductGrid({
@@ -110,9 +125,13 @@ export default function ProductGrid({
   function validateModifierSelection(product: Product): boolean {
     for (const group of product.modifier_groups) {
       const selectedCount = selections[group.id]?.length ?? 0;
-      const minimum = group.required ? Math.max(group.min_select, 1) : group.min_select;
+      const minimum = requiredMinimum(group);
       if (selectedCount < minimum) {
         setError(`${group.name} requires ${minimum} selection${minimum === 1 ? '' : 's'}`);
+        return false;
+      }
+      if (selectedCount > group.max_select) {
+        setError(`${group.name} allows up to ${group.max_select} selection${group.max_select === 1 ? '' : 's'}`);
         return false;
       }
     }
@@ -262,7 +281,7 @@ export default function ProductGrid({
                     <legend>
                       <span>{group.name}</span>
                       <small>
-                        {group.required ? 'Required' : 'Optional'} - {selected.length}/{group.max_select}
+                        {group.required ? 'Required' : 'Optional'} - {selected.length}/{group.max_select} - {selectionRule(group)}
                       </small>
                     </legend>
                     <div className="modifier-options">

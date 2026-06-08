@@ -22,16 +22,26 @@ export interface Outlet extends Timestamped {
 export interface Modifier extends Timestamped {
   name: string;
   price_adjustment: number | string;
-  modifier_group_id: string;
+  modifier_group_id?: string;
+  group_id?: string;
+  display_order?: number;
+  is_available?: boolean;
 }
 
 export interface ModifierGroup extends Timestamped {
   name: string;
+  description?: string | null;
   required: boolean;
+  is_required?: boolean;
   min_select: number;
   max_select: number;
-  product_id: string;
+  product_id?: string;
+  group_id?: string;
+  group_name?: string;
+  group_description?: string | null;
+  display_order?: number;
   modifiers: Modifier[];
+  options?: Modifier[];
 }
 
 export interface Product extends Timestamped {
@@ -197,6 +207,70 @@ export const formatCurrency = (value: number | string | null | undefined): strin
     currency: 'SGD',
   }).format(money(value));
 
+function numberOrDefault(value: number | string | null | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeModifier(modifier: Partial<Modifier>, index: number): Modifier {
+  return {
+    ...modifier,
+    id: String(modifier.id ?? modifier.name ?? index),
+    name: modifier.name ?? 'Modifier',
+    price_adjustment: money(modifier.price_adjustment),
+    modifier_group_id: modifier.modifier_group_id ?? modifier.group_id,
+    group_id: modifier.group_id ?? modifier.modifier_group_id,
+    display_order: numberOrDefault(modifier.display_order, index),
+    is_available: modifier.is_available ?? true,
+  };
+}
+
+function normalizeModifierGroup(group: Partial<ModifierGroup>, index: number): ModifierGroup {
+  const rawModifiers = Array.isArray(group.modifiers)
+    ? group.modifiers
+    : Array.isArray(group.options)
+      ? group.options
+      : [];
+  const modifiers = rawModifiers
+    .map((modifier, modifierIndex) => normalizeModifier(modifier, modifierIndex))
+    .filter((modifier) => modifier.is_available !== false)
+    .sort((a, b) => numberOrDefault(a.display_order, 0) - numberOrDefault(b.display_order, 0) || a.name.localeCompare(b.name));
+  const maxSelect = Math.max(1, numberOrDefault(group.max_select, 1));
+  const isRequired = group.is_required ?? group.required ?? false;
+  const minSelect = Math.min(maxSelect, Math.max(0, numberOrDefault(group.min_select, isRequired ? 1 : 0)));
+  const name = group.name ?? group.group_name ?? 'Modifiers';
+
+  return {
+    ...group,
+    id: String(group.id ?? group.group_id ?? name ?? index),
+    name,
+    description: group.description ?? group.group_description ?? null,
+    required: group.required ?? group.is_required ?? minSelect > 0,
+    is_required: group.is_required ?? group.required ?? minSelect > 0,
+    min_select: minSelect,
+    max_select: maxSelect,
+    group_id: group.group_id,
+    group_name: group.group_name ?? name,
+    group_description: group.group_description ?? group.description ?? null,
+    display_order: numberOrDefault(group.display_order, index),
+    modifiers,
+    options: modifiers,
+  };
+}
+
+function normalizeProduct(product: Product): Product {
+  const modifierGroups = Array.isArray(product.modifier_groups) ? product.modifier_groups : [];
+  return {
+    ...product,
+    price: money(product.price),
+    is_available: product.is_available ?? true,
+    modifier_groups: modifierGroups
+      .map((group, index) => normalizeModifierGroup(group, index))
+      .filter((group) => group.modifiers.length > 0)
+      .sort((a, b) => numberOrDefault(a.display_order, 0) - numberOrDefault(b.display_order, 0) || a.name.localeCompare(b.name)),
+  };
+}
+
 export async function getOutlets(): Promise<Outlet[]> {
   const { data } = await api.get<Outlet[] | { data: Outlet[] }>('/outlets');
   return unwrapList(data);
@@ -243,13 +317,17 @@ export async function getProducts(params?: {
   category_id?: string;
   outlet_id?: string;
   is_available?: boolean;
+  include_modifiers?: boolean;
   search?: string;
 }): Promise<Product[]> {
   const { search, ...apiParams } = params ?? {};
   const { data } = await api.get<Product[] | { data: Product[] }>('/products', {
-    params: apiParams,
+    params: {
+      include_modifiers: true,
+      ...apiParams,
+    },
   });
-  const products = unwrapList(data);
+  const products = unwrapList(data).map(normalizeProduct);
   const query = search?.trim().toLowerCase();
   if (!query) {
     return products;

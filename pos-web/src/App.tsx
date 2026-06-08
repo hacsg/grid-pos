@@ -143,6 +143,7 @@ function PosWorkspace() {
         outlet_id: session?.outlet.id,
         category_id: selectedCategoryId === 'all' ? undefined : selectedCategoryId,
         is_available: true,
+        include_modifiers: true,
         search,
       }),
     enabled: Boolean(session),
