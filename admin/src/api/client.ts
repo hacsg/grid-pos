@@ -39,6 +39,16 @@ const api = axios.create({
   },
 });
 
+function toPaginated<T>(resp: any): PaginatedResponse<T> {
+  if (resp && typeof resp === 'object' && Array.isArray(resp.data)) {
+    return resp as PaginatedResponse<T>;
+  }
+  if (Array.isArray(resp)) {
+    return { data: resp as T[], total: resp.length, page: 1, limit: resp.length || 100 };
+  }
+  return { data: [], total: 0, page: 1, limit: 100 };
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token');
   if (token) {
@@ -75,7 +85,7 @@ export const getProducts = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Product>> => {
   const { data } = await api.get('/products', { params });
-  return data;
+  return toPaginated<Product>(data);
 };
 
 export const getProduct = async (id: string): Promise<Product> => {
@@ -121,17 +131,32 @@ export const getCategories = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Category>> => {
   const { data } = await api.get('/categories', { params });
-  return data;
+  const pag = toPaginated<Category>(data);
+  pag.data = pag.data.map((c: any) => ({
+    ...c,
+    outlet_ids: c.outlet_ids ?? (c.outlet_id ? [c.outlet_id] : []),
+    outlet_id: c.outlet_id ?? null,
+  }));
+  return pag;
 };
 
 export const createCategory = async (category: CategoryFormData): Promise<Category> => {
-  const { data } = await api.post('/categories', category);
+  const payload: any = { name: category.name };
+  const oid = category.outlet_id ?? (category.outlet_ids && category.outlet_ids.length ? category.outlet_ids[0] : undefined);
+  if (oid !== undefined) payload.outlet_id = oid;
+  const { data } = await api.post('/categories', payload);
   toast.success('Category created successfully');
   return data;
 };
 
 export const updateCategory = async (id: string, category: Partial<CategoryFormData>): Promise<Category> => {
-  const { data } = await api.put(`/categories/${id}`, category);
+  const payload: any = {};
+  if (category.name != null) payload.name = category.name;
+  if (category.outlet_ids !== undefined || category.outlet_id !== undefined) {
+    const oid = category.outlet_id ?? (category.outlet_ids && category.outlet_ids.length ? category.outlet_ids[0] : null);
+    payload.outlet_id = oid;
+  }
+  const { data } = await api.put(`/categories/${id}`, payload);
   toast.success('Category updated successfully');
   return data;
 };
@@ -167,7 +192,12 @@ export const getOrders = async (params?: {
   date_to?: string;
 }): Promise<PaginatedResponse<Order>> => {
   const { data } = await api.get('/orders', { params });
-  return data;
+  const pag = toPaginated<Order>(data);
+  pag.data = pag.data.map((o: any) => ({
+    ...o,
+    status: (o.status === 'paid' ? 'completed' : o.status) as OrderStatus,
+  }));
+  return pag;
 };
 
 export const getOrder = async (id: string): Promise<Order> => {
@@ -188,17 +218,28 @@ export const getStaffList = async (params?: {
   outlet_id?: string;
 }): Promise<PaginatedResponse<Staff>> => {
   const { data } = await api.get('/staff', { params });
-  return data;
+  const pag = toPaginated<Staff>(data);
+  pag.data = pag.data.map((s: any) => ({
+    ...s,
+    active: s.active ?? s.is_active ?? true,
+    email: s.email ?? '',
+    pin: '****',
+    outlet_name: s.outlet_name ?? '',
+  }));
+  return pag;
 };
 
 export const createStaff = async (staff: StaffFormData): Promise<Staff> => {
-  const { data } = await api.post('/staff', staff);
+  // backend StaffCreate does not include email; pin required; outlet_id required
+  const { email, ...payload } = staff as any;
+  const { data } = await api.post('/staff', payload);
   toast.success('Staff created successfully');
   return data;
 };
 
 export const updateStaff = async (id: string, staff: Partial<StaffFormData>): Promise<Staff> => {
-  const { data } = await api.put(`/staff/${id}`, staff);
+  const { email, pin, ...payload } = staff as any; // pin not updatable here; use reset
+  const { data } = await api.put(`/staff/${id}`, payload);
   toast.success('Staff updated successfully');
   return data;
 };
@@ -219,17 +260,35 @@ export const getOutlets = async (params?: {
   limit?: number;
 }): Promise<PaginatedResponse<Outlet>> => {
   const { data } = await api.get('/outlets', { params });
-  return data;
+  const pag = toPaginated<Outlet>(data);
+  pag.data = pag.data.map((o: any) => ({
+    ...o,
+    active: o.active ?? o.is_active ?? true,
+    email: o.email ?? '',
+    address: o.address ?? '',
+    phone: o.phone ?? '',
+  }));
+  return pag;
 };
 
 export const createOutlet = async (outlet: OutletFormData): Promise<Outlet> => {
-  const { data } = await api.post('/outlets', outlet);
+  const payload: any = {
+    name: outlet.name,
+    address: outlet.address,
+  };
+  if (outlet.phone != null) payload.phone = outlet.phone;
+  const { data } = await api.post('/outlets', payload);
   toast.success('Outlet created successfully');
   return data;
 };
 
 export const updateOutlet = async (id: string, outlet: Partial<OutletFormData>): Promise<Outlet> => {
-  const { data } = await api.put(`/outlets/${id}`, outlet);
+  const payload: any = {};
+  if (outlet.name != null) payload.name = outlet.name;
+  if (outlet.address != null) payload.address = outlet.address;
+  if (outlet.phone != null) payload.phone = outlet.phone;
+  // backend uses PATCH and does not support email/active
+  const { data } = await api.patch(`/outlets/${id}`, payload);
   toast.success('Outlet updated successfully');
   return data;
 };

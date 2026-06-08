@@ -88,8 +88,8 @@ export default function CategoryManager({
                 <p className="text-sm font-medium text-text">{category.name}</p>
                 <p className="text-xs text-text-muted">
                   Order: {category.sort_order}
-                  {category.outlet_ids?.length > 0 &&
-                    ` · ${category.outlet_ids.length} outlet(s)`}
+                  {(category.outlet_ids?.length ?? 0) > 0 &&
+                    ` · ${category.outlet_ids!.length} outlet(s)`}
                 </p>
               </div>
               <div className="flex items-center gap-1">

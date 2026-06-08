@@ -42,14 +42,16 @@ export interface Category {
   id: string;
   name: string;
   sort_order: number;
-  outlet_ids: string[];
+  outlet_ids?: string[];
+  outlet_id?: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface CategoryFormData {
   name: string;
-  outlet_ids: string[];
+  outlet_ids?: string[];
+  outlet_id?: string | null;
 }
 
 export interface Order {
@@ -79,46 +81,47 @@ export interface OrderItem {
   modifiers: string[];
 }
 
-export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'refunded';
+export type OrderStatus = 'pending' | 'completed' | 'paid' | 'cancelled' | 'refunded';
 
 export interface Staff {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   role: StaffRole;
-  pin: string;
+  pin?: string;
   outlet_id: string;
-  outlet_name: string;
-  active: boolean;
+  outlet_name?: string;
+  active?: boolean;
+  is_active?: boolean;
   created_at: string;
 }
 
-export type StaffRole = 'admin' | 'manager' | 'cashier' | 'kitchen';
+export type StaffRole = 'admin' | 'manager' | 'cashier' | 'supervisor';
 
 export interface StaffFormData {
   name: string;
-  email: string;
+  email?: string;
   role: StaffRole;
   outlet_id: string;
-  pin: string;
+  pin?: string;
 }
 
 export interface Outlet {
   id: string;
   name: string;
-  address: string;
-  phone: string;
-  email: string;
-  active: boolean;
+  address?: string;
+  phone?: string;
+  email?: string;
+  active?: boolean;
   created_at: string;
 }
 
 export interface OutletFormData {
   name: string;
   address: string;
-  phone: string;
-  email: string;
-  active: boolean;
+  phone?: string;
+  email?: string;
+  active?: boolean;
 }
 
 export interface SalesSummary {
