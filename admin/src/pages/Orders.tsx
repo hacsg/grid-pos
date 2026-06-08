@@ -1,58 +1,36 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Filter, RefreshCw, Undo2 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Table from '@/components/ui/Table';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
-import { useOrders, useOrder, useRefundOrder } from '@/hooks/useOrders';
-import { useOutlets } from '@/hooks/useOutlets';
 import type { Order, OrderStatus } from '@/types';
 
+const mockOrders: Order[] = [
+  {
+    id: '1', order_number: '1042', outlet_id: '1', outlet_name: 'Main Street',
+    staff_id: '1', staff_name: 'Alice', items: [
+      { id: '1', product_id: '1', product_name: 'Classic Gelato', quantity: 2, unit_price: 6.00, total_price: 12.00, modifiers: [] },
+    ],
+    subtotal: 12.00, tax: 1.20, total: 13.20, status: 'completed', payment_method: 'cash', created_at: '2024-01-15T14:30:00Z', updated_at: '2024-01-15T14:30:00Z',
+  },
+  {
+    id: '2', order_number: '1041', outlet_id: '2', outlet_name: 'Downtown',
+    staff_id: '2', staff_name: 'Bob', items: [],
+    subtotal: 8.00, tax: 0.80, total: 8.80, status: 'pending', payment_method: 'card', created_at: '2024-01-15T14:15:00Z', updated_at: '2024-01-15T14:15:00Z',
+  },
+];
+
 export default function Orders() {
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [outletFilter, setOutletFilter] = useState<string>('');
 
-  const { data: outletsData } = useOutlets();
-  const outlets = outletsData?.data || [];
-
-  const ordersParams = useMemo(() => ({
-    limit: 200,
-    ...(outletFilter ? { outlet_id: outletFilter } : {}),
-    ...(statusFilter ? { status: statusFilter as OrderStatus } : {}),
-  }), [outletFilter, statusFilter]);
-
-  const { data: ordersData, isLoading, refetch } = useOrders(ordersParams);
-  const { data: fullOrder } = useOrder(selectedOrderId || '');
-  const refundOrder = useRefundOrder();
-
-  const outletMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    outlets.forEach((o) => { m[o.id] = o.name; });
-    return m;
-  }, [outlets]);
-
-  const rawOrders: Order[] = ordersData?.data || [];
-
-  // enrich with names (backend list does not include *_name)
-  const orders = useMemo(() => rawOrders.map((o) => ({
-    ...o,
-    outlet_name: o.outlet_name || outletMap[o.outlet_id] || '—',
-    staff_name: o.staff_name || '—',
-  })), [rawOrders, outletMap]);
-
-  // selected display: prefer full order (has items) merged with enriched names
-  const selectedOrder: Order | null = useMemo(() => {
-    if (!selectedOrderId) return null;
-    const base = orders.find((o) => o.id === selectedOrderId) || fullOrder;
-    if (!base) return null;
-    return {
-      ...base,
-      outlet_name: base.outlet_name || outletMap[base.outlet_id] || '—',
-      staff_name: base.staff_name || '—',
-      items: (fullOrder?.items || base.items || []),
-    } as Order;
-  }, [selectedOrderId, orders, fullOrder, outletMap]);
+  const filteredOrders = mockOrders.filter((order) => {
+    if (statusFilter && order.status !== statusFilter) return false;
+    if (outletFilter && order.outlet_id !== outletFilter) return false;
+    return true;
+  });
 
   const columns = [
     {
@@ -80,7 +58,6 @@ export default function Orders() {
       render: (order: Order) => {
         const colors: Record<string, string> = {
           completed: 'bg-success/10 text-success',
-          paid: 'bg-success/10 text-success',
           pending: 'bg-warning/10 text-warning',
           cancelled: 'bg-error/10 text-error',
           refunded: 'bg-surface text-text-muted',
@@ -101,30 +78,6 @@ export default function Orders() {
     },
   ];
 
-  function handleRowClick(order: Order) {
-    setSelectedOrderId(order.id);
-  }
-
-  function closeDetail() {
-    setSelectedOrderId(null);
-  }
-
-  function handleRefresh() {
-    refetch();
-  }
-
-  function handleRefund() {
-    if (!selectedOrderId) return;
-    refundOrder.mutate(selectedOrderId, {
-      onSuccess: () => {
-        // keep modal open or close; refresh will update list
-        refetch();
-      },
-    });
-  }
-
-  const isRefunding = refundOrder.isPending;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -132,7 +85,7 @@ export default function Orders() {
           <h1 className="text-2xl font-bold text-text">Orders</h1>
           <p className="mt-1 text-sm text-text-muted">View and manage orders</p>
         </div>
-        <Button variant="secondary" onClick={handleRefresh}>
+        <Button variant="secondary">
           <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
@@ -149,7 +102,6 @@ export default function Orders() {
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
             <option value="completed">Completed</option>
-            <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
             <option value="refunded">Refunded</option>
           </select>
@@ -162,9 +114,8 @@ export default function Orders() {
             className="w-40 rounded-lg border border-gray-200 bg-white py-2 px-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">All Outlets</option>
-            {outlets.map((o) => (
-              <option key={o.id} value={o.id}>{o.name}</option>
-            ))}
+            <option value="1">Main Street</option>
+            <option value="2">Downtown</option>
           </select>
         </div>
       </div>
@@ -172,16 +123,15 @@ export default function Orders() {
       <Card>
         <Table
           columns={columns}
-          data={orders as any}
-          loading={isLoading}
-          onRowClick={handleRowClick}
+          data={filteredOrders}
+          onRowClick={setSelectedOrder}
           emptyMessage="No orders found"
         />
       </Card>
 
       <Modal
-        isOpen={!!selectedOrderId}
-        onClose={closeDetail}
+        isOpen={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
         title={`Order #${selectedOrder?.order_number}`}
         size="lg"
       >
@@ -209,19 +159,15 @@ export default function Orders() {
             <div className="border-t border-gray-100 pt-4">
               <p className="text-xs text-text-muted uppercase tracking-wider mb-2">Order Items</p>
               <div className="space-y-2">
-                {(selectedOrder.items || []).length > 0 ? (
-                  selectedOrder.items.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-lg bg-surface px-3 py-2">
-                      <div>
-                        <p className="text-sm font-medium text-text">{item.product_name}</p>
-                        <p className="text-xs text-text-muted">x{item.quantity} @ ${item.unit_price.toFixed(2)}</p>
-                      </div>
-                      <span className="text-sm font-medium text-text">${item.total_price.toFixed(2)}</span>
+                {selectedOrder.items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-lg bg-surface px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-text">{item.product_name}</p>
+                      <p className="text-xs text-text-muted">x{item.quantity} @ ${item.unit_price.toFixed(2)}</p>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-text-muted">No item details available.</p>
-                )}
+                    <span className="text-sm font-medium text-text">${item.total_price.toFixed(2)}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -232,7 +178,7 @@ export default function Orders() {
                 <p className="text-lg font-bold text-text">Total: ${selectedOrder.total.toFixed(2)}</p>
               </div>
               {selectedOrder.status !== 'refunded' && (
-                <Button variant="danger" size="sm" onClick={handleRefund} loading={isRefunding}>
+                <Button variant="danger" size="sm">
                   <Undo2 className="h-4 w-4" />
                   Refund
                 </Button>

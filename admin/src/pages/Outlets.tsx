@@ -5,24 +5,16 @@ import Table from '@/components/ui/Table';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
-import { useOutlets, useCreateOutlet, useUpdateOutlet } from '@/hooks/useOutlets';
-import type { Outlet, OutletFormData } from '@/types';
+import type { Outlet } from '@/types';
+
+const mockOutlets: Outlet[] = [
+  { id: '1', name: 'Main Street', address: '123 Main St, Downtown', phone: '555-0100', email: 'main@gridpos.com', active: true, created_at: '2024-01-01' },
+  { id: '2', name: 'Downtown', address: '456 Oak Ave, City Center', phone: '555-0101', email: 'downtown@gridpos.com', active: true, created_at: '2024-01-01' },
+];
 
 export default function Outlets() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingOutlet, setEditingOutlet] = useState<Outlet | null>(null);
-
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [active, setActive] = useState(true);
-
-  const { data: outletsData, isLoading } = useOutlets();
-  const createOutlet = useCreateOutlet();
-  const updateOutlet = useUpdateOutlet(editingOutlet?.id || '');
-
-  const outlets = outletsData?.data || [];
 
   const columns = [
     {
@@ -51,54 +43,10 @@ export default function Outlets() {
     },
   ];
 
-  function openCreate() {
-    setEditingOutlet(null);
-    setName('');
-    setAddress('');
-    setPhone('');
-    setEmail('');
-    setActive(true);
-    setIsFormOpen(true);
-  }
-
-  function handleEdit(outlet: Outlet) {
+  const handleEdit = (outlet: Outlet) => {
     setEditingOutlet(outlet);
-    setName(outlet.name || '');
-    setAddress(outlet.address || '');
-    setPhone(outlet.phone || '');
-    setEmail(outlet.email || '');
-    setActive(outlet.active ?? true);
     setIsFormOpen(true);
-  }
-
-  function closeModal() {
-    setIsFormOpen(false);
-    setEditingOutlet(null);
-  }
-
-  async function handleSubmit() {
-    if (!name.trim() || !address.trim()) {
-      return;
-    }
-    const payload: OutletFormData = {
-      name: name.trim(),
-      address: address.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      active,
-    };
-    if (editingOutlet) {
-      updateOutlet.mutate(payload, {
-        onSuccess: () => closeModal(),
-      });
-    } else {
-      createOutlet.mutate(payload, {
-        onSuccess: () => closeModal(),
-      });
-    }
-  }
-
-  const isSubmitting = createOutlet.isPending || updateOutlet.isPending;
+  };
 
   return (
     <div className="space-y-6">
@@ -107,7 +55,7 @@ export default function Outlets() {
           <h1 className="text-2xl font-bold text-text">Outlets</h1>
           <p className="mt-1 text-sm text-text-muted">Manage store locations</p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={() => { setEditingOutlet(null); setIsFormOpen(true); }}>
           <Plus className="h-4 w-4" />
           Add Outlet
         </Button>
@@ -116,8 +64,7 @@ export default function Outlets() {
       <Card>
         <Table
           columns={columns}
-          data={outlets as any}
-          loading={isLoading}
+          data={mockOutlets}
           onRowClick={handleEdit}
           emptyMessage="No outlets found"
         />
@@ -125,54 +72,28 @@ export default function Outlets() {
 
       <Modal
         isOpen={isFormOpen}
-        onClose={closeModal}
+        onClose={() => { setIsFormOpen(false); setEditingOutlet(null); }}
         title={editingOutlet ? 'Edit Outlet' : 'Add Outlet'}
       >
         <div className="space-y-4">
-          <Input
-            label="Outlet Name"
-            placeholder="e.g. HAC Sunset Way"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Input
-            label="Address"
-            placeholder="Sunset Way, Singapore"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
-          <Input
-            label="Phone"
-            placeholder="Optional"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-          <Input
-            label="Email"
-            type="email"
-            placeholder="Optional"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+          <Input label="Outlet Name" placeholder="e.g. Main Street" defaultValue={editingOutlet?.name} />
+          <Input label="Address" placeholder="123 Main St" defaultValue={editingOutlet?.address} />
+          <Input label="Phone" placeholder="555-0100" defaultValue={editingOutlet?.phone} />
+          <Input label="Email" type="email" placeholder="outlet@gridpos.com" defaultValue={editingOutlet?.email} />
 
           <div className="flex items-center gap-3">
             <input
               type="checkbox"
               id="outlet-active"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
+              defaultChecked={editingOutlet?.active ?? true}
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
             />
             <label htmlFor="outlet-active" className="text-sm text-text">Active</label>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} loading={isSubmitting} disabled={!name.trim() || !address.trim()}>
-              {editingOutlet ? 'Update' : 'Create'}
-            </Button>
+            <Button variant="secondary" onClick={() => { setIsFormOpen(false); setEditingOutlet(null); }}>Cancel</Button>
+            <Button>{editingOutlet ? 'Update' : 'Create'}</Button>
           </div>
         </div>
       </Modal>

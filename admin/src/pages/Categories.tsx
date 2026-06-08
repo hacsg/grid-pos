@@ -1,38 +1,31 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { useCategories as useCategoriesQuery, useCreateCategory, useDeleteCategory, useReorderCategories } from '@/hooks/useCategories';
-import { updateCategory as updateCategoryApi } from '@/api/client';
-import { useOutlets } from '@/hooks/useOutlets';
+import { useCategories as useCategoriesQuery } from '@/hooks/useCategories';
 import Card from '@/components/ui/Card';
 import CategoryManager from '@/components/products/CategoryManager';
+import type { Outlet } from '@/types';
+
+const mockOutlets: Outlet[] = [
+  { id: '1', name: 'Main Street', address: '123 Main St', phone: '555-0100', email: 'main@gridpos.com', active: true, created_at: '2024-01-01' },
+  { id: '2', name: 'Downtown', address: '456 Oak Ave', phone: '555-0101', email: 'downtown@gridpos.com', active: true, created_at: '2024-01-01' },
+];
 
 export default function Categories() {
-  const queryClient = useQueryClient();
-  const { data: categoriesData, isLoading: catLoading } = useCategoriesQuery();
-  const { data: outletsData, isLoading: outletsLoading } = useOutlets();
-
+  const { data: categoriesData, isLoading } = useCategoriesQuery();
   const categories = categoriesData?.data || [];
-  const outlets = outletsData?.data || [];
-
-  const createCategory = useCreateCategory();
-  const deleteCategory = useDeleteCategory();
-  const reorderCategory = useReorderCategories();
 
   const handleCreate = (data: { name: string; outlet_ids: string[] }) => {
-    createCategory.mutate({ name: data.name, outlet_ids: data.outlet_ids });
+    console.log('Create category:', data);
   };
 
   const handleUpdate = (id: string, data: { name: string; outlet_ids: string[] }) => {
-    updateCategoryApi(id, { name: data.name, outlet_ids: data.outlet_ids }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-    });
+    console.log('Update category:', id, data);
   };
 
   const handleDelete = (id: string) => {
-    deleteCategory.mutate(id);
+    console.log('Delete category:', id);
   };
 
   const handleReorder = (ids: string[]) => {
-    reorderCategory.mutate(ids);
+    console.log('Reorder categories:', ids);
   };
 
   return (
@@ -47,8 +40,8 @@ export default function Categories() {
       <div className="max-w-2xl">
         <CategoryManager
           categories={categories}
-          outlets={outlets as any}
-          loading={catLoading || outletsLoading}
+          outlets={mockOutlets}
+          loading={isLoading}
           onCreate={handleCreate}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
