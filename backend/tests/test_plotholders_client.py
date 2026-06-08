@@ -29,7 +29,7 @@ async def test_lookup_by_phone_returns_first_customer() -> None:
 
     assert customer == {"id": "cus_1", "phone": "91234567"}
     assert requests[0].url.path == "/api/customers"
-    assert requests[0].url.params["phone"] == "91234567"
+    assert requests[0].url.params["phone"] == "+6591234567"
 
 
 @pytest.mark.asyncio
@@ -108,7 +108,7 @@ async def test_create_customer_omits_empty_optional_fields() -> None:
 
     assert customer["id"] == "cus_3"
     assert captured_json == {
-        "phone": "91234567",
+        "phone": "+6591234567",
         "name": "Jane",
         "birthday": "1990-01-01",
     }

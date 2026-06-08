@@ -21,6 +21,7 @@ from app.schemas.loyalty import (
     LoyaltyRedeemResponse,
     LoyaltySignupResponse,
 )
+from app.utils.phone import normalize_sg_phone, validate_sg_phone_or_raise
 
 # Exchange rate: S$1 spent = 10 points
 POINTS_PER_DOLLAR = 10
@@ -58,13 +59,17 @@ class LoyaltyService:
     """
 
     @staticmethod
-    async def lookup_member(db: AsyncSession, phone: str) -> LoyaltyMemberProfile:
+    async def lookup_member(db: AsyncSession, phone: str, country_code: str = "+65") -> LoyaltyMemberProfile:
         """Look up a loyalty member by phone number.
 
+        Validates and normalizes the phone to E.164 SG format before querying.
         Raises HTTPException 404 if not found.
         """
+        validate_sg_phone_or_raise(phone)
+        normalized_phone = normalize_sg_phone(phone, country_code)
+
         result = await db.execute(
-            select(LoyaltyMember).where(LoyaltyMember.phone == phone)
+            select(LoyaltyMember).where(LoyaltyMember.phone == normalized_phone)
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -79,6 +84,7 @@ class LoyaltyService:
             member_id=member.id,
             name=member.name,
             phone=member.phone,
+            country_code=member.country_code,
             points=member.points,
             points_value=_compute_points_value(member.points),
             tier=member.tier,
@@ -170,11 +176,15 @@ class LoyaltyService:
         db: AsyncSession,
         name: str,
         phone: str,
+        country_code: str = "+65",
     ) -> LoyaltySignupResponse:
         """Create a new loyalty member."""
-        # Check for duplicate phone
+        validate_sg_phone_or_raise(phone)
+        normalized_phone = normalize_sg_phone(phone, country_code)
+
+        # Check for duplicate phone (using normalized E.164 form)
         result = await db.execute(
-            select(LoyaltyMember).where(LoyaltyMember.phone == phone)
+            select(LoyaltyMember).where(LoyaltyMember.phone == normalized_phone)
         )
         if result.scalar_one_or_none() is not None:
             raise HTTPException(
@@ -184,7 +194,8 @@ class LoyaltyService:
 
         member = LoyaltyMember(
             name=name,
-            phone=phone,
+            phone=normalized_phone,
+            country_code=country_code,
             points=0,
             tier="bronze",
             total_spent=Decimal("0.00"),
@@ -196,6 +207,8 @@ class LoyaltyService:
         return LoyaltySignupResponse(
             member_id=member.id,
             name=member.name,
+            phone=member.phone,
+            country_code=member.country_code,
             points=member.points,
             tier=member.tier,
         )

@@ -19,6 +19,7 @@ from app.schemas.loyalty import (
 )
 from app.services.loyalty import LoyaltyService
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
+from app.utils.phone import normalize_sg_phone, validate_sg_phone_or_raise
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
 
@@ -45,12 +46,23 @@ async def lookup_plotholders_customer(
     referral_code: str | None = Query(default=None, min_length=1),
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
 ) -> dict[str, Any]:
-    """Proxy Plotholders customer lookup by phone or referral code."""
+    """Proxy Plotholders customer lookup by phone or referral code.
+
+    When phone is provided, it is validated as a Singapore number and normalized
+    to E.164 format before forwarding to Plotholders.
+    """
     if bool(phone) == bool(referral_code):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide exactly one of phone or referral_code",
         )
+
+    if phone is not None:
+        try:
+            validate_sg_phone_or_raise(phone)
+            phone = normalize_sg_phone(phone)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     try:
         customer = (
@@ -76,10 +88,19 @@ async def lookup_member(
 ) -> LoyaltyMemberProfile:
     """Look up a loyalty member by phone number.
 
+    Phone is validated as a Singapore number and normalized to E.164 before lookup.
     Returns member profile with points balance and tier.
     Returns 404 with `signup_available: true` if not found.
     """
-    return await LoyaltyService.lookup_member(db, phone=payload.phone)
+    try:
+        validate_sg_phone_or_raise(payload.phone)
+        normalized = normalize_sg_phone(payload.phone, payload.country_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+    # Pass the normalized phone; service will also validate/normalize defensively
+    profile = await LoyaltyService.lookup_member(db, phone=normalized, country_code=payload.country_code)
+    return profile
 
 
 @router.post("/earn", response_model=LoyaltyEarnResponse)
@@ -125,8 +146,15 @@ async def signup_member(
 ) -> dict[str, Any] | LoyaltySignupResponse:
     """Create a new loyalty program member.
 
+    Phone is validated as a Singapore number and normalized to E.164 before creation.
     Returns basic profile with zero points and bronze tier.
     """
+    try:
+        validate_sg_phone_or_raise(payload.phone)
+        normalized_phone = normalize_sg_phone(payload.phone, payload.country_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
     uses_plotholders_payload = any(
         value is not None
         for value in (payload.email, payload.birthday, payload.referred_by_code)
@@ -134,7 +162,7 @@ async def signup_member(
     if uses_plotholders_payload or payload.name is None:
         try:
             return await plotholders.create_customer(
-                phone=payload.phone,
+                phone=normalized_phone,
                 email=payload.email,
                 name=payload.name,
                 birthday=payload.birthday,
@@ -146,7 +174,8 @@ async def signup_member(
     return await LoyaltyService.signup(
         db,
         name=payload.name,
-        phone=payload.phone,
+        phone=normalized_phone,
+        country_code=payload.country_code,
     )
 
 

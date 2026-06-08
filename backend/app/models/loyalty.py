@@ -25,6 +25,7 @@ class LoyaltyMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False, default="+65")
     points: Mapped[int] = mapped_column(nullable=False, default=0)
     tier: Mapped[str] = mapped_column(String(20), nullable=False, default="bronze")
     total_spent: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)

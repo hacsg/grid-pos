@@ -8,6 +8,7 @@ from httpx import AsyncClient
 
 from app.models.loyalty import LoyaltyMember
 from app.services.loyalty import POINTS_PER_DOLLAR
+from app.utils.phone import normalize_sg_phone, validate_sg_phone
 
 
 # ---------------------------------------------------------------------------
@@ -20,7 +21,8 @@ async def bronze_member(db_session) -> LoyaltyMember:
     """Create a bronze-tier loyalty member with 100 points."""
     member = LoyaltyMember(
         name="Jane Doe",
-        phone="91234567",
+        phone="+6591234567",
+        country_code="+65",
         points=100,
         tier="bronze",
         total_spent=Decimal("10.00"),
@@ -36,7 +38,8 @@ async def silver_member(db_session) -> LoyaltyMember:
     """Create a silver-tier loyalty member with 450 points."""
     member = LoyaltyMember(
         name="John Smith",
-        phone="87654321",
+        phone="+6587654321",
+        country_code="+65",
         points=450,
         tier="silver",
         total_spent=Decimal("80.00"),
@@ -52,7 +55,8 @@ async def gold_member(db_session) -> LoyaltyMember:
     """Create a gold-tier loyalty member with 2500 points."""
     member = LoyaltyMember(
         name="Alice Wang",
-        phone="88888888",
+        phone="+6588888888",
+        country_code="+65",
         points=2500,
         tier="gold",
         total_spent=Decimal("400.00"),
@@ -430,3 +434,108 @@ class TestFullFlow:
         )
         assert lookup2_resp.status_code == 200
         assert lookup2_resp.json()["points"] == 539
+
+
+# ---------------------------------------------------------------------------
+# Phone validation and normalization tests
+# ---------------------------------------------------------------------------
+
+
+class TestPhoneValidation:
+    """Phone validation and normalization behavior."""
+
+    def test_validate_sg_phone_valid(self) -> None:
+        """Valid SG phones (8 digits starting with 8 or 9) return True."""
+        assert validate_sg_phone("91234567") is True
+        assert validate_sg_phone("87654321") is True
+        assert validate_sg_phone("+6591234567") is True
+        assert validate_sg_phone("+65 9123 4567") is True
+        assert validate_sg_phone("9-123-4567") is True
+
+    def test_validate_sg_phone_invalid(self) -> None:
+        """Invalid SG phones return False."""
+        assert validate_sg_phone("71234567") is False  # starts with 7
+        assert validate_sg_phone("9123456") is False   # 7 digits
+        assert validate_sg_phone("912345678") is False # 9 digits
+        assert validate_sg_phone("abcdefgh") is False  # non-numeric
+        assert validate_sg_phone("") is False
+        assert validate_sg_phone("12345678") is False  # starts with 1
+
+    def test_normalize_sg_phone(self) -> None:
+        """normalize_sg_phone produces E.164 +65XXXXXXXX form."""
+        assert normalize_sg_phone("91234567") == "+6591234567"
+        assert normalize_sg_phone("87654321") == "+6587654321"
+        assert normalize_sg_phone("+6591234567") == "+6591234567"
+        assert normalize_sg_phone("65 9123 4567") == "+6591234567"
+        assert normalize_sg_phone("9-123-4567") == "+6591234567"
+        assert normalize_sg_phone("  9123 4567  ") == "+6591234567"
+
+
+class TestPhoneValidationAPI:
+    """API-level validation returns 422 for invalid SG phones and includes country_code."""
+
+    async def test_lookup_valid_phones_succeed(self, client: AsyncClient, bronze_member: LoyaltyMember) -> None:
+        """Valid phones (raw 8-digit) are accepted and normalized for lookup."""
+        for raw in ("91234567", "87654321"):
+            # Ensure a member exists for the normalized form by using the bronze fixture's number
+            # We test the normalization path accepts these inputs without 422.
+            resp = await client.post("/api/loyalty/lookup", json={"phone": raw})
+            # bronze_member has +6591234567; only "91234567" will find it.
+            if raw == "91234567":
+                assert resp.status_code == 200
+                assert resp.json()["country_code"] == "+65"
+            else:
+                # 87654321 won't match bronze; should 404 (not 422)
+                assert resp.status_code in (404, 200)
+
+    async def test_lookup_invalid_phones_return_422(self, client: AsyncClient) -> None:
+        """Invalid SG phones on lookup return 422."""
+        invalid_phones = ["71234567", "9123456", "912345678", "abcdefgh"]
+        for p in invalid_phones:
+            resp = await client.post("/api/loyalty/lookup", json={"phone": p})
+            assert resp.status_code == 422
+            assert "Invalid Singapore phone number" in str(resp.json()["detail"])
+
+    async def test_signup_valid_phones_succeed(self, client: AsyncClient) -> None:
+        """Valid phones are accepted on signup and response includes country_code."""
+        resp = await client.post(
+            "/api/loyalty/signup",
+            json={"name": "Valid User", "phone": "91234567"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["phone"] == "+6591234567"
+        assert data["country_code"] == "+65"
+
+    async def test_signup_invalid_phones_return_422(self, client: AsyncClient) -> None:
+        """Invalid SG phones on signup return 422."""
+        invalid_phones = ["71234567", "9123456", "912345678", "abcdefgh"]
+        for p in invalid_phones:
+            resp = await client.post(
+                "/api/loyalty/signup",
+                json={"name": "Bad", "phone": p},
+            )
+            assert resp.status_code == 422
+            assert "Invalid Singapore phone number" in str(resp.json()["detail"])
+
+    async def test_lookup_response_includes_country_code(self, client: AsyncClient, silver_member: LoyaltyMember) -> None:
+        """Lookup response includes country_code field."""
+        resp = await client.post(
+            "/api/loyalty/lookup",
+            json={"phone": silver_member.phone},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "country_code" in data
+        assert data["country_code"] == "+65"
+
+    async def test_signup_response_includes_country_code(self, client: AsyncClient) -> None:
+        """Signup response includes country_code field."""
+        resp = await client.post(
+            "/api/loyalty/signup",
+            json={"name": "CC User", "phone": "98765432"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert "country_code" in data
+        assert data["country_code"] == "+65"

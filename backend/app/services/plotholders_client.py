@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 
 from app.config import settings
+from app.utils.phone import normalize_sg_phone
 
 
 class PlotholdersAPIError(Exception):
@@ -39,11 +40,15 @@ class PlotholdersClient:
         self.transport = transport
 
     async def lookup_by_phone(self, phone: str) -> dict[str, Any] | None:
-        """Return the first Plotholders customer matching a phone number."""
+        """Return the first Plotholders customer matching a phone number.
+
+        Phone is normalized to E.164 SG format (+65XXXXXXXX) before sending.
+        """
+        normalized = normalize_sg_phone(phone)
         data = await self._request(
             "GET",
             "/api/customers",
-            params={"phone": phone},
+            params={"phone": normalized},
             allow_not_found=True,
         )
         return self._first_customer(data)
@@ -82,9 +87,13 @@ class PlotholdersClient:
         birthday: str | None = None,
         referred_by_code: str | None = None,
     ) -> dict[str, Any]:
-        """Create a Plotholders customer."""
+        """Create a Plotholders customer.
+
+        Phone is normalized to E.164 SG format (+65XXXXXXXX) before sending.
+        """
+        normalized = normalize_sg_phone(phone)
         payload = {
-            "phone": phone,
+            "phone": normalized,
             "email": email,
             "name": name,
             "birthday": birthday,

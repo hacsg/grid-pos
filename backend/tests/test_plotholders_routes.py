@@ -10,7 +10,8 @@ from app.routers.loyalty import get_plotholders_client
 
 class FakePlotholdersClient:
     async def lookup_by_phone(self, phone: str) -> dict[str, Any] | None:
-        if phone == "00000000":
+        # Support both legacy raw sentinel (if ever passed) and the normalized E.164 form
+        if phone in ("00000000", "99999999", "+6599999999"):
             return None
         return {
             "id": "cus_1",
@@ -74,7 +75,8 @@ async def test_get_lookup_requires_one_identifier(client: AsyncClient) -> None:
 async def test_get_lookup_returns_404_when_customer_missing(client: AsyncClient) -> None:
     app.dependency_overrides[get_plotholders_client] = _override_plotholders_client
 
-    resp = await client.get("/api/loyalty/lookup?phone=00000000")
+    # Use a valid SG phone format; router will normalize to E.164 before calling the client
+    resp = await client.get("/api/loyalty/lookup?phone=99999999")
 
     assert resp.status_code == 404
     assert resp.json()["detail"]["signup_available"] is True
