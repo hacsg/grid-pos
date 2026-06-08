@@ -151,6 +151,7 @@ export default function Products() {
         size="lg"
       >
         <ProductForm
+          key={editingProduct?.id || 'new'}
           product={editingProduct}
           categories={categories}
           onSubmit={handleFormSubmit}
