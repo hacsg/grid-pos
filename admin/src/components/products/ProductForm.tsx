@@ -130,16 +130,13 @@ export default function ProductForm({
     const sorted = sortAssignments(assignments);
     const target = index + direction;
     if (target < 0 || target >= sorted.length) return;
-    const tmpOrder = sorted[index].display_order;
+    // Reassign sequential display_orders after the swap
+    const reordered = [...sorted];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
     setAssignments((prev) =>
       prev.map((a) => {
-        if (a.id === sorted[index].id) {
-          return { ...a, display_order: sorted[target].display_order };
-        }
-        if (a.id === sorted[target].id) {
-          return { ...a, display_order: tmpOrder };
-        }
-        return a;
+        const newIdx = reordered.findIndex((r) => r.id === a.id);
+        return { ...a, display_order: newIdx };
       })
     );
   };
