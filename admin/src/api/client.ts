@@ -510,8 +510,8 @@ export const updateProductModifierAssignment = async (
   assignmentId: string,
   payload: ProductModifierAssignmentUpdate
 ): Promise<ProductModifierAssignment> => {
-  const { data } = await api.patch(
-    `/products/${productId}/modifier-groups/assignments/${assignmentId}`,
+  const { data } = await api.put(
+    `/products/${productId}/modifier-groups/${assignmentId}`,
     payload
   );
   toast.success('Assignment updated');
@@ -519,7 +519,7 @@ export const updateProductModifierAssignment = async (
 };
 
 export const unassignModifierGroupFromProduct = async (productId: string, assignmentId: string): Promise<void> => {
-  await api.delete(`/products/${productId}/modifier-groups/assignments/${assignmentId}`);
+  await api.delete(`/products/${productId}/modifier-groups/${assignmentId}`);
   toast.success('Modifier group unassigned');
 };
 
@@ -595,12 +595,12 @@ export const saveProductModifierAssignments = async (
   const newAssignments = assignments.filter(isNewProductModifierAssignment);
 
   for (const assignment of removedAssignments) {
-    await api.delete(`/products/${productId}/modifier-groups/assignments/${assignment.id}`);
+    await api.delete(`/products/${productId}/modifier-groups/${assignment.id}`);
   }
 
   for (const assignment of modifiedAssignments) {
-    await api.patch(
-      `/products/${productId}/modifier-groups/assignments/${assignment.id}`,
+    await api.put(
+      `/products/${productId}/modifier-groups/${assignment.id}`,
       toAssignmentUpdatePayload(assignment)
     );
   }
@@ -612,8 +612,8 @@ export const saveProductModifierAssignments = async (
     const created = normalizeProductModifierAssignment(data);
     actualIdsByTempId.set(assignment.id, created.id);
 
-    await api.patch(
-      `/products/${productId}/modifier-groups/assignments/${created.id}`,
+    await api.put(
+      `/products/${productId}/modifier-groups/${created.id}`,
       toAssignmentUpdatePayload(assignment)
     );
   }
