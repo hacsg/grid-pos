@@ -457,6 +457,10 @@ export const getCampaigns = async (): Promise<Campaign[]> => {
     discount_cents: toNumber(campaign.discount_cents, 0),
     auto_issue_on_signup: toBoolean(campaign.auto_issue_on_signup, false),
     signup_voucher_discount_cents: campaign.signup_voucher_discount_cents ?? null,
+    voucher_style: campaign.voucher_style ?? null,
+    voucher_accent_color: campaign.voucher_accent_color ?? null,
+    voucher_headline: campaign.voucher_headline ?? null,
+    voucher_background_url: campaign.voucher_background_url ?? null,
   }));
 };
 
@@ -467,6 +471,11 @@ export const createCampaign = async (payload: CampaignFormData): Promise<Campaig
     ...data,
     discount_cents: toNumber(data.discount_cents, 0),
     auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
+    signup_voucher_discount_cents: data.signup_voucher_discount_cents ?? null,
+    voucher_style: data.voucher_style ?? null,
+    voucher_accent_color: data.voucher_accent_color ?? null,
+    voucher_headline: data.voucher_headline ?? null,
+    voucher_background_url: data.voucher_background_url ?? null,
   };
 };
 
@@ -480,6 +489,11 @@ export const updateCampaign = async (
     ...data,
     discount_cents: toNumber(data.discount_cents, 0),
     auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
+    signup_voucher_discount_cents: data.signup_voucher_discount_cents ?? null,
+    voucher_style: data.voucher_style ?? null,
+    voucher_accent_color: data.voucher_accent_color ?? null,
+    voucher_headline: data.voucher_headline ?? null,
+    voucher_background_url: data.voucher_background_url ?? null,
   };
 };
 

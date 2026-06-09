@@ -24,6 +24,10 @@ class Campaign(UUIDPrimaryKeyMixin, Base):
     end_date: Mapped[date | None] = mapped_column(nullable=True)
     auto_issue_on_signup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     signup_voucher_discount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    voucher_style: Mapped[str | None] = mapped_column(String, nullable=True)
+    voucher_accent_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    voucher_headline: Mapped[str | None] = mapped_column(String, nullable=True)
+    voucher_background_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     customers = relationship("Customer", back_populates="signup_campaign")
     vouchers = relationship("Voucher", back_populates="campaign")

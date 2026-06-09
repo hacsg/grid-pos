@@ -29,6 +29,10 @@ class CampaignBase(BaseModel):
     end_date: date | None = None
     auto_issue_on_signup: bool = False
     signup_voucher_discount_cents: int | None = Field(default=None, ge=0)
+    voucher_style: str | None = None
+    voucher_accent_color: str | None = None
+    voucher_headline: str | None = None
+    voucher_background_url: str | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "CampaignBase":
@@ -55,6 +59,10 @@ class CampaignUpdate(BaseModel):
     end_date: date | None = None
     auto_issue_on_signup: bool | None = None
     signup_voucher_discount_cents: int | None = Field(default=None, ge=0)
+    voucher_style: str | None = None
+    voucher_accent_color: str | None = None
+    voucher_headline: str | None = None
+    voucher_background_url: str | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "CampaignUpdate":

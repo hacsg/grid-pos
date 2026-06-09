@@ -59,6 +59,12 @@ function CampaignForm({ campaign, onSubmit, onCancel, isSubmitting }: CampaignFo
   const [signupDiscount, setSignupDiscount] = useState(
     centsToDollars(campaign?.signup_voucher_discount_cents)
   );
+  const [voucherStyle, setVoucherStyle] = useState<string | null>(campaign?.voucher_style ?? null);
+  const [voucherAccentColor, setVoucherAccentColor] = useState(campaign?.voucher_accent_color ?? '');
+  const [voucherHeadline, setVoucherHeadline] = useState(campaign?.voucher_headline ?? '');
+  const [voucherBackgroundUrl, setVoucherBackgroundUrl] = useState(
+    campaign?.voucher_background_url ?? ''
+  );
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -76,8 +82,17 @@ function CampaignForm({ campaign, onSubmit, onCancel, isSubmitting }: CampaignFo
       end_date: endDate || null,
       auto_issue_on_signup: autoIssue,
       signup_voucher_discount_cents: autoIssue ? dollarsToCents(signupDiscount) : null,
+      voucher_style: voucherStyle,
+      voucher_accent_color: voucherAccentColor.trim() || null,
+      voucher_headline: voucherHeadline.trim() || null,
+      voucher_background_url: voucherBackgroundUrl.trim() || null,
     });
   };
+
+  const previewAccent = voucherAccentColor.trim() || '#0B1F3A';
+  const previewHeadline = voucherHeadline.trim() || 'Voucher';
+  const previewStyle = voucherStyle ?? 'classic';
+  const previewDiscountCents = dollarsToCents(discount) ?? 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -149,6 +164,75 @@ function CampaignForm({ campaign, onSubmit, onCancel, isSubmitting }: CampaignFo
           onChange={(e) => setSignupDiscount(e.target.value)}
         />
       )}
+
+      <div className="mt-4 space-y-4 border-t border-gray-200 pt-4">
+        <h3 className="text-sm font-semibold text-text">Voucher Design</h3>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-text">Style</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {['classic', 'perforated', 'stamp-card', 'raffle-ticket'].map((style) => (
+              <button
+                key={style}
+                type="button"
+                onClick={() => setVoucherStyle(style === 'classic' ? null : style)}
+                className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all ${
+                  (style === 'classic' && !voucherStyle) || voucherStyle === style
+                    ? 'border-primary bg-primary/5 text-primary'
+                    : 'border-gray-200 bg-white text-text-muted hover:border-gray-300'
+                }`}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Input
+          label="Accent Color (hex)"
+          value={voucherAccentColor}
+          onChange={(e) => setVoucherAccentColor(e.target.value)}
+          placeholder="#8B4513"
+        />
+
+        <Input
+          label="Headline"
+          value={voucherHeadline}
+          onChange={(e) => setVoucherHeadline(e.target.value)}
+          placeholder="FREE SCOOP"
+        />
+
+        <Input
+          label="Background Image URL"
+          value={voucherBackgroundUrl}
+          onChange={(e) => setVoucherBackgroundUrl(e.target.value)}
+          placeholder="https://example.com/campaign-hero.jpg"
+        />
+
+        <div
+          className="overflow-hidden rounded-lg border bg-white"
+          style={{ borderColor: previewAccent }}
+        >
+          <div className="flex min-h-[112px]">
+            <div
+              className="flex w-24 shrink-0 flex-col justify-between border-r-2 border-dashed p-3 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ borderColor: previewAccent, color: previewAccent }}
+            >
+              <span>{codePrefix.trim() || 'CODE'}</span>
+              <span>{previewStyle}</span>
+            </div>
+            <div className="flex flex-1 flex-col justify-center p-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                {name.trim() || 'Campaign'}
+              </p>
+              <p className="mt-1 text-xl font-black uppercase text-text" style={{ color: previewAccent }}>
+                {previewHeadline}
+              </p>
+              <p className="mt-2 text-sm text-text-muted">{formatMoney(previewDiscountCents)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center justify-end gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>

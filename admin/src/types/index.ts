@@ -402,6 +402,10 @@ export interface Campaign extends CampaignSummary {
   end_date?: string | null;
   auto_issue_on_signup: boolean;
   signup_voucher_discount_cents?: number | null;
+  voucher_style?: string | null;
+  voucher_accent_color?: string | null;
+  voucher_headline?: string | null;
+  voucher_background_url?: string | null;
 }
 
 export interface CampaignFormData {
@@ -415,6 +419,10 @@ export interface CampaignFormData {
   end_date?: string | null;
   auto_issue_on_signup: boolean;
   signup_voucher_discount_cents?: number | null;
+  voucher_style?: string | null;
+  voucher_accent_color?: string | null;
+  voucher_headline?: string | null;
+  voucher_background_url?: string | null;
 }
 
 export interface CampaignMetrics {
