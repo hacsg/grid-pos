@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0005_modifier_required_default_false"
+revision: str = "0005_mod_optional"
 down_revision: str | None = "0004_product_description"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
