@@ -45,17 +45,19 @@ CONE_CUP = [
 ]
 
 
-async def get_or_create_group(session: AsyncSession, name: str, description: str | None) -> ModifierGroup:
+async def get_or_create_group(session: AsyncSession, name: str, description: str | None, sort_order: int = 0) -> ModifierGroup:
     result = await session.execute(select(ModifierGroup).where(ModifierGroup.name == name))
     existing = result.scalar_one_or_none()
     if existing:
         if description is not None and existing.description != description:
             existing.description = description
-            await session.commit()
-            await session.refresh(existing)
+        if existing.sort_order != sort_order:
+            existing.sort_order = sort_order
+        await session.commit()
+        await session.refresh(existing)
         return existing
 
-    group = ModifierGroup(name=name, description=description)
+    group = ModifierGroup(name=name, description=description, sort_order=sort_order)
     session.add(group)
     await session.commit()
     await session.refresh(group)
@@ -136,8 +138,8 @@ async def find_product_by_name(session: AsyncSession, name: str) -> Product | No
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         # 1. Groups
-        flavors = await get_or_create_group(session, "Gelato Flavors", "Choose your gelato flavor(s)")
-        cone = await get_or_create_group(session, "Cone/Cup", "Choose your serving")
+        flavors = await get_or_create_group(session, "Gelato Flavors", "Choose your gelato flavor(s)", sort_order=0)
+        cone = await get_or_create_group(session, "Cone/Cup", "Choose your serving", sort_order=1)
 
         # 2. Options
         await ensure_options(session, flavors, GELATO_FLAVORS)

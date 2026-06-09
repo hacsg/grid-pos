@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -137,6 +138,39 @@ export default function ProductForm({
     }
   };
 
+  const moveAssignment = (index: number, direction: -1 | 1) => {
+    const sorted = [...assignments].sort((a, b) => a.display_order - b.display_order || a.group_name.localeCompare(b.group_name));
+    const target = index + direction;
+    if (target < 0 || target >= sorted.length) return;
+    // Swap display_order
+    const tmpOrder = sorted[index].display_order;
+    const updates: Promise<void>[] = [];
+    updates.push(
+      updateAssignMut.mutateAsync({
+        assignmentId: sorted[index].id,
+        data: { display_order: sorted[target].display_order },
+      }).then(() => {
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.id === sorted[index].id ? { ...a, display_order: sorted[target].display_order } : a
+          )
+        );
+      })
+    );
+    updates.push(
+      updateAssignMut.mutateAsync({
+        assignmentId: sorted[target].id,
+        data: { display_order: tmpOrder },
+      }).then(() => {
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.id === sorted[target].id ? { ...a, display_order: tmpOrder } : a
+          )
+        );
+      })
+    );
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <Input
@@ -246,10 +280,32 @@ export default function ProductForm({
                 {assignments
                   .slice()
                   .sort((a, b) => a.display_order - b.display_order || a.group_name.localeCompare(b.group_name))
-                  .map((a) => (
+                  .map((a, idx) => (
                     <div key={a.id} className="rounded-lg border border-gray-200 p-3">
                       <div className="flex items-center justify-between">
-                        <div className="font-medium text-sm">{a.group_name}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => moveAssignment(idx, -1)}
+                              disabled={idx === 0}
+                              className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                              aria-label="Move up"
+                            >
+                              <ChevronUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveAssignment(idx, 1)}
+                              disabled={idx === assignments.length - 1}
+                              className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                              aria-label="Move down"
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <div className="font-medium text-sm">{a.group_name}</div>
+                        </div>
                         <button
                           type="button"
                           className="text-xs text-error hover:underline"

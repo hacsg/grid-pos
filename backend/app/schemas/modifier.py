@@ -48,6 +48,7 @@ class ModifierGroupBase(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
+    sort_order: int = Field(default=0, ge=0)
 
 
 class ModifierGroupCreate(ModifierGroupBase):
@@ -67,6 +68,19 @@ class ModifierGroupRead(TimestampSchema, ModifierGroupBase):
     """Modifier group response with nested options."""
 
     options: list[ModifierOptionRead] = []
+
+
+class ModifierGroupReorderItem(BaseModel):
+    """Single item in a modifier group reorder request."""
+
+    id: UUID
+    sort_order: int = Field(ge=0)
+
+
+class ModifierGroupReorder(BaseModel):
+    """Payload for reordering multiple modifier groups."""
+
+    items: list[ModifierGroupReorderItem]
 
 
 class ProductModifierAssignmentCreate(BaseModel):

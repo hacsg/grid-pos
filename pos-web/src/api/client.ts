@@ -264,7 +264,7 @@ function normalizeModifierGroup(group: Partial<ModifierGroup>, index: number): M
     .filter((modifier) => modifier.is_available !== false)
     .sort((a, b) => numberOrDefault(a.display_order, 0) - numberOrDefault(b.display_order, 0) || a.name.localeCompare(b.name));
   const maxSelect = Math.max(1, numberOrDefault(group.max_select, 1));
-  const explicitRequired = optionalBoolean(group.is_required) ?? optionalBoolean(group.required);
+  const explicitRequired = optionalBoolean(group.required) ?? optionalBoolean(group.is_required);
   const minSelect = Math.min(maxSelect, Math.max(0, numberOrDefault(group.min_select, explicitRequired ? 1 : 0)));
   const isRequired = explicitRequired ?? (minSelect > 0);
   const name = group.name ?? group.group_name ?? 'Modifiers';

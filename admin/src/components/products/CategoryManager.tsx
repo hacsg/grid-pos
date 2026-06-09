@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
@@ -60,6 +60,19 @@ export default function CategoryManager({
     return outlets.find((o) => o.id === id)?.name ?? null;
   };
 
+  const moveCategory = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= categories.length) return;
+    const newOrder = [...categories];
+    // Swap the elements
+    const tmp = newOrder[index];
+    newOrder[index] = newOrder[target];
+    newOrder[target] = tmp;
+    // Reassign sort_order sequentially
+    const ids = newOrder.map((c) => c.id);
+    onReorder(ids);
+  };
+
   return (
     <>
       <Card
@@ -78,9 +91,24 @@ export default function CategoryManager({
               key={category.id}
               className="flex items-center gap-3 rounded-lg border border-gray-100 px-4 py-3 transition-colors hover:bg-surface"
             >
-              <button className="cursor-grab text-text-muted hover:text-text">
-                <GripVertical className="h-4 w-4" />
-              </button>
+              <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={() => moveCategory(index, -1)}
+                  disabled={index === 0}
+                  className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                  aria-label="Move up"
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => moveCategory(index, 1)}
+                  disabled={index === categories.length - 1}
+                  className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                  aria-label="Move down"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-text">{category.name}</p>
                 <p className="text-xs text-text-muted">

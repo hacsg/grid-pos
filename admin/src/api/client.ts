@@ -520,4 +520,10 @@ export const unassignModifierGroupFromProduct = async (productId: string, assign
   toast.success('Modifier group unassigned');
 };
 
+export const reorderProductModifierGroups = async (productId: string, ids: string[]): Promise<void> => {
+  const items = ids.map((id, index) => ({ id, sort_order: index }));
+  await api.patch(`/products/${productId}/modifier-groups/reorder`, { items });
+  toast.success('Modifier groups reordered');
+};
+
 export default api;

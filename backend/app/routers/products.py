@@ -21,6 +21,7 @@ from app.schemas.category import (
 from app.schemas.modifier import (
     ModifierGroupCreate,
     ModifierGroupRead,
+    ModifierGroupReorder,
     ModifierGroupUpdate,
     ModifierOptionCreate,
     ModifierOptionRead,
@@ -399,7 +400,7 @@ async def list_modifier_groups(db: AsyncSession = Depends(get_db)) -> list[Modif
     result = await db.execute(
         select(ModifierGroup)
         .options(selectinload(ModifierGroup.options))
-        .order_by(ModifierGroup.name)
+        .order_by(ModifierGroup.sort_order, ModifierGroup.name)
     )
     return list(result.scalars().all())
 
@@ -606,3 +607,32 @@ async def unassign_modifier_group_from_product(
     await db.delete(assignment)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/products/{product_id}/modifier-groups/reorder",
+    response_model=list[ProductModifierAssignmentRead],
+)
+async def reorder_product_modifier_groups(
+    product_id: UUID,
+    payload: ModifierGroupReorder,
+    db: AsyncSession = Depends(get_db),
+) -> list[ProductModifierAssignmentRead]:
+    """Update the display_order for multiple modifier group assignments at once.
+
+    Accepts a list of assignment id / sort_order pairs and applies them in a
+    single request. Returns the updated assignments in display_order order.
+    """
+    await _load_product_or_404(db, product_id)
+    updated: list[ProductModifierGroup] = []
+    for item in payload.items:
+        assignment = await _load_assignment_or_404(db, item.id)
+        if assignment.product_id != product_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found"
+            )
+        assignment.display_order = item.sort_order
+        updated.append(assignment)
+    await db.commit()
+    updated.sort(key=lambda x: x.display_order)
+    return [_build_assignment_read(a) for a in updated]
