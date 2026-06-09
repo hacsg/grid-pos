@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
 import { WifiOff } from 'lucide-react';
@@ -8,6 +8,7 @@ import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
 import ProductGrid from '@/components/ProductGrid';
+import VoucherRedemption from '@/components/VoucherRedemption';
 import VoucherSheet from '@/components/VoucherSheet';
 import CustomerDisplay from '@/display/CustomerDisplay';
 import {
@@ -109,8 +110,16 @@ function syncDisplay(
   }
 }
 
-function PosWorkspace() {
-  const [session, setSession] = useState<StaffSession | null>(() => loadSession());
+interface PosWorkspaceProps {
+  session?: StaffSession | null;
+  onLogout?: () => void;
+}
+
+function PosWorkspace(props: PosWorkspaceProps = {}) {
+  const [internalSession, setInternalSession] = useState<StaffSession | null>(() =>
+    props.session ?? loadSession()
+  );
+  const session = props.session ?? internalSession;
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -183,14 +192,21 @@ function PosWorkspace() {
   }, [cartItems, discount, loyalty, vouchers, totals]);
 
   function handleLogin(nextSession: StaffSession) {
-    setSession(nextSession);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
-    localStorage.setItem('auth_token', nextSession.token);
+    if (props.session === undefined) {
+      setInternalSession(nextSession);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+      localStorage.setItem('auth_token', nextSession.token);
+    }
+    // If parent provided session, parent owns the session state
   }
 
   function handleLogout() {
     tapFeedback();
-    setSession(null);
+    if (props.onLogout) {
+      props.onLogout();
+      return;
+    }
+    setInternalSession(null);
     setCartItems([]);
     setDiscount(null);
     setLoyalty(null);
@@ -395,8 +411,70 @@ function PosWorkspace() {
   );
 }
 
-function PosApp() {
-  return <PosWorkspace />;
+function StaffTabs({ active }: { active: 'pos' | 'vouchers' }) {
+  return (
+    <div className="staff-tabs">
+      <Link
+        to="/"
+        className={`staff-tab ${active === 'pos' ? 'active' : ''}`}
+        onPointerDown={() => tapFeedback()}
+      >
+        POS
+      </Link>
+      <Link
+        to="/vouchers"
+        className={`staff-tab ${active === 'vouchers' ? 'active' : ''}`}
+        onPointerDown={() => tapFeedback()}
+      >
+        Vouchers
+      </Link>
+    </div>
+  );
+}
+
+function StaffShell() {
+  const location = useLocation();
+  const [session, setSession] = useState<StaffSession | null>(() => loadSession());
+
+  const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
+
+  function handleLogin(nextSession: StaffSession) {
+    setSession(nextSession);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+    localStorage.setItem('auth_token', nextSession.token);
+  }
+
+  function handleLogout() {
+    tapFeedback();
+    setSession(null);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('auth_token');
+  }
+
+  if (!session) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  return (
+    <div className="staff-shell">
+      <div className="staff-topbar">
+        <StaffTabs active={activeTab} />
+        <div className="staff-session-info">
+          <span className="staff-session-outlet">{session.outlet.name}</span>
+          <span className="staff-session-divider">•</span>
+          <span className="staff-session-staff">{session.staff.name}</span>
+        </div>
+      </div>
+
+      <div className="staff-content">
+        {activeTab === 'pos' ? (
+          <PosWorkspace session={session} onLogout={handleLogout} />
+        ) : (
+          <VoucherRedemption session={session} onLogout={handleLogout} />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -404,8 +482,8 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<PosApp />} />
           <Route path="/display" element={<CustomerDisplay />} />
+          <Route path="/*" element={<StaffShell />} />
         </Routes>
       </BrowserRouter>
       <Toaster

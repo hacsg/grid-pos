@@ -12,6 +12,7 @@ export interface OrderSnapshot {
   subtotal: number;
   discount: number;
   loyaltyDiscount: number;
+  voucherDiscount: number;
   total: number;
   loyaltyCustomerName?: string;
 }

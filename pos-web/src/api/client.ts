@@ -453,4 +453,15 @@ export async function listVouchers(params?: { type?: VoucherType; redeemed?: boo
   const { data } = await api.get<VoucherRead[] | { data: VoucherRead[] }>('/vouchers', { params });
   return Array.isArray(data) ? data : (data as any).data ?? [];
 }
+
+const PLOTHOLDERS_API = 'https://plotholders-api-production.up.railway.app';
+
+export async function redeemVoucher(data: { code: string; staff_id: string; outlet: string }): Promise<any> {
+  const response = await axios.post(`${PLOTHOLDERS_API}/api/vouchers/redeem`, {
+    code: data.code.trim(),
+    staff_id: data.staff_id,
+    outlet: data.outlet,
+  });
+  return response.data;
+}
 // cache-bust 1780963317
