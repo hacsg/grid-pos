@@ -510,13 +510,16 @@ export const updateProductModifierAssignment = async (
   assignmentId: string,
   payload: ProductModifierAssignmentUpdate
 ): Promise<ProductModifierAssignment> => {
-  const { data } = await api.put(`/products/${productId}/modifier-groups/${assignmentId}`, payload);
+  const { data } = await api.patch(
+    `/products/${productId}/modifier-groups/assignments/${assignmentId}`,
+    payload
+  );
   toast.success('Assignment updated');
   return normalizeProductModifierAssignment(data);
 };
 
 export const unassignModifierGroupFromProduct = async (productId: string, assignmentId: string): Promise<void> => {
-  await api.delete(`/products/${productId}/modifier-groups/${assignmentId}`);
+  await api.delete(`/products/${productId}/modifier-groups/assignments/${assignmentId}`);
   toast.success('Modifier group unassigned');
 };
 
@@ -524,6 +527,107 @@ export const reorderProductModifierGroups = async (productId: string, ids: strin
   const items = ids.map((id, index) => ({ id, sort_order: index }));
   await api.patch(`/products/${productId}/modifier-groups/reorder`, { items });
   toast.success('Modifier groups reordered');
+};
+
+export const assignModifierGroup = assignModifierGroupToProduct;
+export const unassignModifierGroup = unassignModifierGroupFromProduct;
+
+const isNewProductModifierAssignment = (assignment: ProductModifierAssignment): boolean =>
+  assignment.id.startsWith('new-');
+
+const toAssignmentUpdatePayload = (
+  assignment: ProductModifierAssignment
+): ProductModifierAssignmentUpdate => ({
+  min_select: assignment.min_select,
+  max_select: assignment.max_select,
+  is_required: assignment.is_required,
+  display_order: assignment.display_order,
+});
+
+const hasAssignmentChanged = (
+  original: ProductModifierAssignment,
+  next: ProductModifierAssignment
+): boolean =>
+  original.min_select !== next.min_select ||
+  original.max_select !== next.max_select ||
+  original.is_required !== next.is_required ||
+  original.display_order !== next.display_order;
+
+export const hasProductModifierAssignmentChanges = (
+  originalAssignments: ProductModifierAssignment[],
+  assignments: ProductModifierAssignment[]
+): boolean => {
+  const originalById = new Map(originalAssignments.map((assignment) => [assignment.id, assignment]));
+  const persistedAssignments = assignments.filter((assignment) => !isNewProductModifierAssignment(assignment));
+  const persistedIds = new Set(persistedAssignments.map((assignment) => assignment.id));
+
+  return (
+    assignments.some(isNewProductModifierAssignment) ||
+    originalAssignments.some((assignment) => !persistedIds.has(assignment.id)) ||
+    persistedAssignments.some((assignment) => {
+      const original = originalById.get(assignment.id);
+      return !!original && hasAssignmentChanged(original, assignment);
+    })
+  );
+};
+
+export const saveProductModifierAssignments = async (
+  productId: string,
+  originalAssignments: ProductModifierAssignment[],
+  assignments: ProductModifierAssignment[]
+): Promise<void> => {
+  if (!hasProductModifierAssignmentChanges(originalAssignments, assignments)) {
+    return;
+  }
+
+  const originalById = new Map(originalAssignments.map((assignment) => [assignment.id, assignment]));
+  const persistedAssignments = assignments.filter((assignment) => !isNewProductModifierAssignment(assignment));
+  const persistedIds = new Set(persistedAssignments.map((assignment) => assignment.id));
+  const actualIdsByTempId = new Map<string, string>();
+
+  const removedAssignments = originalAssignments.filter(
+    (assignment) => !persistedIds.has(assignment.id)
+  );
+  const modifiedAssignments = persistedAssignments.filter((assignment) => {
+    const original = originalById.get(assignment.id);
+    return !!original && hasAssignmentChanged(original, assignment);
+  });
+  const newAssignments = assignments.filter(isNewProductModifierAssignment);
+
+  for (const assignment of removedAssignments) {
+    await api.delete(`/products/${productId}/modifier-groups/assignments/${assignment.id}`);
+  }
+
+  for (const assignment of modifiedAssignments) {
+    await api.patch(
+      `/products/${productId}/modifier-groups/assignments/${assignment.id}`,
+      toAssignmentUpdatePayload(assignment)
+    );
+  }
+
+  for (const assignment of newAssignments) {
+    const { data } = await api.post(`/products/${productId}/modifier-groups`, {
+      group_id: assignment.group_id,
+    });
+    const created = normalizeProductModifierAssignment(data);
+    actualIdsByTempId.set(assignment.id, created.id);
+
+    await api.patch(
+      `/products/${productId}/modifier-groups/assignments/${created.id}`,
+      toAssignmentUpdatePayload(assignment)
+    );
+  }
+
+  const reorderIds = assignments.map((assignment) =>
+    isNewProductModifierAssignment(assignment)
+      ? actualIdsByTempId.get(assignment.id) || assignment.id
+      : assignment.id
+  );
+  await api.patch(`/products/${productId}/modifier-groups/reorder`, {
+    items: reorderIds.map((id, index) => ({ id, sort_order: index })),
+  });
+
+  toast.success('Modifier assignments updated');
 };
 
 export default api;

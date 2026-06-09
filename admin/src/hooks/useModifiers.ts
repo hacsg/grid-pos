@@ -11,12 +11,14 @@ import {
   assignModifierGroupToProduct,
   updateProductModifierAssignment,
   unassignModifierGroupFromProduct,
+  saveProductModifierAssignments,
 } from '@/api/client';
 import type {
   ModifierGroupCreate,
   ModifierGroupUpdate,
   ModifierOptionCreate,
   ModifierOptionUpdate,
+  ProductModifierAssignment,
   ProductModifierAssignmentCreate,
   ProductModifierAssignmentUpdate,
 } from '@/types';
@@ -115,6 +117,25 @@ export function useUnassignModifierGroup(productId: string) {
   return useMutation({
     mutationFn: (assignmentId: string) => unassignModifierGroupFromProduct(productId, assignmentId),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-modifier-groups', productId] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useSaveProductModifierAssignments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      productId,
+      originalAssignments,
+      assignments,
+    }: {
+      productId: string;
+      originalAssignments: ProductModifierAssignment[];
+      assignments: ProductModifierAssignment[];
+    }) => saveProductModifierAssignments(productId, originalAssignments, assignments),
+    onSuccess: (_, { productId }) => {
       qc.invalidateQueries({ queryKey: ['product-modifier-groups', productId] });
       qc.invalidateQueries({ queryKey: ['products'] });
     },

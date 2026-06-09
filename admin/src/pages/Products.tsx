@@ -7,7 +7,8 @@ import ProductTable from '@/components/products/ProductTable';
 import ProductForm from '@/components/products/ProductForm';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useDeleteProducts, useToggleProductAvailability, useToggleProductsAvailability } from '@/hooks/useProducts';
 import { useCategories } from '@/hooks/useCategories';
-import type { Product } from '@/types';
+import { useSaveProductModifierAssignments } from '@/hooks/useModifiers';
+import type { Product, ProductModifierAssignment } from '@/types';
 
 export default function Products() {
   const [search, setSearch] = useState('');
@@ -28,6 +29,7 @@ export default function Products() {
   const deleteProducts = useDeleteProducts();
   const toggleAvailability = useToggleProductAvailability();
   const toggleBulkAvailability = useToggleProductsAvailability();
+  const saveModifierAssignments = useSaveProductModifierAssignments();
 
   const products = productsData?.data || [];
   const categories = categoriesData?.data || [];
@@ -47,34 +49,33 @@ export default function Products() {
   };
 
   const handleEdit = (product: Product) => {
-    console.log('[Products] handleEdit called, setting editingProduct:', product);
-    console.log('[Products] product fields snapshot:', {
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      price: product.price,
-      category_id: product.category_id,
-      available: product.available,
-      modifier_groups_count: product.modifier_groups?.length || 0,
-    });
     setEditingProduct(product);
     setIsFormOpen(true);
   };
 
-  const handleFormSubmit = (data: any) => {
-    if (editingProduct) {
-      updateProduct.mutate(data, {
-        onSuccess: () => {
-          setIsFormOpen(false);
-          setEditingProduct(null);
-        },
-      });
-    } else {
-      createProduct.mutate(data, {
-        onSuccess: () => {
-          setIsFormOpen(false);
-        },
-      });
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingProduct(null);
+  };
+
+  const handleFormSubmit = async (data: any, assignments: ProductModifierAssignment[]) => {
+    const productBeingEdited = editingProduct;
+
+    try {
+      if (productBeingEdited) {
+        await updateProduct.mutateAsync(data);
+        await saveModifierAssignments.mutateAsync({
+          productId: productBeingEdited.id,
+          originalAssignments: productBeingEdited.modifier_groups || [],
+          assignments,
+        });
+        closeForm();
+      } else {
+        await createProduct.mutateAsync(data);
+        closeForm();
+      }
+    } catch {
+      // API errors are surfaced by the shared client interceptor.
     }
   };
 
@@ -156,7 +157,7 @@ export default function Products() {
 
       <Modal
         isOpen={isFormOpen}
-        onClose={() => { setIsFormOpen(false); setEditingProduct(null); }}
+        onClose={closeForm}
         title={editingProduct ? 'Edit Product' : 'Create Product'}
         size="lg"
       >
@@ -165,8 +166,8 @@ export default function Products() {
           product={editingProduct}
           categories={categories}
           onSubmit={handleFormSubmit}
-          onCancel={() => { setIsFormOpen(false); setEditingProduct(null); }}
-          loading={createProduct.isPending || updateProduct.isPending}
+          onCancel={closeForm}
+          loading={createProduct.isPending || updateProduct.isPending || saveModifierAssignments.isPending}
         />
       </Modal>
     </div>

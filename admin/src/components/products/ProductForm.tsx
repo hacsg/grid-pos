@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import { useModifierGroups, useAssignModifierGroup, useUpdateProductModifierAssignment, useUnassignModifierGroup } from '@/hooks/useModifiers';
+import { useModifierGroups } from '@/hooks/useModifiers';
 import type { Product, Category, ProductModifierAssignment } from '@/types';
 
 const productSchema = z.object({
@@ -18,11 +18,15 @@ const productSchema = z.object({
 
 type ProductFormValues = z.infer<typeof productSchema>;
 
+const sortAssignments = (items: ProductModifierAssignment[]) =>
+  [...items].sort((a, b) => a.display_order - b.display_order || a.group_name.localeCompare(b.group_name));
+
 interface ProductFormProps {
   product?: Product | null;
   categories: Category[];
-  onSubmit: (data: ProductFormValues) => void;
+  onSubmit: (data: ProductFormValues, assignments: ProductModifierAssignment[]) => void;
   onCancel: () => void;
+  onModifierChanges?: (assignments: ProductModifierAssignment[]) => void;
   loading?: boolean;
 }
 
@@ -31,6 +35,7 @@ export default function ProductForm({
   categories,
   onSubmit,
   onCancel,
+  onModifierChanges,
   loading = false,
 }: ProductFormProps) {
   const {
@@ -49,21 +54,10 @@ export default function ProductForm({
     },
   });
 
-  console.log('[ProductForm] component function invoked (mount or re-render). product prop:', product?.id, {
-    name: product?.name,
-    description: product?.description,
-    price: product?.price,
-    category_id: product?.category_id,
-  });
-
   // Modifier assignments (for existing product)
   const { data: modifierGroupsData = [] } = useModifierGroups();
   const [assignments, setAssignments] = useState<ProductModifierAssignment[]>([]);
   const [selectedToAdd, setSelectedToAdd] = useState('');
-
-  const assignMut = useAssignModifierGroup(product?.id || '');
-  const updateAssignMut = useUpdateProductModifierAssignment(product?.id || '');
-  const unassignMut = useUnassignModifierGroup(product?.id || '');
 
   // Seed assignments from product when it loads/changes
   useEffect(() => {
@@ -74,9 +68,12 @@ export default function ProductForm({
     }
   }, [product?.id, product?.modifier_groups]);
 
+  useEffect(() => {
+    onModifierChanges?.(sortAssignments(assignments));
+  }, [assignments, onModifierChanges]);
+
   // Populate form fields (name, description, price, etc). Using defaultValues for sync init on mount + reset in effect for safety/timing.
   // The key={editingProduct?.id} in parent forces remount when switching products so this runs with correct data.
-  // We log to debug whether editingProduct data is present when form mounts vs when reset runs.
   useEffect(() => {
     const formValues = {
       name: product?.name ?? '',
@@ -85,94 +82,70 @@ export default function ProductForm({
       category_id: product?.category_id ?? '',
       available: product?.available ?? true,
     };
-    console.log('[ProductForm] useEffect for reset() — is form mounted? yes (effect ran). product?.id:', product?.id, 'resetting to:', formValues);
     reset(formValues);
   }, [product?.id, reset]);
 
   const assignedGroupIds = new Set(assignments.map((a) => a.group_id));
   const availableToAdd = modifierGroupsData.filter((g) => !assignedGroupIds.has(g.id));
 
-  const handleAddGroup = async () => {
+  const handleFormSubmit = (data: ProductFormValues) => {
+    onSubmit(data, sortAssignments(assignments));
+  };
+
+  const handleAddGroup = () => {
     if (!product?.id || !selectedToAdd) return;
     const group = modifierGroupsData.find((g) => g.id === selectedToAdd);
     if (!group) return;
-    try {
-      const created = await assignMut.mutateAsync({ group_id: selectedToAdd });
-      // created is the assignment read
-      setAssignments((prev) => [...prev, created as any]);
-      setSelectedToAdd('');
-    } catch {
-      // error toasted by client
-    }
+    const nextDisplayOrder = assignments.length > 0
+      ? Math.max(...assignments.map((a) => a.display_order)) + 1
+      : 0;
+    const created: ProductModifierAssignment = {
+      id: `new-${group.id}-${Date.now()}`,
+      group_id: group.id,
+      group_name: group.name,
+      group_description: group.description,
+      min_select: 0,
+      max_select: 1,
+      is_required: false,
+      display_order: nextDisplayOrder,
+      options: group.options,
+    };
+    setAssignments((prev) => [...prev, created]);
+    setSelectedToAdd('');
   };
 
-  const handleUpdateAssignment = async (assignmentId: string, patch: Partial<ProductModifierAssignment>) => {
+  const handleUpdateAssignment = (assignmentId: string, patch: Partial<ProductModifierAssignment>) => {
     if (!product?.id) return;
-    // optimistic
     setAssignments((prev) =>
       prev.map((a) => (a.id === assignmentId ? { ...a, ...patch } : a))
     );
-    try {
-      await updateAssignMut.mutateAsync({
-        assignmentId,
-        data: {
-          min_select: patch.min_select,
-          max_select: patch.max_select,
-          is_required: patch.is_required,
-          display_order: patch.display_order,
-        },
-      });
-    } catch {
-      // revert on error? for simplicity refetch will happen via hook invalidation in real usage
-    }
   };
 
-  const handleRemoveAssignment = async (assignmentId: string) => {
+  const handleRemoveAssignment = (assignmentId: string) => {
     if (!product?.id) return;
-    const prev = assignments;
-    setAssignments((p) => p.filter((a) => a.id !== assignmentId));
-    try {
-      await unassignMut.mutateAsync(assignmentId);
-    } catch {
-      setAssignments(prev);
-    }
+    setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
   };
 
   const moveAssignment = (index: number, direction: -1 | 1) => {
-    const sorted = [...assignments].sort((a, b) => a.display_order - b.display_order || a.group_name.localeCompare(b.group_name));
+    const sorted = sortAssignments(assignments);
     const target = index + direction;
     if (target < 0 || target >= sorted.length) return;
-    // Swap display_order
     const tmpOrder = sorted[index].display_order;
-    const updates: Promise<void>[] = [];
-    updates.push(
-      updateAssignMut.mutateAsync({
-        assignmentId: sorted[index].id,
-        data: { display_order: sorted[target].display_order },
-      }).then(() => {
-        setAssignments((prev) =>
-          prev.map((a) =>
-            a.id === sorted[index].id ? { ...a, display_order: sorted[target].display_order } : a
-          )
-        );
-      })
-    );
-    updates.push(
-      updateAssignMut.mutateAsync({
-        assignmentId: sorted[target].id,
-        data: { display_order: tmpOrder },
-      }).then(() => {
-        setAssignments((prev) =>
-          prev.map((a) =>
-            a.id === sorted[target].id ? { ...a, display_order: tmpOrder } : a
-          )
-        );
+    setAssignments((prev) =>
+      prev.map((a) => {
+        if (a.id === sorted[index].id) {
+          return { ...a, display_order: sorted[target].display_order };
+        }
+        if (a.id === sorted[target].id) {
+          return { ...a, display_order: tmpOrder };
+        }
+        return a;
       })
     );
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-5">
       <Input
         label="Product Name"
         placeholder="e.g. Classic Gelato"
@@ -265,7 +238,7 @@ export default function ProductForm({
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={!selectedToAdd || assignMut.isPending}
+                disabled={!selectedToAdd}
                 onClick={handleAddGroup}
               >
                 Add
@@ -277,96 +250,93 @@ export default function ProductForm({
               <div className="text-xs text-text-muted">No modifier groups assigned yet.</div>
             ) : (
               <div className="space-y-2">
-                {assignments
-                  .slice()
-                  .sort((a, b) => a.display_order - b.display_order || a.group_name.localeCompare(b.group_name))
-                  .map((a, idx) => (
-                    <div key={a.id} className="rounded-lg border border-gray-200 p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="flex flex-col gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => moveAssignment(idx, -1)}
-                              disabled={idx === 0}
-                              className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
-                              aria-label="Move up"
-                            >
-                              <ChevronUp className="h-3 w-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveAssignment(idx, 1)}
-                              disabled={idx === assignments.length - 1}
-                              className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
-                              aria-label="Move down"
-                            >
-                              <ChevronDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                          <div className="font-medium text-sm">{a.group_name}</div>
+                {sortAssignments(assignments).map((a, idx) => (
+                  <div key={a.id} className="rounded-lg border border-gray-200 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => moveAssignment(idx, -1)}
+                            disabled={idx === 0}
+                            className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                            aria-label="Move up"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveAssignment(idx, 1)}
+                            disabled={idx === assignments.length - 1}
+                            className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                            aria-label="Move down"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="text-xs text-error hover:underline"
-                          onClick={() => handleRemoveAssignment(a.id)}
-                        >
-                          Remove
-                        </button>
+                        <div className="font-medium text-sm">{a.group_name}</div>
                       </div>
-                      {a.group_description && (
-                        <div className="text-[11px] text-text-muted mb-2">{a.group_description}</div>
-                      )}
+                      <button
+                        type="button"
+                        className="text-xs text-error hover:underline"
+                        onClick={() => handleRemoveAssignment(a.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {a.group_description && (
+                      <div className="text-[11px] text-text-muted mb-2">{a.group_description}</div>
+                    )}
 
-                      <div className="grid grid-cols-2 gap-3 mt-2">
-                        <div>
-                          <label className="block text-[11px] text-text-muted mb-1">Min select</label>
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-full rounded border border-gray-200 px-2 py-1 text-sm"
-                            value={a.min_select}
-                            onChange={(e) =>
-                              handleUpdateAssignment(a.id, { min_select: Math.max(0, parseInt(e.target.value || '0', 10)) })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] text-text-muted mb-1">Max select</label>
-                          <input
-                            type="number"
-                            min={1}
-                            className="w-full rounded border border-gray-200 px-2 py-1 text-sm"
-                            value={a.max_select}
-                            onChange={(e) =>
-                              handleUpdateAssignment(a.id, { max_select: Math.max(1, parseInt(e.target.value || '1', 10)) })
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-2 flex items-center gap-2">
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <div>
+                        <label className="block text-[11px] text-text-muted mb-1">Min select</label>
                         <input
-                          id={`req-${a.id}`}
-                          type="checkbox"
-                          checked={a.is_required}
-                          onChange={(e) => {
-                            const isRequired = e.target.checked;
-                            handleUpdateAssignment(a.id, {
-                              is_required: isRequired,
-                              min_select: isRequired ? Math.max(a.min_select, 1) : 0,
-                            });
-                          }}
-                          className="h-3.5 w-3.5 accent-primary"
+                          type="number"
+                          min={0}
+                          className="w-full rounded border border-gray-200 px-2 py-1 text-sm"
+                          value={a.min_select}
+                          onChange={(e) =>
+                            handleUpdateAssignment(a.id, { min_select: Math.max(0, parseInt(e.target.value || '0', 10)) })
+                          }
                         />
-                        <label htmlFor={`req-${a.id}`} className="text-xs text-text">Required</label>
                       </div>
-
-                      <div className="mt-1 text-[10px] text-text-muted">
-                        {a.options?.length || 0} option{(a.options?.length || 0) === 1 ? '' : 's'} available
+                      <div>
+                        <label className="block text-[11px] text-text-muted mb-1">Max select</label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full rounded border border-gray-200 px-2 py-1 text-sm"
+                          value={a.max_select}
+                          onChange={(e) =>
+                            handleUpdateAssignment(a.id, { max_select: Math.max(1, parseInt(e.target.value || '1', 10)) })
+                          }
+                        />
                       </div>
                     </div>
-                  ))}
+
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        id={`req-${a.id}`}
+                        type="checkbox"
+                        checked={a.is_required}
+                        onChange={(e) => {
+                          const isRequired = e.target.checked;
+                          handleUpdateAssignment(a.id, {
+                            is_required: isRequired,
+                            min_select: isRequired ? Math.max(a.min_select, 1) : 0,
+                          });
+                        }}
+                        className="h-3.5 w-3.5 accent-primary"
+                      />
+                      <label htmlFor={`req-${a.id}`} className="text-xs text-text">Required</label>
+                    </div>
+
+                    <div className="mt-1 text-[10px] text-text-muted">
+                      {a.options?.length || 0} option{(a.options?.length || 0) === 1 ? '' : 's'} available
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </>
