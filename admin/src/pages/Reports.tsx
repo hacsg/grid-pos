@@ -225,10 +225,11 @@ function getPresetDates(preset: DatePreset): { from: string; to: string } {
 }
 
 // ── Formatters ────────────────────────────────────────────────
-const formatCurrency = (value: number) =>
-  `S$${value.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatCurrency = (value: number | null | undefined) =>
+  value == null ? 'S$0.00' : `S$${value.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const formatPercent = (value: number) => {
+const formatPercent = (value: number | null | undefined) => {
+  if (value == null) return '0.0%';
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(1)}%`;
 };
@@ -879,7 +880,7 @@ export default function Reports() {
                         <td className="px-3 py-2.5 text-sm font-medium text-text">{item.product_name}</td>
                         <td className="px-3 py-2.5 text-right text-sm text-text">{item.units_sold}</td>
                         <td className="px-3 py-2.5 text-right text-sm text-text">{formatCurrency(item.revenue)}</td>
-                        <td className="px-3 py-2.5 text-right text-sm text-text">{item.avg_modifiers_per_order.toFixed(1)}</td>
+                        <td className="px-3 py-2.5 text-right text-sm text-text">{item.avg_modifiers_per_order?.toFixed(1) ?? '0.0'}</td>
                       </tr>
                     ))}
                   </tbody>
