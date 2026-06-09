@@ -188,6 +188,24 @@ export default function CustomerDisplay() {
             </div>
 
             <div className="display-totals">
+              {snapshot.discount > 0 && (
+                <div className="display-total-row display-discount">
+                  <span>Discount</span>
+                  <strong>-{formatCurrency(snapshot.discount)}</strong>
+                </div>
+              )}
+              {snapshot.loyaltyDiscount > 0 && (
+                <div className="display-total-row display-discount">
+                  <span>Loyalty</span>
+                  <strong>-{formatCurrency(snapshot.loyaltyDiscount)}</strong>
+                </div>
+              )}
+              {snapshot.voucherDiscount > 0 && (
+                <div className="display-total-row display-discount">
+                  <span>Vouchers</span>
+                  <strong>-{formatCurrency(snapshot.voucherDiscount)}</strong>
+                </div>
+              )}
               <div className="display-total-row">
                 <span>Total</span>
                 <strong>{formatCurrency(total)}</strong>
