@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+import secrets
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -53,6 +54,62 @@ async def create_voucher(
     return voucher
 
 
+async def issue_voucher(
+    db: AsyncSession,
+    *,
+    customer_id: UUID,
+    campaign_id: UUID,
+    code_prefix: str,
+    discount_cents: int,
+    expires_at: datetime | None = None,
+    commit: bool = True,
+) -> Voucher:
+    """Issue a campaign voucher to a customer."""
+    if discount_cents <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Voucher discount must be greater than zero",
+        )
+
+    prefix = code_prefix.strip().upper()
+    if not prefix:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Campaign code prefix is required",
+        )
+
+    code = ""
+    for _ in range(10):
+        candidate = f"{prefix}-{secrets.token_hex(4).upper()}"
+        if await get_voucher_by_code(db, candidate) is None:
+            code = candidate
+            break
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unable to generate a unique voucher code",
+        )
+
+    amount = quantize_money(Decimal(discount_cents) / Decimal(100))
+    voucher = Voucher(
+        code=code,
+        type=VoucherType.acre_group,
+        amount=amount,
+        customer_id=customer_id,
+        campaign_id=campaign_id,
+        discount_cents=discount_cents,
+        status="available",
+        expires_at=expires_at,
+    )
+    db.add(voucher)
+    if commit:
+        await db.commit()
+        await db.refresh(voucher)
+    else:
+        await db.flush()
+    return voucher
+
+
 async def validate_voucher_code(
     db: AsyncSession,
     code: str,
@@ -70,10 +127,15 @@ async def validate_voucher_code(
 
     local = await get_voucher_by_code(db, normalized)
     if local:
-        if local.redeemed_at is not None:
+        if local.redeemed_at is not None or local.status == "redeemed":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Voucher has already been redeemed",
+            )
+        if local.voided_at is not None or local.status == "voided":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Voucher has been voided",
             )
         return local
 
@@ -176,9 +238,11 @@ async def apply_vouchers_to_order(
         # Mark voucher redeemed
         now = datetime.now(UTC)
         voucher.redeemed_at = now
+        voucher.status = "redeemed"
         voucher.redeemed_by_staff_id = staff.id if staff else None
         voucher.outlet_id = order.outlet_id
         voucher.order_id = order.id
+        voucher.redeemed_order_id = order.id
 
         link = OrderVoucher(
             order_id=order.id,

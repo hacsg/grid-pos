@@ -52,6 +52,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     payment_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
     payment_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     loyalty_member_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     loyalty_points_earned: Mapped[int | None] = mapped_column(Integer, nullable=True)
     loyalty_points_redeemed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     loyalty_discount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
@@ -67,4 +68,3 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="order",
         foreign_keys="Voucher.order_id",
     )
-

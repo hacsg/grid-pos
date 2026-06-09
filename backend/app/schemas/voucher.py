@@ -24,10 +24,17 @@ class VoucherRead(TimestampSchema):
     code: str
     type: VoucherType
     amount: Money
+    customer_id: UUID | None = None
+    campaign_id: UUID | None = None
+    discount_cents: int | None = None
+    status: str = "available"
+    expires_at: datetime | None = None
     redeemed_at: datetime | None = None
+    redeemed_order_id: UUID | None = None
     redeemed_by_staff_id: UUID | None = None
     outlet_id: UUID | None = None
     order_id: UUID | None = None
+    voided_at: datetime | None = None
 
 
 class VoucherValidateRequest(BaseModel):

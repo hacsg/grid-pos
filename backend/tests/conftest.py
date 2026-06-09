@@ -15,14 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.database import Base, get_db
 from app.main import app
 from app.models import (  # noqa: F401  — registers models on Base.metadata
+    Campaign,
     Category,
+    Customer,
     LoyaltyMember,
     ModifierGroup,
     ModifierOption,
     Outlet,
+    OrderVoucher,
     Product,
     ProductModifierGroup,
     Staff,
+    Voucher,
 )
 from app.models.staff import StaffRole
 from app.utils.hashing import hash_pin

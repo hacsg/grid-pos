@@ -78,6 +78,7 @@ class OrderRead(TimestampSchema):
     payment_method: str | None
     payment_reference: str | None
     loyalty_member_id: UUID | None = None
+    customer_id: str | None = None
     loyalty_points_earned: int | None = None
     loyalty_points_redeemed: int | None = None
     loyalty_discount: Money | None = None
@@ -111,6 +112,7 @@ class OrderSummaryRead(ORMModel):
     payment_method: str | None
     payment_reference: str | None
     loyalty_member_id: UUID | None = None
+    customer_id: str | None = None
     loyalty_points_earned: int | None = None
     loyalty_points_redeemed: int | None = None
     loyalty_discount: Money | None = None

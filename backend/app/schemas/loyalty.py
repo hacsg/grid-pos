@@ -5,6 +5,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.campaign import CampaignSummary
+from app.schemas.customer import IssuedVoucherSummary
+
 
 class LoyaltyLookupRequest(BaseModel):
     """Payload for looking up a loyalty member by phone."""
@@ -23,6 +26,7 @@ class LoyaltyMemberProfile(BaseModel):
     points: int
     points_value: Decimal
     tier: str
+    signup_campaign: CampaignSummary | None = None
 
 
 class LoyaltyLookupNotFound(BaseModel):
@@ -74,6 +78,7 @@ class LoyaltySignupRequest(BaseModel):
     email: str | None = Field(default=None, max_length=255)
     birthday: str | None = Field(default=None, max_length=20)
     referred_by_code: str | None = Field(default=None, min_length=1, max_length=40)
+    campaign_code: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class LoyaltySignupResponse(BaseModel):
@@ -85,3 +90,6 @@ class LoyaltySignupResponse(BaseModel):
     country_code: str
     points: int = 0
     tier: str = "bronze"
+    customer_id: UUID | None = None
+    signup_campaign: CampaignSummary | None = None
+    auto_issued_voucher: IssuedVoucherSummary | None = None

@@ -176,6 +176,7 @@ async def signup_member(
         name=payload.name,
         phone=normalized_phone,
         country_code=payload.country_code,
+        campaign_code=payload.campaign_code,
     )
 
 

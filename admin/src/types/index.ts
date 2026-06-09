@@ -385,3 +385,54 @@ export interface VoucherCreate {
   type?: VoucherType;
   amount: number;
 }
+
+// --- Campaigns / Customers ---
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  channel?: string | null;
+  code_prefix: string;
+}
+
+export interface Campaign extends CampaignSummary {
+  budget_cents?: number | null;
+  discount_cents: number;
+  status: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  auto_issue_on_signup: boolean;
+  signup_voucher_discount_cents?: number | null;
+}
+
+export interface CampaignFormData {
+  name: string;
+  channel?: string | null;
+  code_prefix: string;
+  budget_cents?: number | null;
+  discount_cents: number;
+  status: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  auto_issue_on_signup: boolean;
+  signup_voucher_discount_cents?: number | null;
+}
+
+export interface CampaignMetrics {
+  campaign_id: string;
+  campaign_name: string;
+  total_signups: number;
+  vouchers_auto_issued: number;
+  signup_purchase_conversions: number;
+  signup_purchase_conversion_rate: number;
+}
+
+export interface Customer {
+  id: string;
+  name?: string | null;
+  phone: string;
+  email?: string | null;
+  tier: string;
+  moments_total: number;
+  signup_campaign_id?: string | null;
+  signup_campaign?: CampaignSummary | null;
+}

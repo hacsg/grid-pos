@@ -187,6 +187,7 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         payment_method=payload.payment_method,
         payment_reference=payload.payment_reference,
         loyalty_member_id=payload.loyalty_member_id,
+        customer_id=payload.customer_id,
         loyalty_points_redeemed=payload.loyalty_points_redeemed,
         loyalty_discount=payload.loyalty_discount,
     )

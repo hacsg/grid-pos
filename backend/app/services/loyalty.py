@@ -12,7 +12,9 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.customer import Customer
 from app.models.loyalty import LoyaltyMember
 from app.models.order import Order
 from app.schemas.loyalty import (
@@ -21,6 +23,8 @@ from app.schemas.loyalty import (
     LoyaltyRedeemResponse,
     LoyaltySignupResponse,
 )
+from app.schemas.customer import IssuedVoucherSummary
+from app.services.customers import create_customer_account
 from app.utils.phone import normalize_sg_phone, validate_sg_phone_or_raise
 
 # Exchange rate: S$1 spent = 10 points
@@ -80,6 +84,13 @@ class LoyaltyService:
                     "signup_available": True,
                 },
             )
+        customer_result = await db.execute(
+            select(Customer)
+            .options(selectinload(Customer.signup_campaign))
+            .where(Customer.phone == normalized_phone)
+        )
+        customer = customer_result.scalar_one_or_none()
+
         return LoyaltyMemberProfile(
             member_id=member.id,
             name=member.name,
@@ -88,6 +99,7 @@ class LoyaltyService:
             points=member.points,
             points_value=_compute_points_value(member.points),
             tier=member.tier,
+            signup_campaign=customer.signup_campaign if customer else None,
         )
 
     @staticmethod
@@ -177,6 +189,7 @@ class LoyaltyService:
         name: str,
         phone: str,
         country_code: str = "+65",
+        campaign_code: str | None = None,
     ) -> LoyaltySignupResponse:
         """Create a new loyalty member."""
         validate_sg_phone_or_raise(phone)
@@ -192,6 +205,14 @@ class LoyaltyService:
                 detail="A member with this phone number already exists",
             )
 
+        customer, _campaign, issued_voucher = await create_customer_account(
+            db,
+            name=name,
+            phone=normalized_phone,
+            campaign_code=campaign_code,
+            commit=False,
+        )
+
         member = LoyaltyMember(
             name=name,
             phone=normalized_phone,
@@ -203,6 +224,20 @@ class LoyaltyService:
         db.add(member)
         await db.commit()
         await db.refresh(member)
+        await db.refresh(customer, attribute_names=["signup_campaign"])
+        if issued_voucher is not None:
+            await db.refresh(issued_voucher)
+
+        voucher_summary = None
+        if issued_voucher is not None:
+            voucher_summary = IssuedVoucherSummary(
+                id=issued_voucher.id,
+                code=issued_voucher.code,
+                discount_cents=issued_voucher.discount_cents,
+                status=issued_voucher.status,
+                campaign_id=issued_voucher.campaign_id,
+                customer_id=issued_voucher.customer_id,
+            )
 
         return LoyaltySignupResponse(
             member_id=member.id,
@@ -211,4 +246,7 @@ class LoyaltyService:
             country_code=member.country_code,
             points=member.points,
             tier=member.tier,
+            customer_id=customer.id,
+            signup_campaign=customer.signup_campaign,
+            auto_issued_voucher=voucher_summary,
         )

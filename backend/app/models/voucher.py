@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -34,8 +34,29 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    customer_id: Mapped[Optional[UUID]] = mapped_column(
+        Uuid,
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    campaign_id: Mapped[Optional[UUID]] = mapped_column(
+        Uuid,
+        ForeignKey("campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    discount_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="available")
+    expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
     redeemed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    redeemed_order_id: Mapped[Optional[UUID]] = mapped_column(
+        Uuid,
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     redeemed_by_staff_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("staff.id", ondelete="SET NULL"),
@@ -54,10 +75,14 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    voided_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
+    customer = relationship("Customer", foreign_keys=[customer_id], back_populates="vouchers")
+    campaign = relationship("Campaign", foreign_keys=[campaign_id], back_populates="vouchers")
     redeemed_by_staff = relationship("Staff", foreign_keys=[redeemed_by_staff_id])
     outlet = relationship("Outlet", foreign_keys=[outlet_id])
     order = relationship("Order", foreign_keys=[order_id], back_populates="vouchers")
+    redeemed_order = relationship("Order", foreign_keys=[redeemed_order_id])
     order_voucher_links = relationship(
         "OrderVoucher", back_populates="voucher", cascade="all, delete-orphan"
     )

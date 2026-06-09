@@ -41,6 +41,10 @@ import type {
   ProductModifierAssignmentUpdate,
   Voucher,
   VoucherCreate,
+  Campaign,
+  CampaignFormData,
+  CampaignMetrics,
+  Customer,
 } from '@/types';
 
 const api = axios.create({
@@ -442,6 +446,62 @@ export const createVoucher = async (payload: VoucherCreate): Promise<Voucher> =>
     ...data,
     amount: typeof data.amount === 'string' ? parseFloat(data.amount) : (data.amount ?? 0),
   };
+};
+
+// Campaigns
+export const getCampaigns = async (): Promise<Campaign[]> => {
+  const { data } = await api.get('/campaigns');
+  return (Array.isArray(data) ? data : []).map((campaign: any) => ({
+    ...campaign,
+    budget_cents: campaign.budget_cents ?? null,
+    discount_cents: toNumber(campaign.discount_cents, 0),
+    auto_issue_on_signup: toBoolean(campaign.auto_issue_on_signup, false),
+    signup_voucher_discount_cents: campaign.signup_voucher_discount_cents ?? null,
+  }));
+};
+
+export const createCampaign = async (payload: CampaignFormData): Promise<Campaign> => {
+  const { data } = await api.post('/campaigns', payload);
+  toast.success('Campaign created');
+  return {
+    ...data,
+    discount_cents: toNumber(data.discount_cents, 0),
+    auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
+  };
+};
+
+export const updateCampaign = async (
+  id: string,
+  payload: Partial<CampaignFormData>
+): Promise<Campaign> => {
+  const { data } = await api.put(`/campaigns/${id}`, payload);
+  toast.success('Campaign updated');
+  return {
+    ...data,
+    discount_cents: toNumber(data.discount_cents, 0),
+    auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
+  };
+};
+
+export const getCampaignMetrics = async (id: string): Promise<CampaignMetrics> => {
+  const { data } = await api.get(`/campaigns/${id}/metrics`);
+  return {
+    campaign_id: data.campaign_id,
+    campaign_name: data.campaign_name,
+    total_signups: toNumber(data.total_signups, 0),
+    vouchers_auto_issued: toNumber(data.vouchers_auto_issued, 0),
+    signup_purchase_conversions: toNumber(data.signup_purchase_conversions, 0),
+    signup_purchase_conversion_rate: toNumber(data.signup_purchase_conversion_rate, 0),
+  };
+};
+
+// Customers
+export const getCustomers = async (): Promise<Customer[]> => {
+  const { data } = await api.get('/customers');
+  return (Array.isArray(data) ? data : []).map((customer: any) => ({
+    ...customer,
+    moments_total: toNumber(customer.moments_total, 0),
+  }));
 };
 
 // ---------------------------------------------------------------------------
