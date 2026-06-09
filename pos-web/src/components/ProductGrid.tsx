@@ -268,7 +268,12 @@ export default function ProductGrid({
                 return (
                   <fieldset className="modifier-group" key={group.id}>
                     <legend>
-                      <span className="modifier-group-title">{group.name}</span>
+                      <span className="modifier-group-heading">
+                        <span className="modifier-group-title">{group.name}</span>
+                        <span className={`modifier-requirement ${group.required ? 'required' : 'optional'}`}>
+                          {group.required ? 'Required' : 'Optional'}
+                        </span>
+                      </span>
                       <span className="modifier-count">{selected.length}/{group.max_select}</span>
                     </legend>
                     <div className="modifier-options">

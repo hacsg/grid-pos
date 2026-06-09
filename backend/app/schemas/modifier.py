@@ -75,7 +75,7 @@ class ProductModifierAssignmentCreate(BaseModel):
     group_id: UUID
     min_select: int = Field(default=1, ge=0)
     max_select: int = Field(default=1, ge=1)
-    is_required: bool = True
+    is_required: bool = False
     display_order: int = Field(default=0, ge=0)
 
 
@@ -99,4 +99,3 @@ class ProductModifierAssignmentRead(UUIDSchema):
     is_required: bool
     display_order: int
     options: list[ModifierOptionRead] = []
-

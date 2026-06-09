@@ -674,6 +674,13 @@ img {
   margin-bottom: 12px;
 }
 
+.modifier-group-heading {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .modifier-group-title {
   min-width: 0;
   color: var(--grid-text);
@@ -681,6 +688,29 @@ img {
   font-weight: 850;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.modifier-requirement {
+  display: inline-flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.modifier-requirement.required {
+  background: #e7f4ec;
+  color: var(--grid-success);
+}
+
+.modifier-requirement.optional {
+  background: #f2f3ef;
+  color: var(--grid-muted);
 }
 
 .modifier-count {

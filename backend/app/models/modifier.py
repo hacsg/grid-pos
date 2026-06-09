@@ -81,10 +81,9 @@ class ProductModifierGroup(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     min_select: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     max_select: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     is_required: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true"
+        Boolean, nullable=False, default=False, server_default="false"
     )
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     product = relationship("Product", back_populates="modifier_group_assignments")
     group = relationship("ModifierGroup", back_populates="product_assignments")
-

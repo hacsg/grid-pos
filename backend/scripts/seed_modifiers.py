@@ -154,12 +154,12 @@ async def main() -> None:
         # 4. Assignments per spec
         if single:
             await assign_group(session, single, flavors, min_select=1, max_select=1, is_required=True)
-            await assign_group(session, single, cone, min_select=1, max_select=1, is_required=True)
+            await assign_group(session, single, cone, min_select=0, max_select=1, is_required=False)
             print(f"Assigned modifiers to Single Scoop ({single.id})")
 
         if double:
             await assign_group(session, double, flavors, min_select=2, max_select=2, is_required=True)
-            await assign_group(session, double, cone, min_select=1, max_select=1, is_required=True)
+            await assign_group(session, double, cone, min_select=0, max_select=1, is_required=False)
             print(f"Assigned modifiers to Double Scoop ({double.id})")
 
         print("Modifier seed completed.")
