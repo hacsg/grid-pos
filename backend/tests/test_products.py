@@ -70,6 +70,24 @@ class TestGetProduct:
         mgs = resp.json()["modifier_groups"]
         assert len(mgs) == 1
         assert mgs[0]["group_name"] == "Size"
+        assert mgs[0]["min_select"] == product_modifier_assignment.min_select
+        assert mgs[0]["is_required"] is product_modifier_assignment.is_required
+
+    async def test_includes_optional_assignment_rules_from_junction_table(
+        self, client: AsyncClient, product, modifier_group, product_modifier_assignment
+    ) -> None:
+        update_resp = await client.put(
+            f"/api/products/{product.id}/modifier-groups/{product_modifier_assignment.id}",
+            json={"min_select": 0, "is_required": False},
+        )
+        assert update_resp.status_code == 200
+
+        resp = await client.get(f"/api/products/{product.id}")
+        assert resp.status_code == 200
+        modifier_group_payload = resp.json()["modifier_groups"][0]
+        assert modifier_group_payload["group_name"] == modifier_group.name
+        assert modifier_group_payload["min_select"] == 0
+        assert modifier_group_payload["is_required"] is False
 
 
 class TestCreateProduct:

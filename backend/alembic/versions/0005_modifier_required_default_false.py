@@ -30,7 +30,12 @@ def upgrade() -> None:
     op.execute(
         "UPDATE product_modifier_groups "
         "SET is_required = false, min_select = 0 "
-        "WHERE group_id IN (SELECT id FROM modifier_groups WHERE name ILIKE '%cone%cup%')"
+        "WHERE group_id IN ("
+        "SELECT id FROM modifier_groups "
+        "WHERE name = 'Cone/Cup' "
+        "OR name ILIKE '%cone%cup%' "
+        "OR name ILIKE '%cup%cone%'"
+        ")"
     )
 
 

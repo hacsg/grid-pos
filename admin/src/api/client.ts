@@ -77,6 +77,44 @@ api.interceptors.response.use(
   }
 );
 
+const toNumber = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value ?? fallback);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toBoolean = (value: unknown, fallback = false): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no'].includes(normalized)) {
+      return false;
+    }
+  }
+  return fallback;
+};
+
+const normalizeModifierOption = (option: any): ModifierOption => ({
+  ...option,
+  price_adjustment: toNumber(option?.price_adjustment, 0),
+});
+
+const normalizeProductModifierAssignment = (assignment: any): ProductModifierAssignment => ({
+  ...assignment,
+  min_select: toNumber(assignment?.min_select, 0),
+  max_select: Math.max(1, toNumber(assignment?.max_select, 1)),
+  is_required: toBoolean(assignment?.is_required, false),
+  display_order: toNumber(assignment?.display_order, 0),
+  options: (assignment?.options || []).map(normalizeModifierOption),
+});
+
 // Products
 export const getProducts = async (params?: {
   search?: string;
@@ -95,13 +133,7 @@ export const getProducts = async (params?: {
         description: p.description ?? '',
         category_id: p.category_id ?? p.category?.id ?? '',
         category_name: p.category?.name || '',
-        modifier_groups: (p.modifier_groups || []).map((mg: any) => ({
-          ...mg,
-          options: (mg.options || []).map((o: any) => ({
-            ...o,
-            price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : (o.price_adjustment ?? 0),
-          })),
-        })),
+        modifier_groups: (p.modifier_groups || []).map(normalizeProductModifierAssignment),
       }))
     : [];
   return { data: normalized, total: normalized.length, page: 1, limit: normalized.length || 100 };
@@ -118,13 +150,7 @@ export const getProduct = async (id: string): Promise<Product> => {
     description: p.description ?? '',
     category_id: p.category_id ?? p.category?.id ?? '',
     category_name: p.category?.name || '',
-    modifier_groups: (p.modifier_groups || []).map((mg: any) => ({
-      ...mg,
-      options: (mg.options || []).map((o: any) => ({
-        ...o,
-        price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : (o.price_adjustment ?? 0),
-      })),
-    })),
+    modifier_groups: (p.modifier_groups || []).map(normalizeProductModifierAssignment),
   } as Product;
 };
 
@@ -453,18 +479,12 @@ export const deleteModifierGroup = async (id: string): Promise<void> => {
 
 export const createModifierOption = async (groupId: string, payload: ModifierOptionCreate): Promise<ModifierOption> => {
   const { data } = await api.post(`/modifier-groups/${groupId}/options`, payload);
-  return {
-    ...data,
-    price_adjustment: typeof data.price_adjustment === 'string' ? parseFloat(data.price_adjustment) : data.price_adjustment,
-  };
+  return normalizeModifierOption(data);
 };
 
 export const updateModifierOption = async (id: string, payload: ModifierOptionUpdate): Promise<ModifierOption> => {
   const { data } = await api.put(`/modifier-options/${id}`, payload);
-  return {
-    ...data,
-    price_adjustment: typeof data.price_adjustment === 'string' ? parseFloat(data.price_adjustment) : data.price_adjustment,
-  };
+  return normalizeModifierOption(data);
 };
 
 export const deleteModifierOption = async (id: string): Promise<void> => {
@@ -473,13 +493,7 @@ export const deleteModifierOption = async (id: string): Promise<void> => {
 
 export const getProductModifierGroups = async (productId: string): Promise<ProductModifierAssignment[]> => {
   const { data } = await api.get(`/products/${productId}/modifier-groups`);
-  return (Array.isArray(data) ? data : []).map((a: any) => ({
-    ...a,
-    options: (a.options || []).map((o: any) => ({
-      ...o,
-      price_adjustment: typeof o.price_adjustment === 'string' ? parseFloat(o.price_adjustment) : o.price_adjustment,
-    })),
-  }));
+  return (Array.isArray(data) ? data : []).map(normalizeProductModifierAssignment);
 };
 
 export const assignModifierGroupToProduct = async (
@@ -488,7 +502,7 @@ export const assignModifierGroupToProduct = async (
 ): Promise<ProductModifierAssignment> => {
   const { data } = await api.post(`/products/${productId}/modifier-groups`, payload);
   toast.success('Modifier group assigned');
-  return data;
+  return normalizeProductModifierAssignment(data);
 };
 
 export const updateProductModifierAssignment = async (
@@ -498,7 +512,7 @@ export const updateProductModifierAssignment = async (
 ): Promise<ProductModifierAssignment> => {
   const { data } = await api.put(`/products/${productId}/modifier-groups/${assignmentId}`, payload);
   toast.success('Assignment updated');
-  return data;
+  return normalizeProductModifierAssignment(data);
 };
 
 export const unassignModifierGroupFromProduct = async (productId: string, assignmentId: string): Promise<void> => {

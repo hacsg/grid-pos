@@ -71,7 +71,7 @@ export default function ProductForm({
     } else {
       setAssignments([]);
     }
-  }, [product?.id]);
+  }, [product?.id, product?.modifier_groups]);
 
   // Populate form fields (name, description, price, etc). Using defaultValues for sync init on mount + reset in effect for safety/timing.
   // The key={editingProduct?.id} in parent forces remount when switching products so this runs with correct data.
@@ -294,7 +294,13 @@ export default function ProductForm({
                           id={`req-${a.id}`}
                           type="checkbox"
                           checked={a.is_required}
-                          onChange={(e) => handleUpdateAssignment(a.id, { is_required: e.target.checked })}
+                          onChange={(e) => {
+                            const isRequired = e.target.checked;
+                            handleUpdateAssignment(a.id, {
+                              is_required: isRequired,
+                              min_select: isRequired ? Math.max(a.min_select, 1) : 0,
+                            });
+                          }}
                           className="h-3.5 w-3.5 accent-primary"
                         />
                         <label htmlFor={`req-${a.id}`} className="text-xs text-text">Required</label>

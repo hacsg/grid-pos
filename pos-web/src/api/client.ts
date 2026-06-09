@@ -221,6 +221,25 @@ function numberOrDefault(value: number | string | null | undefined, fallback: nu
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function optionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no'].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
 function normalizeModifier(modifier: Partial<Modifier>, index: number): Modifier {
   return {
     ...modifier,
@@ -245,8 +264,9 @@ function normalizeModifierGroup(group: Partial<ModifierGroup>, index: number): M
     .filter((modifier) => modifier.is_available !== false)
     .sort((a, b) => numberOrDefault(a.display_order, 0) - numberOrDefault(b.display_order, 0) || a.name.localeCompare(b.name));
   const maxSelect = Math.max(1, numberOrDefault(group.max_select, 1));
-  const isRequired = group.is_required ?? group.required ?? false;
-  const minSelect = Math.min(maxSelect, Math.max(0, numberOrDefault(group.min_select, isRequired ? 1 : 0)));
+  const explicitRequired = optionalBoolean(group.is_required) ?? optionalBoolean(group.required);
+  const minSelect = Math.min(maxSelect, Math.max(0, numberOrDefault(group.min_select, explicitRequired ? 1 : 0)));
+  const isRequired = explicitRequired ?? (minSelect > 0);
   const name = group.name ?? group.group_name ?? 'Modifiers';
 
   return {
@@ -254,8 +274,8 @@ function normalizeModifierGroup(group: Partial<ModifierGroup>, index: number): M
     id: String(group.id ?? group.group_id ?? name ?? index),
     name,
     description: group.description ?? group.group_description ?? null,
-    required: group.required ?? group.is_required ?? minSelect > 0,
-    is_required: group.is_required ?? group.required ?? minSelect > 0,
+    required: isRequired,
+    is_required: isRequired,
     min_select: minSelect,
     max_select: maxSelect,
     group_id: group.group_id,

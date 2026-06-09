@@ -45,7 +45,7 @@ function modifierPrice(modifier: Modifier): string {
 }
 
 function requiredMinimum(group: ModifierGroup): number {
-  return group.required ? Math.max(group.min_select, 1) : group.min_select;
+  return group.required ? Math.max(group.min_select, 1) : 0;
 }
 
 export default function ProductGrid({
