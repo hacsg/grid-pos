@@ -39,24 +39,13 @@ function hasModifiers(product: Product): boolean {
 function modifierPrice(modifier: Modifier): string {
   const price = money(modifier.price_adjustment);
   if (price === 0) {
-    return 'Included';
+    return '';
   }
   return `+${formatCurrency(price)}`;
 }
 
 function requiredMinimum(group: ModifierGroup): number {
   return group.required ? Math.max(group.min_select, 1) : group.min_select;
-}
-
-function selectionRule(group: ModifierGroup): string {
-  const minimum = requiredMinimum(group);
-  if (minimum === group.max_select) {
-    return `Choose exactly ${minimum}`;
-  }
-  if (minimum > 0) {
-    return `Choose ${minimum}-${group.max_select}`;
-  }
-  return `Up to ${group.max_select}`;
 }
 
 export default function ProductGrid({
@@ -279,14 +268,13 @@ export default function ProductGrid({
                 return (
                   <fieldset className="modifier-group" key={group.id}>
                     <legend>
-                      <span>{group.name}</span>
-                      <small>
-                        {group.required ? 'Required' : 'Optional'} - {selected.length}/{group.max_select} - {selectionRule(group)}
-                      </small>
+                      <span className="modifier-group-title">{group.name}</span>
+                      <span className="modifier-count">{selected.length}/{group.max_select}</span>
                     </legend>
                     <div className="modifier-options">
                       {group.modifiers.map((modifier) => {
                         const checked = selected.includes(modifier.id);
+                        const priceLabel = modifierPrice(modifier);
                         return (
                           <button
                             type="button"
@@ -295,9 +283,9 @@ export default function ProductGrid({
                             onPointerDown={() => tapFeedback()}
                             onClick={() => toggleModifier(group, modifier.id)}
                           >
-                            <span>{modifier.name}</span>
-                            <span>{modifierPrice(modifier)}</span>
-                            {checked && <Check size={18} aria-hidden="true" />}
+                            <span className="modifier-name">{modifier.name}</span>
+                            {priceLabel && <span className="modifier-price">{priceLabel}</span>}
+                            {checked && <Check className="modifier-check" size={20} aria-hidden="true" />}
                           </button>
                         );
                       })}
