@@ -401,7 +401,7 @@ export default function PaymentModal({
                 </div>
               </div>
 
-              <section className="receipt-preview" aria-label="Receipt preview">
+              <section className="receipt-preview" aria-label="Receipt preview" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <header>
                   <Receipt size={18} aria-hidden="true" />
                   <h3>Receipt</h3>

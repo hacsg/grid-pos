@@ -45,9 +45,9 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
       }}
     >
       <div
-        className={`w-full ${sizes[size]} mx-4 rounded-xl bg-white shadow-xl animate-in fade-in zoom-in-95`}
+        className={`w-full ${sizes[size]} mx-4 rounded-xl bg-white shadow-xl animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col`}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-text">{title}</h2>
           <button
             onClick={onClose}
@@ -56,7 +56,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="px-6 py-4">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">{children}</div>
       </div>
     </div>
   );

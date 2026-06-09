@@ -215,6 +215,7 @@ img {
 
 .product-grid {
   display: grid;
+  flex: 1;
   min-height: 0;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
@@ -645,6 +646,7 @@ img {
 
 .modifier-body {
   display: grid;
+  flex: 1;
   min-height: 0;
   gap: 0;
   overflow-y: auto;
@@ -939,6 +941,7 @@ img {
 
 .loyalty-content {
   display: grid;
+  flex: 1;
   min-height: 0;
   gap: 14px;
   overflow-y: auto;
@@ -1020,6 +1023,9 @@ img {
 
 .payment-body {
   display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   gap: 16px;
   padding: 18px;
 }
@@ -1111,6 +1117,8 @@ img {
 .receipt-lines {
   display: grid;
   gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .receipt-line {
