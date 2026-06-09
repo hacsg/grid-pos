@@ -84,6 +84,11 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
     setError(null);
 
     try {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      if (!containerRef.current || !document.getElementById(QR_READER_ID)) {
+        return;
+      }
+
       // Create or reuse scanner instance
       let scanner = scannerRef.current;
       if (!scanner) {
@@ -92,44 +97,88 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
       }
 
       const config = {
-        fps: 12,
-        qrbox: { width: 260, height: 260 },
+        fps: 8,
+        qrbox: { width: 200, height: 200 },
         aspectRatio: 1.0,
       };
 
-      const cameraConstraints: MediaTrackConstraints = {
-        facingMode: { ideal: 'environment' },
+      const handleSuccess = (decodedText: string) => {
+        const trimmed = decodedText.trim();
+        if (!trimmed || trimmed === lastDetectedRef.current) return;
+        lastDetectedRef.current = trimmed;
+
+        // Visual success flash
+        setFlash(true);
+        window.setTimeout(() => setFlash(false), 420);
+
+        // Pause immediately to prevent duplicate triggers
+        try {
+          if (scanner && scanner.isScanning) {
+            scanner.pause(true);
+          }
+        } catch {
+          // ignore
+        }
+
+        onDetected(trimmed);
       };
 
-      await scanner.start(
-        cameraConstraints,
-        config,
-        (decodedText: string) => {
-          const trimmed = decodedText.trim();
-          if (!trimmed || trimmed === lastDetectedRef.current) return;
-          lastDetectedRef.current = trimmed;
+      const handleFrameError = () => {
+        // Per-frame decode failures are noisy; ignore
+      };
 
-          // Visual success flash
-          setFlash(true);
-          window.setTimeout(() => setFlash(false), 420);
-
-          // Pause immediately to prevent duplicate triggers
-          try {
-            if (scanner && scanner.isScanning) {
-              scanner.pause(true);
-            }
-          } catch {
-            // ignore
+      const stopActiveScanner = async () => {
+        try {
+          if (scanner && scanner.isScanning) {
+            await scanner.stop();
           }
-
-          onDetected(trimmed);
-        },
-        () => {
-          // Per-frame decode failures are noisy; ignore
+        } catch (stopError) {
+          console.error('QR scanner failed to stop after a failed start attempt:', stopError);
         }
-      );
+      };
 
-      setCameraReady(true);
+      try {
+        await scanner.start({ facingMode: 'environment' }, config, handleSuccess, handleFrameError);
+        setCameraReady(true);
+        return;
+      } catch (environmentError) {
+        console.error('QR scanner failed to start with environment facing mode:', environmentError);
+        await stopActiveScanner();
+      }
+
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        const backCamera = cameras.find((camera) =>
+          /back|rear|environment|world/i.test(camera.label || '')
+        );
+
+        if (backCamera) {
+          try {
+            await scanner.start(backCamera.id, config, handleSuccess, handleFrameError);
+            setCameraReady(true);
+            return;
+          } catch (backCameraError) {
+            console.error('QR scanner failed to start with explicit back camera:', backCameraError);
+            await stopActiveScanner();
+          }
+        }
+      } catch (cameraListError) {
+        console.error('QR scanner failed to enumerate cameras:', cameraListError);
+      }
+
+      try {
+        await scanner.start(
+          {} as MediaTrackConstraints,
+          { ...config, videoConstraints: {} },
+          handleSuccess,
+          handleFrameError
+        );
+        setCameraReady(true);
+        return;
+      } catch (defaultCameraError) {
+        console.error('QR scanner failed to start with default camera:', defaultCameraError);
+        throw defaultCameraError;
+      }
     } catch (err: any) {
       const msg = String(err?.message || err || '');
       if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')) {
