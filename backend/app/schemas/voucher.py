@@ -15,7 +15,7 @@ class VoucherCreate(BaseModel):
 
     code: str = Field(min_length=3, max_length=64)
     type: VoucherType = VoucherType.cdc
-    amount: Money = Field(ge=0)
+    amount: Money | None = Field(default=None)
 
 
 class VoucherRead(TimestampSchema):
@@ -23,7 +23,7 @@ class VoucherRead(TimestampSchema):
 
     code: str
     type: VoucherType
-    amount: Money
+    amount: Money | None = None
     customer_id: UUID | None = None
     campaign_id: UUID | None = None
     discount_cents: int | None = None
@@ -49,7 +49,7 @@ class VoucherValidateRead(BaseModel):
     id: UUID
     code: str
     type: VoucherType
-    amount: Money
+    amount: Money | None = None
     is_valid: bool = True
 
 

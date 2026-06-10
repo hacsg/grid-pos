@@ -42,12 +42,13 @@ async def create_voucher(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voucher code already exists",
         )
-    if amount <= 0:
+    if amount < 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Voucher amount must be greater than zero",
+            detail="Voucher amount must be greater than or equal to zero",
         )
-    voucher = Voucher(code=normalized, type=type, amount=quantize_money(amount))
+    normalized_amount = quantize_money(amount) if amount is not None else Decimal("0")
+    voucher = Voucher(code=normalized, type=type, amount=normalized_amount)
     db.add(voucher)
     await db.commit()
     await db.refresh(voucher)
@@ -176,18 +177,11 @@ async def validate_voucher_code(
     except Exception:
         amount = quantize_money(Decimal("0.00"))
 
-    if amount <= 0:
-        # Some external vouchers may not expose amount; default to 0 and let admin override or reject
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Voucher has no usable amount",
-        )
-
-    # Auto-provision local Acre Group voucher record
+    # Auto-provision local Acre Group voucher record (zero-amount vouchers are allowed for record-only redemptions)
     voucher = Voucher(
         code=normalized,
         type=VoucherType.acre_group,
-        amount=amount,
+        amount=amount if amount is not None else Decimal("0"),
     )
     # If external has an id different from code, we still use entered code for redeem calls
     db.add(voucher)
@@ -232,7 +226,7 @@ async def apply_vouchers_to_order(
                 detail=f"Voucher {voucher.code} has already been redeemed",
             )
 
-        amount = quantize_money(voucher.amount)
+        amount = quantize_money(voucher.amount or Decimal("0"))
         total_voucher_amount += amount
 
         # Mark voucher redeemed

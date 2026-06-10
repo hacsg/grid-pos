@@ -33,7 +33,7 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
-    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     customer_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("customers.id", ondelete="SET NULL"),
@@ -106,7 +106,7 @@ class OrderVoucher(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
         index=True,
     )
-    amount_applied: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    amount_applied: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0")
 
     order = relationship("Order", back_populates="order_voucher_links")
     voucher = relationship("Voucher", back_populates="order_voucher_links")

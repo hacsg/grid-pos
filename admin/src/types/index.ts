@@ -370,7 +370,7 @@ export interface Voucher {
   id: string;
   code: string;
   type: VoucherType;
-  amount: number;
+  amount?: number | null;
   redeemed_at?: string | null;
   redeemed_by_staff_id?: string | null;
   outlet_id?: string | null;
@@ -385,7 +385,7 @@ export interface Voucher {
 export interface VoucherCreate {
   code: string;
   type?: VoucherType;
-  amount: number;
+  amount?: number;
 }
 
 // --- Campaigns / Customers ---

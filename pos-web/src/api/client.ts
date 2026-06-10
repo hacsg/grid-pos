@@ -407,7 +407,7 @@ export type VoucherType = 'cdc' | 'acre_group';
 export interface VoucherRead extends Timestamped {
   code: string;
   type: VoucherType;
-  amount: number | string;
+  amount?: number | string | null;
   redeemed_at?: string | null;
   redeemed_by_staff_id?: string | null;
   outlet_id?: string | null;
@@ -418,7 +418,7 @@ export interface VoucherValidateResponse {
   id: string;
   code: string;
   type: VoucherType;
-  amount: number | string;
+  amount?: number | string | null;
   is_valid: boolean;
 }
 

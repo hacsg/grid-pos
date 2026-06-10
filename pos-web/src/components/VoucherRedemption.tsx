@@ -9,7 +9,7 @@ import { tapFeedback } from '@/utils/haptics';
 interface RecentRedemption {
   code: string;
   title: string;
-  amount: number;
+  amount?: number;
   redeemedAt: string;
 }
 
@@ -44,7 +44,7 @@ interface VoucherRedemptionProps {
 interface ValidatedVoucher {
   code: string;
   type: 'cdc' | 'acre_group';
-  amount: number;
+  amount?: number;
   id?: string;
 }
 
@@ -345,19 +345,12 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
     try {
       setLoading(true);
       const res = await validateVoucher(detectedCode);
-      const amount = Number(res.amount ?? 0);
-
-      if (!amount || amount <= 0) {
-        toast.error('Voucher has no value');
-        setScannerPaused(false);
-        setCode('');
-        return;
-      }
+      const amount = res.amount != null ? Number(res.amount) : 0;
 
       const v: ValidatedVoucher = {
         code: res.code,
         type: res.type,
-        amount,
+        amount: amount > 0 ? amount : undefined,
         id: res.id,
       };
       setValidated(v);
@@ -388,16 +381,11 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
     try {
       setLoading(true);
       const res = await validateVoucher(trimmed);
-      const amount = Number(res.amount ?? 0);
-      if (!amount || amount <= 0) {
-        toast.error('Voucher has no value');
-        setScannerPaused(false);
-        return;
-      }
+      const amount = res.amount != null ? Number(res.amount) : 0;
       const v: ValidatedVoucher = {
         code: res.code,
         type: res.type,
-        amount,
+        amount: amount > 0 ? amount : undefined,
         id: res.id,
       };
       setValidated(v);
@@ -427,7 +415,7 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
       const redeemed: RecentRedemption = {
         code: validated.code,
         title: validated.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher',
-        amount: validated.amount,
+        amount: validated.amount && validated.amount > 0 ? validated.amount : undefined,
         redeemedAt: new Date().toISOString(),
       };
 
@@ -577,7 +565,11 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                 <div className="voucher-result-type">
                   {validated.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher'}
                 </div>
-                <div className="voucher-result-amount">{formatCurrency(validated.amount)}</div>
+                {validated.amount && validated.amount > 0 ? (
+                  <div className="voucher-result-amount">{formatCurrency(validated.amount)}</div>
+                ) : (
+                  <div className="voucher-result-amount" style={{ fontSize: '1rem', opacity: 0.8 }}>No monetary value</div>
+                )}
                 <div className="voucher-result-code">{validated.code}</div>
 
                 <button
@@ -608,7 +600,8 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
               </div>
               <div className="voucher-success-title">Voucher redeemed</div>
               <div className="voucher-success-meta">
-                {justRedeemed.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher'} · {formatCurrency(justRedeemed.amount)}
+                {justRedeemed.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher'}
+                {justRedeemed.amount && justRedeemed.amount > 0 ? ` · ${formatCurrency(justRedeemed.amount)}` : ''}
               </div>
               <div className="voucher-success-code">{justRedeemed.code}</div>
 
@@ -684,7 +677,11 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                     <div className="voucher-recent-card-title">{r.title}</div>
                     <div className="voucher-recent-card-code">{r.code}</div>
                     <div className="voucher-recent-card-meta">
-                      <span className="voucher-recent-card-amount">{formatCurrency(r.amount)}</span>
+                      {r.amount && r.amount > 0 ? (
+                        <span className="voucher-recent-card-amount">{formatCurrency(r.amount)}</span>
+                      ) : (
+                        <span className="voucher-recent-card-amount" style={{ opacity: 0.7 }}>No value</span>
+                      )}
                       <span className="voucher-recent-card-time">{formatRedeemedTime(r.redeemedAt)}</span>
                     </div>
                   </div>

@@ -43,21 +43,22 @@ export default function Vouchers() {
 
   async function handleCreate() {
     const code = newCode.trim();
-    const amount = parseFloat(newAmount);
+    const parsed = parseFloat(newAmount);
+    const amount = Number.isFinite(parsed) ? parsed : 0;
     if (!code) {
       toast.error('Code is required');
       return;
     }
-    if (!amount || amount <= 0) {
-      toast.error('Amount must be greater than 0');
+    if (amount < 0) {
+      toast.error('Amount must be zero or greater');
       return;
     }
     setCreating(true);
     try {
-      await createVoucher({ code, type: 'cdc', amount });
+      await createVoucher({ code, type: 'cdc', amount: amount || undefined });
       setShowCreate(false);
       setNewCode('');
-      setNewAmount('5.00');
+      setNewAmount('0.00');
       await load();
     } finally {
       setCreating(false);
@@ -65,7 +66,8 @@ export default function Vouchers() {
   }
 
   function formatAmount(v: Voucher) {
-    const a = typeof v.amount === 'number' ? v.amount : parseFloat(String(v.amount || 0));
+    const a = typeof v.amount === 'number' ? v.amount : parseFloat(String(v.amount ?? 0));
+    if (!a || a <= 0) return 'No value';
     return `S$${a.toFixed(2)}`;
   }
 
@@ -195,6 +197,7 @@ export default function Vouchers() {
               value={newAmount}
               onChange={(e) => setNewAmount(e.target.value)}
               inputMode="decimal"
+              placeholder="0.00"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">

@@ -53,20 +53,20 @@ export default function VoucherSheet({
     try {
       setLoading(true);
       const res = await validateVoucher(trimmed);
-      const amount = Number(res.amount ?? 0);
-      if (!amount || amount <= 0) {
-        toast.error('Voucher has no value');
-        return;
-      }
+      const amount = res.amount != null ? Number(res.amount) : 0;
       const voucher: AppliedVoucher = {
         code: res.code,
         type: res.type,
-        amount,
+        amount: amount > 0 ? amount : 0,
         id: res.id,
       };
       onApply(voucher);
       setCode('');
-      toast.success(`${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher S$${amount.toFixed(2)} applied`);
+      if (amount > 0) {
+        toast.success(`${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher S$${amount.toFixed(2)} applied`);
+      } else {
+        toast.success(`${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher applied (no discount)`);
+      }
     } catch (err: any) {
       // errors are toasted by interceptor, but we can be explicit
       const msg = err?.response?.data?.detail || 'Invalid or already redeemed voucher';
@@ -162,7 +162,10 @@ export default function VoucherSheet({
               {applied.map((v) => (
                 <article className="reward-row" key={v.code}>
                   <div>
-                    <h4>{v.type === 'cdc' ? 'CDC' : 'Acre Group'} {formatCurrency(v.amount)}</h4>
+                    <h4>
+                      {v.type === 'cdc' ? 'CDC' : 'Acre Group'}
+                      {v.amount > 0 ? ` ${formatCurrency(v.amount)}` : ' (no discount)'}
+                    </h4>
                     <p>{v.code}</p>
                   </div>
                   <button

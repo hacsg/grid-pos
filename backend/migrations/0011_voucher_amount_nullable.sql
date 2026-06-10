@@ -1,0 +1,2 @@
+ALTER TABLE vouchers ALTER COLUMN amount DROP NOT NULL;
+ALTER TABLE order_vouchers ALTER COLUMN amount_applied SET DEFAULT 0;
