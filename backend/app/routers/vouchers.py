@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -20,7 +20,7 @@ from app.schemas.voucher import (
     VoucherValidateRequest,
 )
 from app.services.orders import load_order_or_404
-from app.services.plotholders_client import PlotholdersClient
+from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 from app.services.vouchers import (
     apply_vouchers_to_order,
     create_voucher,
@@ -35,6 +35,45 @@ router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
 def get_plotholders_client() -> PlotholdersClient:
     return PlotholdersClient()
+
+
+def _plotholders_http_exception(exc: PlotholdersAPIError) -> HTTPException:
+    """Map upstream Plotholders failures to API responses."""
+    if exc.status_code is not None and 400 <= exc.status_code < 500:
+        detail = exc.response_body or str(exc)
+        return HTTPException(status_code=exc.status_code, detail=detail)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Plotholders API is unavailable",
+    )
+
+
+@router.post("/redeem")
+async def redeem_voucher(
+    payload: dict[str, str],
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Any:
+    """Proxy Plotholders voucher redemption by code.
+
+    Accepts { code, staff_id, outlet } and forwards the request to
+    the Plotholders API server-side to avoid CORS issues.
+    """
+    code = payload.get("code", "").strip()
+    staff_id = payload.get("staff_id", "")
+    outlet = payload.get("outlet", "")
+
+    if not code:
+        raise HTTPException(status_code=422, detail="code is required")
+    if not staff_id:
+        raise HTTPException(status_code=422, detail="staff_id is required")
+    if not outlet:
+        raise HTTPException(status_code=422, detail="outlet is required")
+
+    try:
+        return await plotholders.redeem_voucher_by_code(code, staff_id, outlet)
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc
 
 
 @router.post("", response_model=VoucherRead, status_code=201)

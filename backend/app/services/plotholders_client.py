@@ -130,8 +130,21 @@ class PlotholdersClient:
         )
 
     async def redeem_voucher(self, voucher_id: str) -> dict[str, Any]:
-        """Redeem a Plotholders voucher."""
+        """Redeem a Plotholders voucher by ID."""
         return await self._request("POST", f"/api/vouchers/{voucher_id}/redeem")
+
+    async def redeem_voucher_by_code(
+        self,
+        code: str,
+        staff_id: str,
+        outlet: str,
+    ) -> dict[str, Any]:
+        """Redeem a Plotholders voucher by code, staff ID, and outlet."""
+        return await self._request(
+            "POST",
+            "/api/vouchers/redeem",
+            json={"code": code, "staff_id": staff_id, "outlet": outlet},
+        )
 
     async def get_voucher(self, voucher_ref: str) -> dict[str, Any] | None:
         """Return a Plotholders voucher by id or code.

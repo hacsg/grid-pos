@@ -455,10 +455,8 @@ export async function listVouchers(params?: { type?: VoucherType; redeemed?: boo
   return Array.isArray(data) ? data : (data as any).data ?? [];
 }
 
-const PLOTHOLDERS_API = 'https://plotholders-api-production.up.railway.app';
-
 export async function redeemVoucher(data: { code: string; staff_id: string; outlet: string }): Promise<any> {
-  const response = await axios.post(`${PLOTHOLDERS_API}/api/vouchers/redeem`, {
+  const response = await api.post('/vouchers/redeem', {
     code: data.code.trim(),
     staff_id: data.staff_id,
     outlet: data.outlet,
