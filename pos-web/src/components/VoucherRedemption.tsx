@@ -218,7 +218,7 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
       if (scanner && scanner.isScanning) {
         try {
           // resume if paused
-          if ((scanner as any).getState && (scanner as any).getState() === 2 /* PAUSED */) {
+          if ((scanner as any).getState && (scanner as any).getState() === 3 /* PAUSED */) {
             await scanner.resume();
           } else {
             // already scanning
@@ -292,7 +292,7 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
         <div className="qr-starting">Starting camera…</div>
       )}
 
-      {cameraReady && !paused && (
+      {cameraReady && paused && (
         <button
           type="button"
           className="qr-resume-hint"
