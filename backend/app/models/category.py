@@ -16,6 +16,7 @@ class Category(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "categories"
 
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True, default=None)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     outlet_id: Mapped[UUID | None] = mapped_column(
         Uuid,

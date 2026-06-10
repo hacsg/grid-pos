@@ -183,17 +183,23 @@ export default function ProductGrid({
         >
           All
         </button>
-        {sortedCategories.map((category) => (
-          <button
-            key={category.id}
-            className={selectedCategoryId === category.id ? 'active' : ''}
-            type="button"
-            onPointerDown={() => tapFeedback()}
-            onClick={() => onCategoryChange(category.id)}
-          >
-            {category.name}
-          </button>
-        ))}
+        {sortedCategories.map((category) => {
+          const isActive = selectedCategoryId === category.id;
+          const tabColor = category.color ?? undefined;
+          return (
+            <button
+              key={category.id}
+              className={isActive ? 'active' : ''}
+              type="button"
+              style={tabColor ? ({ '--tab-color': tabColor } as React.CSSProperties) : undefined}
+              onPointerDown={() => tapFeedback()}
+              onClick={() => onCategoryChange(category.id)}
+            >
+              {!isActive && tabColor && <span className="category-dot" aria-hidden="true" />}
+              {category.name}
+            </button>
+          );
+        })}
       </nav>
 
       <div className="product-grid" aria-busy={isLoading}>

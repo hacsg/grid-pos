@@ -4,14 +4,16 @@ import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
-import type { Category, Outlet } from '@/types';
+import type { Category, CategoryFormData, Outlet } from '@/types';
+
+const DEFAULT_CATEGORY_COLOR = '#6B7280';
 
 interface CategoryManagerProps {
   categories: Category[];
   outlets: Outlet[];
   loading: boolean;
-  onCreate: (data: { name: string; outlet_id: string | null }) => void;
-  onUpdate: (id: string, data: { name: string; outlet_id: string | null }) => void;
+  onCreate: (data: CategoryFormData) => void;
+  onUpdate: (id: string, data: CategoryFormData) => void;
   onDelete: (id: string) => void;
   onReorder: (ids: string[]) => void;
 }
@@ -28,11 +30,13 @@ export default function CategoryManager({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [name, setName] = useState('');
+  const [color, setColor] = useState(DEFAULT_CATEGORY_COLOR);
   const [outletId, setOutletId] = useState<string | null>(null);
 
   const openCreateModal = () => {
     setEditingCategory(null);
     setName('');
+    setColor(DEFAULT_CATEGORY_COLOR);
     setOutletId(null);
     setIsModalOpen(true);
   };
@@ -40,13 +44,18 @@ export default function CategoryManager({
   const openEditModal = (category: Category) => {
     setEditingCategory(category);
     setName(category.name);
+    setColor(category.color ?? DEFAULT_CATEGORY_COLOR);
     setOutletId(category.outlet_id);
     setIsModalOpen(true);
   };
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    const data = { name: name.trim(), outlet_id: outletId };
+    const data: CategoryFormData = {
+      name: name.trim(),
+      color: color || DEFAULT_CATEGORY_COLOR,
+      outlet_id: outletId,
+    };
     if (editingCategory) {
       onUpdate(editingCategory.id, data);
     } else {
@@ -110,7 +119,14 @@ export default function CategoryManager({
                 </button>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text">{category.name}</p>
+                <p className="flex items-center gap-2 text-sm font-medium text-text">
+                  <span
+                    className="inline-block h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: category.color ?? DEFAULT_CATEGORY_COLOR }}
+                    aria-hidden="true"
+                  />
+                  {category.name}
+                </p>
                 <p className="text-xs text-text-muted">
                   Order: {category.sort_order}
                   {category.outlet_id
@@ -155,6 +171,25 @@ export default function CategoryManager({
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-text">Color</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-10 w-14 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
+                aria-label="Category color"
+              />
+              <Input
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="#6B7280"
+                className="font-mono"
+              />
+            </div>
+          </div>
 
           {outlets.length > 0 && (
             <div className="flex flex-col gap-1.5">

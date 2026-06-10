@@ -105,6 +105,7 @@ export interface ProductFormData {
 export interface Category {
   id: string;
   name: string;
+  color?: string | null;
   sort_order: number;
   outlet_id: string | null;
   created_at: string;
@@ -113,6 +114,7 @@ export interface Category {
 
 export interface CategoryFormData {
   name: string;
+  color?: string | null;
   outlet_id?: string | null;
 }
 

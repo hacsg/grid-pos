@@ -9,6 +9,7 @@ export interface Timestamped {
 
 export interface Category extends Timestamped {
   name: string;
+  color?: string | null;
   sort_order: number;
   outlet_id: string | null;
 }

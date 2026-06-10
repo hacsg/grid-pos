@@ -11,6 +11,7 @@ class CategoryBase(BaseModel):
     """Shared category fields."""
 
     name: str = Field(min_length=1, max_length=120)
+    color: str | None = None
     sort_order: int = Field(default=0, ge=0)
     outlet_id: UUID | None = None
 
@@ -23,6 +24,7 @@ class CategoryUpdate(BaseModel):
     """Payload for updating a category."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    color: str | None = None
     sort_order: int | None = Field(default=None, ge=0)
     outlet_id: UUID | None = None
 
