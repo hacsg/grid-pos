@@ -569,14 +569,14 @@ export default function Reports() {
                 {formatCurrency(dailyReport.total_revenue)}
               </p>
               <div className="mt-1 flex items-center gap-1">
-                {dailyReport.revenue_change_percent >= 0 ? (
+                {(dailyReport.revenue_change_percent ?? 0) >= 0 ? (
                   <ArrowUpRight className="h-3.5 w-3.5 text-success" />
                 ) : (
                   <ArrowDownRight className="h-3.5 w-3.5 text-error" />
                 )}
                 <span
                   className={`text-xs font-medium ${
-                    dailyReport.revenue_change_percent >= 0 ? 'text-success' : 'text-error'
+                    (dailyReport.revenue_change_percent ?? 0) >= 0 ? 'text-success' : 'text-error'
                   }`}
                 >
                   {formatPercent(dailyReport.revenue_change_percent)} vs last period
@@ -590,17 +590,17 @@ export default function Reports() {
                 <span className="text-xs font-medium uppercase tracking-wider">Transactions</span>
               </div>
               <p className="mt-2 text-3xl font-bold text-text">
-                {dailyReport.total_transactions.toLocaleString()}
+                {dailyReport.total_transactions?.toLocaleString() ?? '0'}
               </p>
               <div className="mt-1 flex items-center gap-1">
-                {dailyReport.transactions_change_percent >= 0 ? (
+                {(dailyReport.transactions_change_percent ?? 0) >= 0 ? (
                   <ArrowUpRight className="h-3.5 w-3.5 text-success" />
                 ) : (
                   <ArrowDownRight className="h-3.5 w-3.5 text-error" />
                 )}
                 <span
                   className={`text-xs font-medium ${
-                    dailyReport.transactions_change_percent >= 0 ? 'text-success' : 'text-error'
+                    (dailyReport.transactions_change_percent ?? 0) >= 0 ? 'text-success' : 'text-error'
                   }`}
                 >
                   {formatPercent(dailyReport.transactions_change_percent)} vs last period
@@ -617,14 +617,14 @@ export default function Reports() {
                 {formatCurrency(dailyReport.avg_ticket_size)}
               </p>
               <div className="mt-1 flex items-center gap-1">
-                {dailyReport.avg_ticket_change_percent >= 0 ? (
+                {(dailyReport.avg_ticket_change_percent ?? 0) >= 0 ? (
                   <ArrowUpRight className="h-3.5 w-3.5 text-success" />
                 ) : (
                   <ArrowDownRight className="h-3.5 w-3.5 text-error" />
                 )}
                 <span
                   className={`text-xs font-medium ${
-                    dailyReport.avg_ticket_change_percent >= 0 ? 'text-success' : 'text-error'
+                    (dailyReport.avg_ticket_change_percent ?? 0) >= 0 ? 'text-success' : 'text-error'
                   }`}
                 >
                   {formatPercent(dailyReport.avg_ticket_change_percent)} vs last period
@@ -680,7 +680,7 @@ export default function Reports() {
             ) : (
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dailyReport.hourly_sales} barGap={4}>
+                  <BarChart data={dailyReport.hourly_sales || []} barGap={4}>
                     <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
                     <XAxis
                       dataKey="hour"
@@ -721,7 +721,7 @@ export default function Reports() {
           <Card title="Top Products by Revenue" subtitle="Highest revenue items">
             {isProductLoading ? (
               <ChartSkeleton height="h-80" />
-            ) : productReport.top_by_revenue.length === 0 ? (
+            ) : (productReport.top_by_revenue || []).length === 0 ? (
               <EmptyState icon={ShoppingBag} title="No product data" description="No sales data available for this period" />
             ) : (
               <div className="h-80">
@@ -760,7 +760,7 @@ export default function Reports() {
           <Card title="Top Products by Quantity" subtitle="Most sold items">
             {isProductLoading ? (
               <ChartSkeleton height="h-80" />
-            ) : productReport.top_by_quantity.length === 0 ? (
+            ) : (productReport.top_by_quantity || []).length === 0 ? (
               <EmptyState icon={ShoppingBag} title="No product data" description="No sales data available for this period" />
             ) : (
               <div className="h-80">
@@ -1086,7 +1086,7 @@ export default function Reports() {
               ) : (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={outletReport.outlets} barGap={8}>
+                    <BarChart data={outletReport.outlets || []} barGap={8}>
                       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
                       <XAxis
                         dataKey="outlet_name"
@@ -1115,7 +1115,7 @@ export default function Reports() {
               ) : (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={outletReport.outlets} barGap={8}>
+                    <BarChart data={outletReport.outlets || []} barGap={8}>
                       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
                       <XAxis
                         dataKey="outlet_name"
@@ -1144,7 +1144,7 @@ export default function Reports() {
               ) : (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={outletReport.outlets} barGap={8}>
+                    <BarChart data={outletReport.outlets || []} barGap={8}>
                       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
                       <XAxis
                         dataKey="outlet_name"
@@ -1176,7 +1176,7 @@ export default function Reports() {
                     <Skeleton key={i} className="h-8 w-full" />
                   ))}
                 </div>
-              ) : outletReport.outlets.length === 0 ? (
+              ) : (outletReport.outlets || []).length === 0 ? (
                 <EmptyState icon={Store} title="No outlet data" description="No outlet comparison data available" />
               ) : (
                 <div className="overflow-x-auto">
