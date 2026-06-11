@@ -3,22 +3,35 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.campaign import Campaign
+from app.models.customer import Customer
 from app.models.staff import Staff, StaffRole
-from app.models.voucher import VoucherType
+from app.models.voucher import Voucher, VoucherType
 from app.schemas.order import OrderRead
 from app.schemas.voucher import (
     VoucherApplyRequest,
+    VoucherBulkIssueRequest,
+    VoucherBulkIssueResponse,
+    VoucherCreate,
+    VoucherIssueRequest,
+    VoucherRead,
     VoucherValidateRead,
     VoucherValidateRequest,
 )
+from app.services.campaigns import load_campaign_or_404
+from app.services.customers import load_customer_or_404
 from app.services.orders import load_order_or_404
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 from app.services.vouchers import (
     apply_vouchers_to_order,
+    create_voucher,
+    issue_voucher,
+    list_vouchers,
     load_applied_vouchers_for_order,
 )
 from app.utils.auth import get_current_staff, require_role
@@ -39,6 +52,23 @@ def _plotholders_http_exception(exc: PlotholdersAPIError) -> HTTPException:
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail="Plotholders API is unavailable",
     )
+
+
+def _voucher_read(
+    voucher: Voucher,
+    *,
+    customer: Customer | None = None,
+    campaign: Campaign | None = None,
+) -> VoucherRead:
+    """Build an enriched voucher response with flattened customer/campaign labels."""
+    customer = customer or voucher.customer
+    campaign = campaign or voucher.campaign
+    data = VoucherRead.model_validate(voucher)
+    data.customer_name = customer.name if customer else None
+    data.customer_phone = customer.phone if customer else None
+    data.campaign_name = campaign.name if campaign else None
+    data.campaign_code_prefix = campaign.code_prefix if campaign else None
+    return data
 
 
 @router.post("/redeem")
@@ -67,6 +97,87 @@ async def redeem_voucher(
         return await plotholders.redeem_voucher_by_code(code, staff_id, outlet)
     except PlotholdersAPIError as exc:
         raise _plotholders_http_exception(exc) from exc
+
+
+@router.post("", response_model=VoucherRead, status_code=status.HTTP_201_CREATED)
+async def create_new_voucher(
+    payload: VoucherCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(require_role(StaffRole.admin, StaffRole.manager)),
+) -> Any:
+    """Create a voucher (admin/manager use, primarily for seeding CDC vouchers)."""
+    voucher = await create_voucher(
+        db,
+        code=payload.code,
+        type=payload.type,
+        amount=payload.amount,
+    )
+    return voucher
+
+
+@router.post("/issue", response_model=VoucherRead, status_code=status.HTTP_201_CREATED)
+async def issue_existing_customer_voucher(
+    payload: VoucherIssueRequest,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> VoucherRead:
+    """Issue one campaign voucher to an existing customer."""
+    campaign = await load_campaign_or_404(db, payload.campaign_id)
+    customer = await load_customer_or_404(db, payload.customer_id)
+    discount_cents = payload.discount_cents if payload.discount_cents is not None else campaign.discount_cents
+    voucher = await issue_voucher(
+        db,
+        customer_id=customer.id,
+        campaign_id=campaign.id,
+        code_prefix=campaign.code_prefix,
+        discount_cents=discount_cents,
+    )
+    return _voucher_read(voucher, customer=customer, campaign=campaign)
+
+
+@router.post("/bulk-issue", response_model=VoucherBulkIssueResponse, status_code=status.HTTP_201_CREATED)
+async def bulk_issue_campaign_vouchers(
+    payload: VoucherBulkIssueRequest,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> VoucherBulkIssueResponse:
+    """Issue campaign vouchers to selected customers or all campaign signups."""
+    campaign = await load_campaign_or_404(db, payload.campaign_id)
+    discount_cents = payload.discount_cents if payload.discount_cents is not None else campaign.discount_cents
+
+    if payload.customer_ids is None:
+        result = await db.execute(
+            select(Customer).where(Customer.signup_campaign_id == campaign.id).order_by(Customer.name.asc())
+        )
+        customers = list(result.scalars().all())
+    else:
+        customer_ids = list(dict.fromkeys(payload.customer_ids))
+        if not customer_ids:
+            return VoucherBulkIssueResponse(issued=0, codes=[])
+        result = await db.execute(select(Customer).where(Customer.id.in_(customer_ids)))
+        customers_by_id = {customer.id: customer for customer in result.scalars().all()}
+        missing_ids = [str(customer_id) for customer_id in customer_ids if customer_id not in customers_by_id]
+        if missing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Customers not found: {', '.join(missing_ids)}",
+            )
+        customers = [customers_by_id[customer_id] for customer_id in customer_ids]
+
+    codes: list[str] = []
+    for customer in customers:
+        voucher = await issue_voucher(
+            db,
+            customer_id=customer.id,
+            campaign_id=campaign.id,
+            code_prefix=campaign.code_prefix,
+            discount_cents=discount_cents,
+            commit=False,
+        )
+        codes.append(voucher.code)
+
+    await db.commit()
+    return VoucherBulkIssueResponse(issued=len(codes), codes=codes)
 
 
 @router.post("/validate", response_model=VoucherValidateRead)
@@ -136,6 +247,32 @@ async def apply_voucher_to_order(
     )
     order = await load_order_or_404(db, order_id)
     return await _enrich_order_with_vouchers(db, order)
+
+
+@router.get("", response_model=list[VoucherRead])
+async def list_all_vouchers(
+    type: VoucherType | None = None,
+    redeemed: bool | None = Query(default=None, description="true=redeemed, false=available"),
+    campaign_id: UUID | None = None,
+    outlet_id: UUID | None = None,
+    order_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> list[VoucherRead]:
+    """List vouchers (admin and staff). Supports basic filters."""
+    vouchers = await list_vouchers(
+        db,
+        type=type,
+        redeemed=redeemed,
+        campaign_id=campaign_id,
+        outlet_id=outlet_id,
+        order_id=order_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [_voucher_read(voucher) for voucher in vouchers]
 
 
 async def _enrich_order_with_vouchers(db: AsyncSession, order: Any) -> OrderRead:

@@ -34,6 +34,18 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    customer_id: Mapped[Optional[UUID]] = mapped_column(
+        Uuid,
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    campaign_id: Mapped[Optional[UUID]] = mapped_column(
+        Uuid,
+        ForeignKey("campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     discount_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="available")
     expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
@@ -65,6 +77,8 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     voided_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
+    customer = relationship("Customer", foreign_keys=[customer_id], back_populates="vouchers")
+    campaign = relationship("Campaign", foreign_keys=[campaign_id], back_populates="vouchers")
     redeemed_by_staff = relationship("Staff", foreign_keys=[redeemed_by_staff_id])
     outlet = relationship("Outlet", foreign_keys=[outlet_id])
     order = relationship("Order", foreign_keys=[order_id], back_populates="vouchers")

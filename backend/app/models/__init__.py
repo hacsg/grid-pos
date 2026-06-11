@@ -1,6 +1,8 @@
 """Import all SQLAlchemy models so Alembic can discover metadata."""
 
 from app.models.category import Category
+from app.models.campaign import Campaign
+from app.models.customer import Customer
 from app.models.modifier import ModifierGroup, ModifierOption, ProductModifierGroup
 from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
@@ -13,6 +15,8 @@ from app.models.voucher import OrderVoucher, Voucher, VoucherType
 
 __all__ = [
     "Category",
+    "Campaign",
+    "Customer",
     "Discount",
     "ModifierGroup",
     "ModifierOption",
