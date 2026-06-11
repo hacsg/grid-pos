@@ -308,6 +308,7 @@ export default function LoyaltySheet({
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerPaused, setScannerPaused] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const rewards = useMemo(() => deriveRewards(selectedCustomer), [selectedCustomer]);
@@ -335,9 +336,13 @@ export default function LoyaltySheet({
     }
     try {
       setLoading(true);
+      setError(null);
       const customer = await lookupLoyalty(code);
       onCustomerSelect(customer);
       setLookupCode('');
+    } catch (err) {
+      console.error('Loyalty lookup failed:', err);
+      setError('Lookup failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -437,6 +442,12 @@ export default function LoyaltySheet({
             Lookup
           </button>
         </form>
+
+        {error && (
+          <div style={{ color: '#dc2626', padding: '8px 16px', fontSize: 14, textAlign: 'center' }}>
+            {error}
+          </div>
+        )}
 
         {showScanner && (
           <section className="qr-section">

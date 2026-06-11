@@ -22,6 +22,7 @@ import {
   type Product,
 } from '@/api/client';
 import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { tapFeedback } from '@/utils/haptics';
 import { broadcast } from '@/display/channel';
 
@@ -454,19 +455,29 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           }}
         />
       </main>
-      <LoyaltySheet
-        open={loyaltyOpen}
-        selectedCustomer={loyalty?.customer ?? null}
-        selectedReward={loyalty?.reward ?? null}
-        onClose={() => setLoyaltyOpen(false)}
-        onCustomerSelect={handleCustomerSelect}
-        onRedeem={handleRedeem}
-        onSkip={() => {
-          setLoyalty(null);
-          setLoyaltyOpen(false);
-        }}
-        onContinue={() => setLoyaltyOpen(false)}
-      />
+      <ErrorBoundary fallback={(err, reset) => (
+        <div className="modal-backdrop" role="presentation">
+          <section className="loyalty-sheet" role="dialog" aria-modal="true" style={{padding:24,textAlign:'center'}}>
+            <h3 style={{marginBottom:8}}>Loyalty failed to load</h3>
+            <p style={{fontSize:14,marginBottom:16,color:'#666'}}>{err.message}</p>
+            <button className="secondary-button" onClick={() => { reset(); setLoyaltyOpen(false); }}>Close</button>
+          </section>
+        </div>
+      )}>
+        <LoyaltySheet
+          open={loyaltyOpen}
+          selectedCustomer={loyalty?.customer ?? null}
+          selectedReward={loyalty?.reward ?? null}
+          onClose={() => setLoyaltyOpen(false)}
+          onCustomerSelect={handleCustomerSelect}
+          onRedeem={handleRedeem}
+          onSkip={() => {
+            setLoyalty(null);
+            setLoyaltyOpen(false);
+          }}
+          onContinue={() => setLoyaltyOpen(false)}
+        />
+      </ErrorBoundary>
       <VoucherSheet
         open={voucherOpen}
         applied={vouchers}
@@ -567,25 +578,27 @@ function StaffShell() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/display" element={<CustomerDisplay />} />
-          <Route path="/*" element={<StaffShell />} />
-        </Routes>
-      </BrowserRouter>
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: 3000,
-          style: {
-            borderRadius: '8px',
-            background: '#1a1a1a',
-            color: '#ffffff',
-            fontSize: '14px',
-          },
-        }}
-      />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/display" element={<CustomerDisplay />} />
+            <Route path="/*" element={<StaffShell />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              borderRadius: '8px',
+              background: '#1a1a1a',
+              color: '#ffffff',
+              fontSize: '14px',
+            },
+          }}
+        />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

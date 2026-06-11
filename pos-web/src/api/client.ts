@@ -382,6 +382,9 @@ export async function lookupLoyalty(code: string): Promise<LoyaltyMember> {
   const { data } = await api.post<LoyaltyMember>('/loyalty/lookup', {
     phone: code.trim(),
   });
+  if (!data || !data.member_id) {
+    throw new Error('Invalid loyalty response');
+  }
   return data;
 }
 
