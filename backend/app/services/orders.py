@@ -221,8 +221,7 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         try:
             await PlotholdersClient().record_purchase(
                 customer_id=payload.customer_id,
-                order_id=order.id,
-                amount=order.total,
+                order_total=float(order.total),
                 outlet=outlet.name,
             )
         except PlotholdersAPIError:

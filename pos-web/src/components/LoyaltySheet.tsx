@@ -1,5 +1,6 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { BadgePercent, Search, UserRound, X } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BadgePercent, Camera, Search, UserRound, X } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { formatCurrency, lookupLoyalty, type LoyaltyMember, type LoyaltyReward } from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
 
@@ -33,6 +34,266 @@ function deriveRewards(customer: LoyaltyMember | null): LoyaltyReward[] {
     }));
 }
 
+const QR_READER_ID = 'qr-reader-loyalty';
+
+interface QrScannerProps {
+  onDetected: (code: string) => void;
+  paused: boolean;
+  onRequestResume: () => void;
+}
+
+function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const isStartingRef = useRef(false);
+  const lastDetectedRef = useRef<string>('');
+
+  const stopScanner = useCallback(async () => {
+    const scanner = scannerRef.current;
+    if (scanner) {
+      try {
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
+      } catch {
+        // ignore stop errors
+      }
+      scannerRef.current = null;
+    }
+    setCameraReady(false);
+  }, []);
+
+  const startScanner = useCallback(async () => {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setError(null);
+
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      if (!containerRef.current || !document.getElementById(QR_READER_ID)) {
+        return;
+      }
+
+      // Create or reuse scanner instance
+      let scanner = scannerRef.current;
+      if (!scanner) {
+        scanner = new Html5Qrcode(QR_READER_ID, { verbose: false });
+        scannerRef.current = scanner;
+      }
+
+      const config = {
+        fps: 8,
+        qrbox: { width: 200, height: 200 },
+        aspectRatio: 1.0,
+      };
+
+      const handleSuccess = (decodedText: string) => {
+        const trimmed = decodedText.trim();
+        if (!trimmed || trimmed === lastDetectedRef.current) return;
+        lastDetectedRef.current = trimmed;
+
+        // Visual success flash
+        setFlash(true);
+        window.setTimeout(() => setFlash(false), 420);
+
+        // Pause immediately to prevent duplicate triggers
+        try {
+          if (scanner && scanner.isScanning) {
+            scanner.pause(true);
+          }
+        } catch {
+          // ignore
+        }
+
+        onDetected(trimmed);
+      };
+
+      const handleFrameError = () => {
+        // Per-frame decode failures are noisy; ignore
+      };
+
+      const stopActiveScanner = async () => {
+        try {
+          if (scanner && scanner.isScanning) {
+            await scanner.stop();
+          }
+        } catch (stopError) {
+          console.error('QR scanner failed to stop after a failed start attempt:', stopError);
+        }
+      };
+
+      try {
+        await scanner.start({ facingMode: 'environment' }, config, handleSuccess, handleFrameError);
+        setCameraReady(true);
+        return;
+      } catch (environmentError) {
+        console.error('QR scanner failed to start with environment facing mode:', environmentError);
+        await stopActiveScanner();
+      }
+
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        const backCamera = cameras.find((camera) =>
+          /back|rear|environment|world/i.test(camera.label || '')
+        );
+
+        if (backCamera) {
+          try {
+            await scanner.start(backCamera.id, config, handleSuccess, handleFrameError);
+            setCameraReady(true);
+            return;
+          } catch (backCameraError) {
+            console.error('QR scanner failed to start with explicit back camera:', backCameraError);
+            await stopActiveScanner();
+          }
+        }
+      } catch (cameraListError) {
+        console.error('QR scanner failed to enumerate cameras:', cameraListError);
+      }
+
+      try {
+        await scanner.start(
+          {} as MediaTrackConstraints,
+          { ...config, videoConstraints: {} },
+          handleSuccess,
+          handleFrameError
+        );
+        setCameraReady(true);
+        return;
+      } catch (defaultCameraError) {
+        console.error('QR scanner failed to start with default camera:', defaultCameraError);
+        throw defaultCameraError;
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')) {
+        setError('Camera permission denied. Enable camera access in your browser settings.');
+      } else if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('no camera')) {
+        setError('No camera found on this device.');
+      } else {
+        setError('Could not start camera. You can enter the phone manually below.');
+      }
+      setCameraReady(false);
+    } finally {
+      isStartingRef.current = false;
+    }
+  }, [onDetected]);
+
+  // Manage start/stop/pause/resume based on paused prop
+  useEffect(() => {
+    let cancelled = false;
+
+    const manage = async () => {
+      if (cancelled) return;
+
+      if (paused) {
+        const scanner = scannerRef.current;
+        if (scanner && scanner.isScanning) {
+          try {
+            scanner.pause(true);
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+
+      // Not paused: ensure running
+      const scanner = scannerRef.current;
+      if (scanner && scanner.isScanning) {
+        try {
+          // resume if paused
+          if ((scanner as any).getState && (scanner as any).getState() === 3 /* PAUSED */) {
+            await scanner.resume();
+          } else {
+            // already scanning
+          }
+          lastDetectedRef.current = '';
+        } catch {
+          // If resume fails, try full restart
+          await stopScanner();
+          if (!cancelled) await startScanner();
+        }
+        return;
+      }
+
+      // No scanner or not scanning: start fresh
+      await startScanner();
+    };
+
+    manage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paused, startScanner, stopScanner]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      const doStop = async () => {
+        await stopScanner();
+      };
+      void doStop();
+    };
+  }, [stopScanner]);
+
+  const handleRetryCamera = () => {
+    setError(null);
+    lastDetectedRef.current = '';
+    void startScanner();
+    onRequestResume();
+  };
+
+  return (
+    <div className="qr-scanner-wrap">
+      <div
+        id={QR_READER_ID}
+        ref={containerRef}
+        className={`qr-reader ${cameraReady ? 'ready' : ''}`}
+      />
+
+      {/* Camera overlay frame + corners */}
+      <div className={`qr-overlay ${flash ? 'flash' : ''}`} aria-hidden="true">
+        <div className="qr-frame">
+          <div className="qr-corner tl" />
+          <div className="qr-corner tr" />
+          <div className="qr-corner bl" />
+          <div className="qr-corner br" />
+        </div>
+        <div className="qr-scan-hint">Align QR code inside the frame</div>
+      </div>
+
+      {error && (
+        <div className="qr-error">
+          <div className="qr-error-text">{error}</div>
+          <button type="button" className="qr-retry-btn" onClick={handleRetryCamera}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!cameraReady && !error && (
+        <div className="qr-starting">Starting camera…</div>
+      )}
+
+      {cameraReady && paused && (
+        <button
+          type="button"
+          className="qr-resume-hint"
+          onClick={onRequestResume}
+          aria-label="Resume scanning"
+        >
+          Tap to resume scanning
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function LoyaltySheet({
   open,
   selectedCustomer,
@@ -45,6 +306,8 @@ export default function LoyaltySheet({
 }: LoyaltySheetProps) {
   const [lookupCode, setLookupCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerPaused, setScannerPaused] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const rewards = useMemo(() => deriveRewards(selectedCustomer), [selectedCustomer]);
@@ -53,6 +316,10 @@ export default function LoyaltySheet({
   useEffect(() => {
     if (open) {
       window.setTimeout(() => inputRef.current?.focus(), 80);
+    } else {
+      setShowScanner(false);
+      setScannerPaused(true);
+      setLookupCode('');
     }
   }, [open]);
 
@@ -60,9 +327,9 @@ export default function LoyaltySheet({
     return null;
   }
 
-  async function submitLookup(event?: FormEvent<HTMLFormElement>) {
+  async function submitLookup(event?: FormEvent<HTMLFormElement>, codeOverride?: string) {
     event?.preventDefault();
-    const code = lookupCode.trim();
+    const code = (codeOverride ?? lookupCode).trim();
     if (!code) {
       return;
     }
@@ -75,6 +342,46 @@ export default function LoyaltySheet({
       setLoading(false);
     }
   }
+
+  function toggleScanner() {
+    tapFeedback();
+    const next = !showScanner;
+    setShowScanner(next);
+    if (next) {
+      setScannerPaused(false);
+    } else {
+      setScannerPaused(true);
+    }
+  }
+
+  const requestScannerResume = useCallback(() => {
+    setScannerPaused(false);
+  }, []);
+
+  const handleQrDetected = useCallback((detectedCode: string) => {
+    const trimmed = detectedCode.trim();
+    if (!trimmed || loading) return;
+
+    setLookupCode(trimmed);
+    setScannerPaused(true);
+
+    // Auto-submit lookup on successful QR scan
+    void (async () => {
+      try {
+        setLoading(true);
+        const customer = await lookupLoyalty(trimmed);
+        onCustomerSelect(customer);
+        setLookupCode('');
+        setShowScanner(false);
+      } catch {
+        // Interceptor toasts error; resume scanner for retry
+        setScannerPaused(false);
+        setLookupCode('');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [loading, lookupLoyalty, onCustomerSelect]);
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -110,13 +417,46 @@ export default function LoyaltySheet({
                 autoComplete="off"
                 enterKeyHint="search"
                 disabled={loading}
+                style={{ flex: '1 1 auto', width: '1px' }}
               />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Scan member QR code"
+                title="Scan QR"
+                onPointerDown={() => tapFeedback()}
+                onClick={toggleScanner}
+                disabled={loading}
+                style={{ width: 36, height: 36, flex: '0 0 36px', border: 'none', background: 'transparent', padding: 0 }}
+              >
+                <Camera size={18} aria-hidden="true" />
+              </button>
             </div>
           </label>
           <button className="primary-button" type="submit" disabled={loading || !lookupCode.trim()}>
             Lookup
           </button>
         </form>
+
+        {showScanner && (
+          <section className="qr-section">
+            <QrScanner
+              onDetected={handleQrDetected}
+              paused={scannerPaused || loading}
+              onRequestResume={requestScannerResume}
+            />
+            <div className="qr-actions">
+              <button
+                type="button"
+                className="qr-manual-btn"
+                onClick={toggleScanner}
+                disabled={loading}
+              >
+                Close camera
+              </button>
+            </div>
+          </section>
+        )}
 
         {selectedCustomer && (
           <div className="loyalty-content">
