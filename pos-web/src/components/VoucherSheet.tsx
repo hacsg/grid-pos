@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Camera, Search, Ticket, X } from 'lucide-react';
+import { Ticket, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatCurrency, validateVoucher } from '@/api/client';
 import type { AppliedVoucher } from '@/types';
@@ -25,7 +25,6 @@ export default function VoucherSheet({
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -76,11 +75,6 @@ export default function VoucherSheet({
     }
   }
 
-  function openCamera() {
-    tapFeedback();
-    fileInputRef.current?.click();
-  }
-
   function handleRemove(codeToRemove: string) {
     tapFeedback();
     onRemove(codeToRemove);
@@ -125,22 +119,9 @@ export default function VoucherSheet({
             </div>
           </label>
           <button className="primary-button" type="submit" disabled={loading || !code.trim()}>
-            Apply
+            {loading ? 'Applying...' : 'Apply'}
           </button>
         </form>
-
-        <button className="secondary-button camera-button" type="button" onClick={openCamera}>
-          <Camera size={18} aria-hidden="true" />
-          Or use camera
-        </button>
-        <input
-          ref={fileInputRef}
-          className="visually-hidden"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={() => toast.success('Camera capture ready (enter code manually)')}
-        />
 
         {applied.length > 0 && (
           <div className="loyalty-content">

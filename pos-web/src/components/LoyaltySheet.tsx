@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { BadgePercent, Camera, Search, UserRound, X } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { BadgePercent, Search, UserRound, X } from 'lucide-react';
 import { formatCurrency, lookupLoyalty, type LoyaltyMember, type LoyaltyReward } from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
 
@@ -47,7 +46,6 @@ export default function LoyaltySheet({
   const [lookupCode, setLookupCode] = useState('');
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const rewards = useMemo(() => deriveRewards(selectedCustomer), [selectedCustomer]);
   const lifetimeMoments = selectedCustomer?.lifetime_moments ?? selectedCustomer?.points ?? 0;
@@ -76,11 +74,6 @@ export default function LoyaltySheet({
     } finally {
       setLoading(false);
     }
-  }
-
-  function openCamera() {
-    tapFeedback();
-    fileInputRef.current?.click();
   }
 
   return (
@@ -124,19 +117,6 @@ export default function LoyaltySheet({
             Lookup
           </button>
         </form>
-
-        <button className="secondary-button camera-button" type="button" onClick={openCamera}>
-          <Camera size={18} aria-hidden="true" />
-          Or use camera
-        </button>
-        <input
-          ref={fileInputRef}
-          className="visually-hidden"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={() => toast.success('Camera capture ready')}
-        />
 
         {selectedCustomer && (
           <div className="loyalty-content">
