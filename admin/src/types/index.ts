@@ -363,6 +363,7 @@ export interface CsvExportParams {
   date_from?: string;
   date_to?: string;
 }
+
 // --- Vouchers ---
 export type VoucherType = 'cdc' | 'acre_group';
 
@@ -371,21 +372,48 @@ export interface Voucher {
   code: string;
   type: VoucherType;
   amount?: number | null;
+  customer_id?: string | null;
+  campaign_id?: string | null;
+  discount_cents?: number | null;
+  status?: string;
+  expires_at?: string | null;
   redeemed_at?: string | null;
   redeemed_by_staff_id?: string | null;
   outlet_id?: string | null;
   order_id?: string | null;
+  voided_at?: string | null;
   created_at: string;
   updated_at: string;
   outlet_name?: string;
   staff_name?: string;
   order_number?: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  campaign_name?: string | null;
+  campaign_code_prefix?: string | null;
 }
 
 export interface VoucherCreate {
   code: string;
   type?: VoucherType;
   amount?: number;
+}
+
+export interface VoucherIssueRequest {
+  customer_id: string;
+  campaign_id: string;
+  discount_cents?: number | null;
+}
+
+export interface VoucherBulkIssueRequest {
+  campaign_id: string;
+  customer_ids?: string[] | null;
+  discount_cents?: number | null;
+}
+
+export interface VoucherBulkIssueResponse {
+  issued: number;
+  codes: string[];
 }
 
 // --- Campaigns / Customers ---
@@ -445,6 +473,7 @@ export interface Customer {
   moments_total: number;
   signup_campaign_id?: string | null;
   signup_campaign?: CampaignSummary | null;
+  voucher_count: number;
 }
 
 // --- Discounts ---

@@ -41,6 +41,9 @@ import type {
   ProductModifierAssignmentUpdate,
   Voucher,
   VoucherCreate,
+  VoucherIssueRequest,
+  VoucherBulkIssueRequest,
+  VoucherBulkIssueResponse,
   Campaign,
   CampaignFormData,
   CampaignMetrics,
@@ -428,57 +431,75 @@ export const exportReportCSV = async (params?: CsvExportParams): Promise<Blob> =
 };
 
 // Vouchers
+const normalizeVoucher = (voucher: any): Voucher => ({
+  ...voucher,
+  amount: typeof voucher?.amount === 'string' ? parseFloat(voucher.amount) : (voucher?.amount ?? 0),
+  discount_cents: voucher?.discount_cents ?? null,
+  customer_id: voucher?.customer_id ?? null,
+  campaign_id: voucher?.campaign_id ?? null,
+  customer_name: voucher?.customer_name ?? null,
+  customer_phone: voucher?.customer_phone ?? null,
+  campaign_name: voucher?.campaign_name ?? null,
+  campaign_code_prefix: voucher?.campaign_code_prefix ?? null,
+});
+
 export const getVouchers = async (params?: {
   type?: 'cdc' | 'acre_group';
   redeemed?: boolean;
+  campaign_id?: string;
   limit?: number;
+  offset?: number;
 }): Promise<Voucher[]> => {
   const { data } = await api.get('/vouchers', { params });
-  const list = Array.isArray(data) ? data : [];
-  return list.map((v: any) => ({
-    ...v,
-    amount: typeof v.amount === 'string' ? parseFloat(v.amount) : (v.amount ?? 0),
-  }));
+  return (Array.isArray(data) ? data : []).map(normalizeVoucher);
 };
 
 export const createVoucher = async (payload: VoucherCreate): Promise<Voucher> => {
   const { data } = await api.post('/vouchers', payload);
   toast.success('Voucher created');
+  return normalizeVoucher(data);
+};
+
+export const issueVoucher = async (payload: VoucherIssueRequest): Promise<Voucher> => {
+  const { data } = await api.post('/vouchers/issue', payload);
+  toast.success('Voucher issued');
+  return normalizeVoucher(data);
+};
+
+export const bulkIssueVouchers = async (
+  payload: VoucherBulkIssueRequest
+): Promise<VoucherBulkIssueResponse> => {
+  const { data } = await api.post('/vouchers/bulk-issue', payload);
+  const issued = toNumber(data?.issued, 0);
+  toast.success(`${issued} voucher${issued === 1 ? '' : 's'} issued`);
   return {
-    ...data,
-    amount: typeof data.amount === 'string' ? parseFloat(data.amount) : (data.amount ?? 0),
+    issued,
+    codes: Array.isArray(data?.codes) ? data.codes : [],
   };
 };
 
 // Campaigns
+const normalizeCampaign = (campaign: any): Campaign => ({
+  ...campaign,
+  budget_cents: campaign?.budget_cents ?? null,
+  discount_cents: toNumber(campaign?.discount_cents, 0),
+  auto_issue_on_signup: toBoolean(campaign?.auto_issue_on_signup, false),
+  signup_voucher_discount_cents: campaign?.signup_voucher_discount_cents ?? null,
+  voucher_style: campaign?.voucher_style ?? null,
+  voucher_accent_color: campaign?.voucher_accent_color ?? null,
+  voucher_headline: campaign?.voucher_headline ?? null,
+  voucher_background_url: campaign?.voucher_background_url ?? null,
+});
+
 export const getCampaigns = async (): Promise<Campaign[]> => {
   const { data } = await api.get('/campaigns');
-  return (Array.isArray(data) ? data : []).map((campaign: any) => ({
-    ...campaign,
-    budget_cents: campaign.budget_cents ?? null,
-    discount_cents: toNumber(campaign.discount_cents, 0),
-    auto_issue_on_signup: toBoolean(campaign.auto_issue_on_signup, false),
-    signup_voucher_discount_cents: campaign.signup_voucher_discount_cents ?? null,
-    voucher_style: campaign.voucher_style ?? null,
-    voucher_accent_color: campaign.voucher_accent_color ?? null,
-    voucher_headline: campaign.voucher_headline ?? null,
-    voucher_background_url: campaign.voucher_background_url ?? null,
-  }));
+  return (Array.isArray(data) ? data : []).map(normalizeCampaign);
 };
 
 export const createCampaign = async (payload: CampaignFormData): Promise<Campaign> => {
   const { data } = await api.post('/campaigns', payload);
   toast.success('Campaign created');
-  return {
-    ...data,
-    discount_cents: toNumber(data.discount_cents, 0),
-    auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
-    signup_voucher_discount_cents: data.signup_voucher_discount_cents ?? null,
-    voucher_style: data.voucher_style ?? null,
-    voucher_accent_color: data.voucher_accent_color ?? null,
-    voucher_headline: data.voucher_headline ?? null,
-    voucher_background_url: data.voucher_background_url ?? null,
-  };
+  return normalizeCampaign(data);
 };
 
 export const updateCampaign = async (
@@ -487,16 +508,7 @@ export const updateCampaign = async (
 ): Promise<Campaign> => {
   const { data } = await api.put(`/campaigns/${id}`, payload);
   toast.success('Campaign updated');
-  return {
-    ...data,
-    discount_cents: toNumber(data.discount_cents, 0),
-    auto_issue_on_signup: toBoolean(data.auto_issue_on_signup, false),
-    signup_voucher_discount_cents: data.signup_voucher_discount_cents ?? null,
-    voucher_style: data.voucher_style ?? null,
-    voucher_accent_color: data.voucher_accent_color ?? null,
-    voucher_headline: data.voucher_headline ?? null,
-    voucher_background_url: data.voucher_background_url ?? null,
-  };
+  return normalizeCampaign(data);
 };
 
 export const getCampaignMetrics = async (id: string): Promise<CampaignMetrics> => {
@@ -516,7 +528,8 @@ export const getCustomers = async (): Promise<Customer[]> => {
   const { data } = await api.get('/customers');
   return (Array.isArray(data) ? data : []).map((customer: any) => ({
     ...customer,
-    moments_total: toNumber(customer.moments_total, 0),
+    moments_total: toNumber(customer?.moments_total, 0),
+    voucher_count: toNumber(customer?.voucher_count, 0),
   }));
 };
 

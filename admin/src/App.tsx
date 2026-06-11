@@ -10,10 +10,7 @@ import Orders from '@/pages/Orders';
 import Staff from '@/pages/Staff';
 import Outlets from '@/pages/Outlets';
 import Reports from '@/pages/Reports';
-import Vouchers from '@/pages/Vouchers';
 import Discounts from '@/pages/Discounts';
-import Campaigns from '@/pages/Campaigns';
-import Customers from '@/pages/Customers';
 import Login from '@/pages/Login';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -55,10 +52,7 @@ export default function App() {
             <Route path="orders" element={<Orders />} />
             <Route path="staff" element={<Staff />} />
             <Route path="outlets" element={<Outlets />} />
-            <Route path="campaigns" element={<Campaigns />} />
-            <Route path="customers" element={<Customers />} />
             <Route path="reports" element={<Reports />} />
-            <Route path="vouchers" element={<Vouchers />} />
             <Route path="discounts" element={<Discounts />} />
           </Route>
         </Routes>

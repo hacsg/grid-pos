@@ -35,6 +35,33 @@ class VoucherRead(TimestampSchema):
     outlet_id: UUID | None = None
     order_id: UUID | None = None
     voided_at: datetime | None = None
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    campaign_name: str | None = None
+    campaign_code_prefix: str | None = None
+
+
+class VoucherIssueRequest(BaseModel):
+    """Issue a campaign voucher to one existing customer."""
+
+    customer_id: UUID
+    campaign_id: UUID
+    discount_cents: int | None = Field(default=None, ge=0)
+
+
+class VoucherBulkIssueRequest(BaseModel):
+    """Bulk issue campaign vouchers to provided customers or all campaign signups."""
+
+    campaign_id: UUID
+    customer_ids: list[UUID] | None = None
+    discount_cents: int | None = Field(default=None, ge=0)
+
+
+class VoucherBulkIssueResponse(BaseModel):
+    """Summary of bulk issued vouchers."""
+
+    issued: int
+    codes: list[str]
 
 
 class VoucherValidateRequest(BaseModel):
@@ -74,6 +101,7 @@ class VoucherListParams(BaseModel):
 
     type: VoucherType | None = None
     redeemed: bool | None = None  # true = redeemed, false = available, null = all
+    campaign_id: UUID | None = None
     outlet_id: UUID | None = None
     order_id: UUID | None = None
     limit: int = Field(default=100, ge=1, le=500)

@@ -86,6 +86,7 @@ class PlotholdersClient:
         name: str | None = None,
         birthday: str | None = None,
         referred_by_code: str | None = None,
+        campaign_code: str | None = None,
     ) -> dict[str, Any]:
         """Create a Plotholders customer.
 
@@ -98,6 +99,7 @@ class PlotholdersClient:
             "name": name,
             "birthday": birthday,
             "referred_by_code": referred_by_code,
+            "campaign_code": campaign_code,
         }
         return await self._request(
             "POST",
@@ -107,27 +109,49 @@ class PlotholdersClient:
 
     async def record_purchase(
         self,
-        *,
         customer_id: str,
-        order_id: UUID | str,
-        amount: Decimal,
-        outlet: str,
+        order_total: float | None = None,
+        outlet: str = "",
+        *,
+        order_id: UUID | str | None = None,
+        amount: Decimal | None = None,
     ) -> dict[str, Any]:
-        """Record a Grid POS purchase as a Plotholders moment."""
-        amount_value = float(amount)
+        """Record a purchase moment via Plotholders API.
+
+        Supports both the simple (customer_id, order_total, outlet) call and the
+        legacy detailed call with order_id/amount (uses /moments for full data).
+        """
+        if order_id is not None or amount is not None:
+            # Legacy detailed path used by orders service
+            amount_value = float(amount) if amount is not None else float(order_total or 0)
+            return await self._request(
+                "POST",
+                "/api/moments",
+                json={
+                    "customer_id": customer_id,
+                    "channel": "grid",
+                    "source_id": str(order_id) if order_id is not None else "",
+                    "amount": amount_value,
+                    "order_total": amount_value,
+                    "outlet": outlet,
+                    "brand": "hundred-acre",
+                },
+            )
+        # Simple Plotholders loyalty earn path (per cleanup spec)
+        ot = float(order_total) if order_total is not None else 0.0
         return await self._request(
             "POST",
-            "/api/moments",
+            "/api/loyalty/earn",
             json={
                 "customer_id": customer_id,
-                "channel": "grid",
-                "source_id": str(order_id),
-                "amount": amount_value,
-                "order_total": amount_value,
+                "order_total": ot,
                 "outlet": outlet,
-                "brand": "hundred-acre",
             },
         )
+
+    async def sync_order(self, order_data: dict) -> dict[str, Any]:
+        """Sync completed order to Plotholders."""
+        return await self._request("POST", "/api/sync/grid-order", json=order_data)
 
     async def redeem_voucher(self, voucher_id: str) -> dict[str, Any]:
         """Redeem a Plotholders voucher by ID."""

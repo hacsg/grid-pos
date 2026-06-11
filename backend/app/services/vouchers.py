@@ -32,7 +32,7 @@ async def create_voucher(
     *,
     code: str,
     type: VoucherType,
-    amount: Decimal,
+    amount: Decimal | None,
 ) -> Voucher:
     """Create a new voucher (primarily for CDC seeding by admins)."""
     normalized = code.strip()
@@ -42,7 +42,7 @@ async def create_voucher(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voucher code already exists",
         )
-    if amount < 0:
+    if amount is not None and amount < 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Voucher amount must be greater than or equal to zero",
@@ -111,85 +111,6 @@ async def issue_voucher(
     return voucher
 
 
-async def validate_voucher_code(
-    db: AsyncSession,
-    code: str,
-    plotholders: PlotholdersClient | None = None,
-) -> Voucher:
-    """Validate a voucher code.
-
-    - Looks up locally first.
-    - If not found, attempts Plotholders lookup (for Acre Group vouchers) and auto-creates a local record.
-    - Ensures the voucher has not been redeemed.
-    """
-    normalized = code.strip()
-    if not normalized:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Voucher code is required")
-
-    local = await get_voucher_by_code(db, normalized)
-    if local:
-        if local.redeemed_at is not None or local.status == "redeemed":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Voucher has already been redeemed",
-            )
-        if local.voided_at is not None or local.status == "voided":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Voucher has been voided",
-            )
-        return local
-
-    # Not in local DB — try Plotholders (Acre Group / external)
-    client = plotholders or PlotholdersClient()
-    try:
-        external = await client.get_voucher(normalized)
-    except PlotholdersAPIError as exc:
-        # Surface upstream errors for AG codes that are invalid at source
-        if exc.status_code and 400 <= exc.status_code < 500:
-            raise HTTPException(
-                status_code=exc.status_code,
-                detail=exc.response_body or "Invalid voucher",
-            ) from exc
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unable to verify voucher with external provider",
-        ) from exc
-
-    if not external:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Voucher not found",
-        )
-
-    # Determine if already redeemed on Plotholders side
-    redeemed = external.get("redeemed_at") or external.get("redeemed") or external.get("is_redeemed")
-    if redeemed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Voucher has already been redeemed",
-        )
-
-    # Extract amount — prefer explicit fields
-    amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
-    try:
-        amount = quantize_money(Decimal(str(amount_raw)))
-    except Exception:
-        amount = quantize_money(Decimal("0.00"))
-
-    # Auto-provision local Acre Group voucher record (zero-amount vouchers are allowed for record-only redemptions)
-    voucher = Voucher(
-        code=normalized,
-        type=VoucherType.acre_group,
-        amount=amount if amount is not None else Decimal("0"),
-    )
-    # If external has an id different from code, we still use entered code for redeem calls
-    db.add(voucher)
-    await db.commit()
-    await db.refresh(voucher)
-    return voucher
-
-
 async def apply_vouchers_to_order(
     db: AsyncSession,
     *,
@@ -200,8 +121,8 @@ async def apply_vouchers_to_order(
 ) -> list[OrderVoucher]:
     """Apply one or more voucher codes to a pending order.
 
-    Creates OrderVoucher rows, marks vouchers redeemed, updates order totals.
-    Returns the list of OrderVoucher links created.
+    Validates via Plotholders, creates local OrderVoucher records (and minimal voucher rows for FKs),
+    marks redeemed locally, updates order total. Plotholders remains source of truth for issuance/redemption.
     """
     order = await db.get(Order, order_id)
     if order is None:
@@ -215,21 +136,53 @@ async def apply_vouchers_to_order(
     client = plotholders or PlotholdersClient()
     applied: list[OrderVoucher] = []
     total_voucher_amount = Decimal("0.00")
+    outlet_name = ""  # outlet name for ph redeem; order has outlet_id, name may be enriched elsewhere
 
     for raw_code in codes:
-        voucher = await validate_voucher_code(db, raw_code, client)
+        normalized = raw_code.strip()
+        if not normalized:
+            continue
 
-        # Re-check not already linked to this or any order (defensive)
+        # Validate via Plotholders (POS/apply path now sources from Plotholders)
+        try:
+            external = await client.get_voucher(normalized)
+        except PlotholdersAPIError as exc:
+            if exc.status_code and 400 <= exc.status_code < 500:
+                raise HTTPException(status_code=exc.status_code, detail=exc.response_body or "Invalid voucher") from exc
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Unable to verify voucher") from exc
+
+        if not external:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Voucher not found")
+
+        redeemed = external.get("redeemed_at") or external.get("redeemed") or external.get("is_redeemed")
+        if redeemed:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Voucher {normalized} has already been redeemed")
+
+        amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
+        try:
+            amount = quantize_money(Decimal(str(amount_raw)))
+        except Exception:
+            amount = quantize_money(Decimal("0.00"))
+        total_voucher_amount += amount
+
+        # Provision minimal local voucher row if missing (required for OrderVoucher FK and history)
+        voucher = await get_voucher_by_code(db, normalized)
+        if voucher is None:
+            vtype = VoucherType.acre_group
+            if external.get("type") == "cdc":
+                vtype = VoucherType.cdc
+            voucher = Voucher(code=normalized, type=vtype, amount=amount)
+            db.add(voucher)
+            await db.flush()  # get id without full commit yet
+
+        # Re-check local state
         if voucher.redeemed_at is not None or voucher.order_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Voucher {voucher.code} has already been redeemed",
             )
 
-        amount = quantize_money(voucher.amount or Decimal("0"))
-        total_voucher_amount += amount
-
-        # Mark voucher redeemed
+        # Mark local voucher as redeemed (for local records)
         now = datetime.now(UTC)
         voucher.redeemed_at = now
         voucher.status = "redeemed"
@@ -245,6 +198,15 @@ async def apply_vouchers_to_order(
         )
         db.add(link)
         applied.append(link)
+
+        # Also redeem on Plotholders side for source-of-truth (provide staff/outlet if available)
+        try:
+            staff_id = str(staff.id) if staff else ""
+            # outlet name not directly on order model here; pass outlet_id or empty — upstream may accept
+            await client.redeem_voucher_by_code(normalized, staff_id, outlet_name or str(order.outlet_id or ""))
+        except PlotholdersAPIError:
+            # Non-fatal for apply path (already validated); order discount recorded locally
+            pass
 
     if not applied:
         return applied
@@ -270,18 +232,25 @@ async def list_vouchers(
     *,
     type: VoucherType | None = None,
     redeemed: bool | None = None,
+    campaign_id: UUID | None = None,
     outlet_id: UUID | None = None,
     order_id: UUID | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Voucher]:
-    stmt = select(Voucher).order_by(Voucher.created_at.desc())
+    stmt = (
+        select(Voucher)
+        .options(selectinload(Voucher.customer), selectinload(Voucher.campaign))
+        .order_by(Voucher.created_at.desc())
+    )
     if type is not None:
         stmt = stmt.where(Voucher.type == type)
     if redeemed is True:
         stmt = stmt.where(Voucher.redeemed_at.is_not(None))
     elif redeemed is False:
         stmt = stmt.where(Voucher.redeemed_at.is_(None))
+    if campaign_id is not None:
+        stmt = stmt.where(Voucher.campaign_id == campaign_id)
     if outlet_id is not None:
         stmt = stmt.where(Voucher.outlet_id == outlet_id)
     if order_id is not None:

@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -11,11 +11,7 @@ from app.models.staff import Staff, StaffRole
 from app.models.voucher import VoucherType
 from app.schemas.order import OrderRead
 from app.schemas.voucher import (
-    OrderVoucherRead,
     VoucherApplyRequest,
-    VoucherCreate,
-    VoucherListParams,
-    VoucherRead,
     VoucherValidateRead,
     VoucherValidateRequest,
 )
@@ -23,10 +19,7 @@ from app.services.orders import load_order_or_404
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 from app.services.vouchers import (
     apply_vouchers_to_order,
-    create_voucher,
-    list_vouchers,
     load_applied_vouchers_for_order,
-    validate_voucher_code,
 )
 from app.utils.auth import get_current_staff, require_role
 
@@ -76,36 +69,48 @@ async def redeem_voucher(
         raise _plotholders_http_exception(exc) from exc
 
 
-@router.post("", response_model=VoucherRead, status_code=201)
-async def create_new_voucher(
-    payload: VoucherCreate,
-    db: AsyncSession = Depends(get_db),
-    current_staff: Staff = Depends(require_role(StaffRole.admin, StaffRole.manager)),
-) -> Any:
-    """Create a voucher (admin/manager use, primarily for seeding CDC vouchers)."""
-    voucher = await create_voucher(
-        db,
-        code=payload.code,
-        type=payload.type,
-        amount=payload.amount,
-    )
-    return voucher
-
-
 @router.post("/validate", response_model=VoucherValidateRead)
 async def validate_voucher(
     payload: VoucherValidateRequest,
-    db: AsyncSession = Depends(get_db),
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
     current_staff: Staff = Depends(get_current_staff),
 ) -> Any:
-    """Validate a voucher code. Returns details if the voucher is available (not yet redeemed)."""
-    voucher = await validate_voucher_code(db, payload.code, plotholders)
+    """Validate a voucher code via Plotholders (POS calls this; Plotholders is source of truth)."""
+    client = plotholders
+    try:
+        external = await client.get_voucher(payload.code)
+    except PlotholdersAPIError as exc:
+        if exc.status_code and 400 <= exc.status_code < 500:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=exc.response_body or "Invalid voucher",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to verify voucher with external provider",
+        ) from exc
+
+    if not external:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Voucher not found")
+
+    redeemed = external.get("redeemed_at") or external.get("redeemed") or external.get("is_redeemed")
+    if redeemed:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voucher has already been redeemed")
+
+    amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
+    try:
+        amount = float(amount_raw)
+    except Exception:
+        amount = 0.0
+
+    # Return minimal validate response; id may be code for external
+    vid = external.get("id") or payload.code
+    vtype = external.get("type") or "acre_group"
     return VoucherValidateRead(
-        id=voucher.id,
-        code=voucher.code,
-        type=voucher.type,
-        amount=voucher.amount,
+        id=str(vid),
+        code=payload.code,
+        type=vtype if vtype in ("cdc", "acre_group") else "acre_group",
+        amount=amount,
         is_valid=True,
     )
 
@@ -120,7 +125,7 @@ async def apply_voucher_to_order(
 ) -> Any:
     """Apply one or more vouchers to a pending order by code.
 
-    Marks vouchers as redeemed, records order_vouchers links, and reduces the order total.
+    Calls Plotholders for validation/redeem then records local OrderVoucher.
     """
     await apply_vouchers_to_order(
         db,
@@ -131,30 +136,6 @@ async def apply_voucher_to_order(
     )
     order = await load_order_or_404(db, order_id)
     return await _enrich_order_with_vouchers(db, order)
-
-
-@router.get("", response_model=list[VoucherRead])
-async def list_all_vouchers(
-    type: VoucherType | None = None,
-    redeemed: bool | None = Query(default=None, description="true=redeemed, false=available"),
-    outlet_id: UUID | None = None,
-    order_id: UUID | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    current_staff: Staff = Depends(get_current_staff),
-) -> Any:
-    """List vouchers (admin and staff). Supports basic filters."""
-    vouchers = await list_vouchers(
-        db,
-        type=type,
-        redeemed=redeemed,
-        outlet_id=outlet_id,
-        order_id=order_id,
-        limit=limit,
-        offset=offset,
-    )
-    return vouchers
 
 
 async def _enrich_order_with_vouchers(db: AsyncSession, order: Any) -> OrderRead:

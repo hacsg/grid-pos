@@ -22,9 +22,6 @@ const navItems = [
   { to: '/orders', icon: ShoppingCart, label: 'Orders' },
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/outlets', icon: Store, label: 'Outlets' },
-  { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
-  { to: '/customers', icon: UserRound, label: 'Customers' },
-  { to: '/vouchers', icon: Ticket, label: 'Vouchers' },
   { to: '/discounts', icon: BadgePercent, label: 'Discounts' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
 ];
