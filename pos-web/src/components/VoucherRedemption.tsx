@@ -321,7 +321,12 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
 
   // Live clock
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
+    const tick = () => {
+      if (!document.hidden) {
+        setNow(new Date());
+      }
+    };
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, []);
 

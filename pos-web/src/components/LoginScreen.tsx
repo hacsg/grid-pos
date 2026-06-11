@@ -21,6 +21,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
 
   const outletsQuery = useQuery({
     queryKey: ['outlets'],
@@ -62,6 +63,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         outlet: selectedOutlet,
         expiresAt: Date.now() + response.expires_in * 1000,
       });
+    } catch {
+      setShake(true);
+      window.setTimeout(() => setShake(false), 500);
     } finally {
       setLoading(false);
       setPin('');
@@ -152,7 +156,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
         {mode === 'pin' ? (
           <div className="pin-login">
-            <div className="pin-display" aria-label="PIN">
+            <div className={`pin-display${shake ? ' shake' : ''}`} aria-label="PIN">
               {Array.from({ length: 4 }).map((_, index) => (
                 <span key={index} className={pin[index] ? 'filled' : ''} />
               ))}

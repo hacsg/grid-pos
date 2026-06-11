@@ -5,6 +5,12 @@ import { formatCurrency, money } from '@/api/client';
 import type { CartModifier } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 
+interface EditItem {
+  lineId: string;
+  product: Product;
+  modifiers: CartModifier[];
+}
+
 interface ProductGridProps {
   categories: Category[];
   products: Product[];
@@ -13,9 +19,12 @@ interface ProductGridProps {
   outletName: string;
   staffName: string;
   isLoading: boolean;
+  editItem: EditItem | null;
   onCategoryChange: (categoryId: string) => void;
   onSearchChange: (search: string) => void;
   onAddProduct: (product: Product, modifiers?: CartModifier[]) => void;
+  onEditProduct: (lineId: string, modifiers: CartModifier[]) => void;
+  onEditDismiss: () => void;
   onLogout: () => void;
 }
 
@@ -56,9 +65,12 @@ export default function ProductGrid({
   outletName,
   staffName,
   isLoading,
+  editItem,
   onCategoryChange,
   onSearchChange,
   onAddProduct,
+  onEditProduct,
+  onEditDismiss,
   onLogout,
 }: ProductGridProps) {
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
@@ -78,9 +90,32 @@ export default function ProductGrid({
     modifierProduct.modifier_groups.forEach((group) => {
       initial[group.id] = [];
     });
+    if (editItem && editItem.product.id === modifierProduct.id) {
+      editItem.modifiers.forEach((modifier) => {
+        const [groupId, modifierId] = modifier.id.split(':');
+        if (groupId && modifierId && initial[groupId]) {
+          initial[groupId].push(modifierId);
+        }
+      });
+    }
     setSelections(initial);
     setError('');
-  }, [modifierProduct]);
+  }, [modifierProduct, editItem]);
+
+  useEffect(() => {
+    if (editItem) {
+      setModifierProduct(editItem.product);
+    }
+  }, [editItem]);
+
+  const isEditing = Boolean(editItem && modifierProduct && editItem.product.id === modifierProduct.id);
+
+  function closeModifierSheet() {
+    setModifierProduct(null);
+    if (editItem) {
+      onEditDismiss();
+    }
+  }
 
   function handleProductTap(product: Product) {
     tapFeedback();
@@ -142,9 +177,18 @@ export default function ProductGrid({
           price_adjustment: money(modifier.price_adjustment),
         }));
     });
-    onAddProduct(modifierProduct, selectedModifiers);
-    setModifierProduct(null);
+    if (isEditing && editItem) {
+      onEditProduct(editItem.lineId, selectedModifiers);
+    } else {
+      onAddProduct(modifierProduct, selectedModifiers);
+    }
+    closeModifierSheet();
   }
+
+  const availableProducts = useMemo(
+    () => products.filter((product) => product.is_available),
+    [products]
+  );
 
   return (
     <section className="product-stage" aria-label="Products">
@@ -208,7 +252,7 @@ export default function ProductGrid({
             <div className="product-card skeleton" key={index} />
           ))}
 
-        {!isLoading && products.length === 0 && (
+        {!isLoading && availableProducts.length === 0 && (
           <div className="empty-state">
             <Package size={28} aria-hidden="true" />
             <span>No products found</span>
@@ -216,14 +260,13 @@ export default function ProductGrid({
         )}
 
         {!isLoading &&
-          products.map((product) => {
+          availableProducts.map((product) => {
             const stock = productStock(product);
             return (
               <button
                 key={product.id}
                 className="product-card"
                 type="button"
-                disabled={!product.is_available || stock.state === 'out'}
                 onClick={() => handleProductTap(product)}
               >
                 <div className="product-image">
@@ -262,7 +305,7 @@ export default function ProductGrid({
                 aria-label="Close modifiers"
                 title="Close"
                 onPointerDown={() => tapFeedback()}
-                onClick={() => setModifierProduct(null)}
+                onClick={closeModifierSheet}
               >
                 <X size={20} aria-hidden="true" />
               </button>
@@ -271,6 +314,10 @@ export default function ProductGrid({
             <div className="modifier-body">
               {modifierProduct.modifier_groups.map((group) => {
                 const selected = selections[group.id] ?? [];
+                const minimum = requiredMinimum(group);
+                const atMax = selected.length >= group.max_select;
+                const countMet = selected.length >= minimum;
+                const countClass = countMet ? 'met' : 'under';
                 return (
                   <fieldset className="modifier-group" key={group.id}>
                     <legend>
@@ -280,17 +327,19 @@ export default function ProductGrid({
                           {group.required ? 'Required' : 'Optional'}
                         </span>
                       </span>
-                      <span className="modifier-count">{selected.length}/{group.max_select}</span>
+                      <span className={`modifier-count ${countClass}`}>{selected.length}/{group.max_select}</span>
                     </legend>
                     <div className="modifier-options">
                       {group.modifiers.map((modifier) => {
                         const checked = selected.includes(modifier.id);
                         const priceLabel = modifierPrice(modifier);
+                        const maxReached = atMax && !checked;
                         return (
                           <button
                             type="button"
                             key={modifier.id}
-                            className={`modifier-option ${checked ? 'selected' : ''}`}
+                            className={`modifier-option ${checked ? 'selected' : ''} ${maxReached ? 'max-reached' : ''}`}
+                            disabled={maxReached}
                             onPointerDown={() => tapFeedback()}
                             onClick={() => toggleModifier(group, modifier.id)}
                           >
@@ -301,6 +350,7 @@ export default function ProductGrid({
                         );
                       })}
                     </div>
+                    {atMax && <p className="modifier-max-hint">Maximum selected</p>}
                   </fieldset>
                 );
               })}
@@ -309,11 +359,11 @@ export default function ProductGrid({
             {error && <p className="form-error">{error}</p>}
 
             <footer className="sheet-actions">
-              <button className="secondary-button" type="button" onClick={() => setModifierProduct(null)}>
+              <button className="secondary-button" type="button" onClick={closeModifierSheet}>
                 Cancel
               </button>
               <button className="primary-button" type="button" onClick={confirmModifiers}>
-                Add item
+                {isEditing ? 'Update item' : 'Add item'}
               </button>
             </footer>
           </section>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   BadgePercent,
   ChevronDown,
@@ -5,6 +6,7 @@ import {
   CreditCard,
   Minus,
   PauseCircle,
+  Pencil,
   Plus,
   Ticket,
   Trash2,
@@ -32,6 +34,7 @@ interface CartSidebarProps {
   onVouchers: () => void;
   onClear: () => void;
   onCheckout: () => void;
+  onEditItem: (lineId: string) => void;
 }
 
 function lineTotal(item: CartItem): number {
@@ -56,8 +59,27 @@ export default function CartSidebar({
   onVouchers,
   onClear,
   onCheckout,
+  onEditItem,
 }: CartSidebarProps) {
+  const [clearConfirm, setClearConfirm] = useState(false);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  useEffect(() => {
+    if (!clearConfirm) {
+      return;
+    }
+    const timer = window.setTimeout(() => setClearConfirm(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [clearConfirm]);
+
+  function handleClearClick() {
+    if (clearConfirm) {
+      onClear();
+      setClearConfirm(false);
+      return;
+    }
+    setClearConfirm(true);
+  }
 
   return (
     <aside className={`cart-sidebar ${isOpen ? 'open' : ''}`} aria-label="Cart">
@@ -120,7 +142,18 @@ export default function CartSidebar({
           <article className="cart-line" key={item.lineId}>
             <div className="cart-line-main">
               <div>
-                <h3>{item.product.name}</h3>
+                {item.modifiers.length > 0 ? (
+                  <button
+                    className="cart-line-name"
+                    type="button"
+                    onClick={() => onEditItem(item.lineId)}
+                  >
+                    <h3>{item.product.name}</h3>
+                    <Pencil size={15} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <h3>{item.product.name}</h3>
+                )}
                 <p>{formatCurrency(money(item.product.price))}</p>
               </div>
               <strong>{formatCurrency(lineTotal(item))}</strong>
@@ -224,10 +257,27 @@ export default function CartSidebar({
           <Ticket size={18} aria-hidden="true" />
           Voucher
         </button>
-        <button className="secondary-button danger-text" type="button" onClick={onClear} disabled={items.length === 0}>
-          <Trash2 size={18} aria-hidden="true" />
-          Clear
-        </button>
+        {clearConfirm ? (
+          <div className="clear-confirm">
+            <span>Clear all items?</span>
+            <button className="secondary-button danger-text" type="button" onClick={handleClearClick}>
+              Confirm
+            </button>
+            <button className="secondary-button" type="button" onClick={() => setClearConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className="secondary-button danger-text"
+            type="button"
+            onClick={handleClearClick}
+            disabled={items.length === 0}
+          >
+            <Trash2 size={18} aria-hidden="true" />
+            Clear
+          </button>
+        )}
         <button className="primary-button checkout-button" type="button" onClick={onCheckout} disabled={items.length === 0}>
           <CreditCard size={20} aria-hidden="true" />
           Checkout

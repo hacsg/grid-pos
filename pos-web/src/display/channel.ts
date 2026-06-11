@@ -15,6 +15,7 @@ export interface OrderSnapshot {
   voucherDiscount: number;
   total: number;
   loyaltyCustomerName?: string;
+  brandName?: string;
 }
 
 export type DisplayMessage =

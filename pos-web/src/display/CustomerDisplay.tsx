@@ -9,6 +9,7 @@ interface DisplayState {
   snapshot: OrderSnapshot | null;
   paymentTotal: number | null;
   pointsEarned: number | null;
+  brandName: string;
 }
 
 const IDLE_RESET_DELAY = 5000;
@@ -19,6 +20,7 @@ export default function CustomerDisplay() {
     snapshot: null,
     paymentTotal: null,
     pointsEarned: null,
+    brandName: 'HAC',
   });
   const [resetTimer, setResetTimer] = useState<number | null>(null);
 
@@ -41,6 +43,7 @@ export default function CustomerDisplay() {
       if (msg.type === 'ORDER_UPDATE') {
         const payload = msg.payload;
         const hasItems = Array.isArray(payload?.items) && payload.items.length > 0;
+        const brandName = payload?.brandName ?? 'HAC';
 
         setState((prev) => {
           // During payment or post-payment, ignore ORDER_UPDATE (keeps processing/thanks visible)
@@ -49,7 +52,7 @@ export default function CustomerDisplay() {
           }
 
           if (!hasItems) {
-            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null };
+            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName };
           }
 
           // Active order
@@ -58,6 +61,7 @@ export default function CustomerDisplay() {
             snapshot: payload,
             paymentTotal: null,
             pointsEarned: null,
+            brandName,
           };
         });
       }
@@ -79,12 +83,13 @@ export default function CustomerDisplay() {
           window.clearTimeout(resetTimer);
         }
 
-        setState({
+        setState((prev) => ({
           phase: 'thanks',
           snapshot: null,
           paymentTotal: total,
           pointsEarned: points,
-        });
+          brandName: prev.brandName,
+        }));
       }
 
       if (msg.type === 'ORDER_COMPLETE') {
@@ -93,14 +98,14 @@ export default function CustomerDisplay() {
           if (prev.phase !== 'thanks') {
             // If somehow we get complete without thanks, just go idle after delay
             const t = window.setTimeout(() => {
-              setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null });
+              setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName });
             }, IDLE_RESET_DELAY);
             setResetTimer(t);
             return { ...prev, phase: 'resetting' };
           }
 
           const t = window.setTimeout(() => {
-            setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null });
+            setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName });
             setResetTimer(null);
           }, IDLE_RESET_DELAY);
 
@@ -131,22 +136,23 @@ export default function CustomerDisplay() {
     };
   }, [resetTimer]);
 
-  const { phase, snapshot, paymentTotal, pointsEarned } = state;
+  const { phase, snapshot, paymentTotal, pointsEarned, brandName } = state;
 
   const items: DisplayItem[] = snapshot?.items ?? [];
   const total = snapshot?.total ?? paymentTotal ?? 0;
+  const displayBrandName = snapshot?.brandName ?? brandName;
 
   return (
     <div className="customer-display">
       <div className="display-content">
         {/* IDLE / WELCOME */}
         {phase === 'idle' && (
-          <div className="display-idle">
+          <div className="display-idle" key={phase}>
             <div className="display-brand">
               <div className="display-mark" aria-hidden="true">
                 HAC
               </div>
-              <div className="display-brand-name">Hundred Acre Creamery</div>
+              <div className="display-brand-name">{displayBrandName}</div>
             </div>
             <div className="display-welcome">Welcome</div>
           </div>
@@ -154,7 +160,7 @@ export default function CustomerDisplay() {
 
         {/* ORDER ACTIVE */}
         {phase === 'order' && snapshot && (
-          <div className="display-order">
+          <div className="display-order" key={phase}>
             <div className="display-order-header">
               <div className="display-mark small" aria-hidden="true">
                 HAC
@@ -216,7 +222,7 @@ export default function CustomerDisplay() {
 
         {/* PAYMENT PROCESSING */}
         {phase === 'processing' && (
-          <div className="display-processing">
+          <div className="display-processing" key={phase}>
             <div className="display-mark small" aria-hidden="true">
               HAC
             </div>
@@ -227,7 +233,7 @@ export default function CustomerDisplay() {
 
         {/* PAYMENT COMPLETE / THANK YOU */}
         {(phase === 'thanks' || phase === 'resetting') && (
-          <div className="display-thanks">
+          <div className="display-thanks" key={phase}>
             <div className="display-mark small" aria-hidden="true">
               HAC
             </div>

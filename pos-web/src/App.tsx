@@ -70,7 +70,8 @@ function buildDisplaySnapshot(
   totals: Totals,
   discount: Discount | null,
   loyalty: LoyaltySelection | null,
-  vouchers: AppliedVoucher[] = []
+  vouchers: AppliedVoucher[] = [],
+  brandName?: string
 ) {
   const displayItems = items.map((item) => {
     const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
@@ -93,6 +94,7 @@ function buildDisplaySnapshot(
     voucherDiscount,
     total: totals.total,
     loyaltyCustomerName: loyalty?.customer?.name,
+    brandName: brandName ?? 'HAC',
   };
 }
 
@@ -101,10 +103,14 @@ function syncDisplay(
   totals: Totals,
   discount: Discount | null,
   loyalty: LoyaltySelection | null,
-  vouchers: AppliedVoucher[] = []
+  vouchers: AppliedVoucher[] = [],
+  brandName?: string
 ) {
   try {
-    broadcast({ type: 'ORDER_UPDATE', payload: buildDisplaySnapshot(items, totals, discount, loyalty, vouchers) });
+    broadcast({
+      type: 'ORDER_UPDATE',
+      payload: buildDisplaySnapshot(items, totals, discount, loyalty, vouchers, brandName),
+    });
   } catch {
     // Never block cashier on display broadcast
   }
@@ -121,8 +127,10 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   );
   const session = props.session ?? internalSession;
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [loyalty, setLoyalty] = useState<LoyaltySelection | null>(null);
   const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
@@ -142,6 +150,11 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       window.removeEventListener('offline', onOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   const categoriesQuery = useQuery({
     queryKey: ['categories', session?.outlet.id],
@@ -186,10 +199,28 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     };
   }, [cartItems, discount, loyalty, vouchers]);
 
+  const editItem = useMemo(() => {
+    if (!editingLineId) {
+      return null;
+    }
+    const item = cartItems.find((entry) => entry.lineId === editingLineId);
+    if (!item || item.modifiers.length === 0) {
+      return null;
+    }
+    return {
+      lineId: item.lineId,
+      product: item.product,
+      modifiers: item.modifiers,
+    };
+  }, [editingLineId, cartItems]);
+
   // Broadcast order state to customer display (non-blocking)
   useEffect(() => {
-    syncDisplay(cartItems, totals, discount, loyalty, vouchers);
-  }, [cartItems, discount, loyalty, vouchers, totals]);
+    if (!session) {
+      return;
+    }
+    syncDisplay(cartItems, totals, discount, loyalty, vouchers, session.outlet.name);
+  }, [cartItems, discount, loyalty, vouchers, totals, session]);
 
   function handleLogin(nextSession: StaffSession) {
     if (props.session === undefined) {
@@ -252,6 +283,32 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   function removeItem(lineId: string) {
     tapFeedback();
     setCartItems((items) => items.filter((item) => item.lineId !== lineId));
+  }
+
+  function handleEditItem(lineId: string) {
+    tapFeedback();
+    setEditingLineId(lineId);
+  }
+
+  function handleEditProduct(lineId: string, modifiers: CartModifier[]) {
+    tapFeedback();
+    const item = cartItems.find((entry) => entry.lineId === lineId);
+    if (!item) {
+      setEditingLineId(null);
+      return;
+    }
+    const newKey = lineKey(item.product, modifiers);
+    setCartItems((items) => {
+      const without = items.filter((entry) => entry.lineId !== lineId);
+      const existing = without.find((entry) => entry.lineId === newKey);
+      if (existing) {
+        return without.map((entry) =>
+          entry.lineId === newKey ? { ...entry, quantity: entry.quantity + item.quantity } : entry
+        );
+      }
+      return [...without, { ...item, lineId: newKey, modifiers }];
+    });
+    setEditingLineId(null);
   }
 
   function clearCart() {
@@ -340,13 +397,16 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           categories={categoriesQuery.data ?? []}
           products={productsQuery.data ?? []}
           selectedCategoryId={selectedCategoryId}
-          search={search}
+          search={searchInput}
           outletName={session.outlet.name}
           staffName={session.staff.name}
           isLoading={productsQuery.isLoading || categoriesQuery.isLoading}
+          editItem={editItem}
           onCategoryChange={setSelectedCategoryId}
-          onSearchChange={setSearch}
+          onSearchChange={setSearchInput}
           onAddProduct={addProduct}
+          onEditProduct={handleEditProduct}
+          onEditDismiss={() => setEditingLineId(null)}
           onLogout={handleLogout}
         />
         <CartSidebar
@@ -365,6 +425,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           onLoyalty={() => setLoyaltyOpen(true)}
           onVouchers={() => setVoucherOpen(true)}
           onClear={clearCart}
+          onEditItem={handleEditItem}
           onCheckout={() => {
             try {
               broadcast({ type: 'PAYMENT_START', payload: { total: totals.total } });
@@ -487,7 +548,7 @@ export default function App() {
         </Routes>
       </BrowserRouter>
       <Toaster
-        position="top-right"
+        position="top-center"
         toastOptions={{
           duration: 3000,
           style: {

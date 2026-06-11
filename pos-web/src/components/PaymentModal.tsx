@@ -136,6 +136,7 @@ export default function PaymentModal({
   const [splitCashAmount, setSplitCashAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptSnapshot | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) {
@@ -145,8 +146,13 @@ export default function PaymentModal({
       setSplitCashAmount('');
       setSubmitting(false);
       setReceipt(null);
+      setError('');
     }
   }, [open]);
+
+  useEffect(() => {
+    setError('');
+  }, [mode, cashAmount, splitCashAmount]);
 
   const cashTendered = mode === 'split' ? money(splitCashAmount) : money(cashAmount);
   const cardAmount = useMemo(() => {
@@ -160,6 +166,8 @@ export default function PaymentModal({
   }, [cashTendered, mode, totals.total]);
   const changeDue = mode === 'cash' ? Math.max(0, cashTendered - totals.total) : 0;
   const cashDue = mode === 'cash' ? totals.total : Math.min(cashTendered, totals.total);
+  const splitCashPortion = mode === 'split' ? totals.total - cardAmount : 0;
+  const splitChangeDue = mode === 'split' ? Math.max(0, cashTendered - splitCashPortion) : 0;
 
   if (!open) {
     return null;
@@ -250,6 +258,12 @@ export default function PaymentModal({
 
       onOrderComplete();
       toast.success('Order paid');
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail ??
+        (err as Error)?.message ??
+        'Payment failed';
+      setError(typeof detail === 'string' ? detail : 'Payment failed');
     } finally {
       setSubmitting(false);
     }
@@ -263,7 +277,7 @@ export default function PaymentModal({
     const text = buildReceiptText(receipt, session);
     const printed = await tryWebUsbPrint(text);
     if (!printed) {
-      window.print();
+      toast.error('Receipt print failed — receipt preview is below');
     }
   }
 
@@ -280,6 +294,7 @@ export default function PaymentModal({
             type="button"
             aria-label="Close payment"
             title="Close"
+            disabled={submitting}
             onPointerDown={() => tapFeedback()}
             onClick={onClose}
           >
@@ -307,6 +322,8 @@ export default function PaymentModal({
             </div>
 
             <div className="payment-body">
+              {error && <div className="payment-error">{error}</div>}
+
               {mode === 'cash' && (
                 <label className="amount-field">
                   Cash received
@@ -378,15 +395,21 @@ export default function PaymentModal({
                     <strong>{formatCurrency(changeDue)}</strong>
                   </div>
                 )}
+                {mode === 'split' && cashTendered > splitCashPortion && (
+                  <div>
+                    <span>Change due</span>
+                    <strong>{formatCurrency(splitChangeDue)}</strong>
+                  </div>
+                )}
               </section>
             </div>
 
             <footer className="sheet-actions">
-              <button className="secondary-button" type="button" onClick={onClose}>
+              <button className="secondary-button" type="button" onClick={onClose} disabled={submitting}>
                 Cancel
               </button>
               <button className="primary-button" type="button" disabled={!canComplete} onClick={completePayment}>
-                Pay
+                {submitting ? 'Processing...' : 'Complete payment'}
               </button>
             </footer>
           </>
