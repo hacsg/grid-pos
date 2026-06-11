@@ -11,12 +11,14 @@ from app.models.outlet import Outlet
 from app.models.product import Product
 from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
+from app.models.discount import Discount
 from app.models.voucher import OrderVoucher, Voucher, VoucherType
 
 __all__ = [
     "Category",
     "Campaign",
     "Customer",
+    "Discount",
     "LoyaltyMember",
     "ModifierGroup",
     "ModifierOption",

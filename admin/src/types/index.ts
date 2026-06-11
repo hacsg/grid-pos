@@ -446,3 +446,25 @@ export interface Customer {
   signup_campaign_id?: string | null;
   signup_campaign?: CampaignSummary | null;
 }
+
+// --- Discounts ---
+export interface Discount {
+  id: string;
+  name: string;
+  kind: 'percent' | 'fixed';
+  amount: number;
+  is_active: boolean;
+  outlet_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscountFormData {
+  name: string;
+  kind: 'percent' | 'fixed';
+  amount: number;
+  is_active?: boolean;
+  outlet_id?: string | null;
+  sort_order?: number;
+}

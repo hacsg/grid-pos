@@ -9,9 +9,11 @@ import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
 import ProductGrid from '@/components/ProductGrid';
 import VoucherRedemption from '@/components/VoucherRedemption';
+import DiscountSheet from '@/components/DiscountSheet';
 import VoucherSheet from '@/components/VoucherSheet';
 import CustomerDisplay from '@/display/CustomerDisplay';
 import {
+  getActiveDiscounts,
   getCategories,
   getProducts,
   money,
@@ -136,6 +138,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
+  const [discountPickerOpen, setDiscountPickerOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -176,6 +179,12 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         include_modifiers: true,
         search,
       }),
+    enabled: Boolean(session),
+  });
+
+  const discountsQuery = useQuery({
+    queryKey: ['discounts'],
+    queryFn: getActiveDiscounts,
     enabled: Boolean(session),
   });
 
@@ -339,9 +348,18 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     toast.success('Cart parked');
   }
 
-  function toggleDiscount() {
+  function openDiscountPicker() {
     tapFeedback();
-    setDiscount((current) => (current ? null : { label: '10% staff discount', amount: 10, kind: 'percent' }));
+    setDiscountPickerOpen(true);
+  }
+
+  function applyDiscount(d: Discount) {
+    setDiscount(d);
+    setDiscountPickerOpen(false);
+  }
+
+  function clearDiscount() {
+    setDiscount(null);
   }
 
   function handleCustomerSelect(customer: LoyaltyMember) {
@@ -421,7 +439,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           onDecrement={(lineId) => updateQuantity(lineId, -1)}
           onRemove={removeItem}
           onPark={parkCart}
-          onDiscount={toggleDiscount}
+          onDiscount={openDiscountPicker}
           onLoyalty={() => setLoyaltyOpen(true)}
           onVouchers={() => setVoucherOpen(true)}
           onClear={clearCart}
@@ -456,6 +474,15 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         onApply={handleApplyVoucher}
         onRemove={handleRemoveVoucher}
         onContinue={() => setVoucherOpen(false)}
+      />
+      <DiscountSheet
+        open={discountPickerOpen}
+        discounts={discountsQuery.data ?? []}
+        current={discount}
+        onClose={() => setDiscountPickerOpen(false)}
+        onApply={applyDiscount}
+        onClear={clearDiscount}
+        onContinue={() => setDiscountPickerOpen(false)}
       />
       <PaymentModal
         open={paymentOpen}

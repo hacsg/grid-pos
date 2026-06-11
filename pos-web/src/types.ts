@@ -19,6 +19,7 @@ export interface StaffSession {
 }
 
 export interface Discount {
+  id?: string; // from DB if admin-managed
   label: string;
   amount: number;
   kind: 'fixed' | 'percent';

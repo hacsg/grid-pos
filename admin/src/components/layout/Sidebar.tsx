@@ -11,6 +11,7 @@ import {
   Megaphone,
   Ticket,
   UserRound,
+  BadgePercent,
 } from 'lucide-react';
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
   { to: '/customers', icon: UserRound, label: 'Customers' },
   { to: '/vouchers', icon: Ticket, label: 'Vouchers' },
+  { to: '/discounts', icon: BadgePercent, label: 'Discounts' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
 ];
 

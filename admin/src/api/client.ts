@@ -45,6 +45,8 @@ import type {
   CampaignFormData,
   CampaignMetrics,
   Customer,
+  Discount,
+  DiscountFormData,
 } from '@/types';
 
 const api = axios.create({
@@ -605,6 +607,66 @@ export const reorderProductModifierGroups = async (productId: string, ids: strin
 
 export const assignModifierGroup = assignModifierGroupToProduct;
 export const unassignModifierGroup = unassignModifierGroupFromProduct;
+
+// Discounts
+export const getDiscounts = async (): Promise<Discount[]> => {
+  const { data } = await api.get('/discounts');
+  const list = Array.isArray(data) ? data : [];
+  return list.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    kind: d.kind,
+    amount: toNumber(d.amount, 0),
+    is_active: toBoolean(d.is_active, true),
+    outlet_id: d.outlet_id ?? null,
+    sort_order: toNumber(d.sort_order, 0),
+    created_at: d.created_at,
+    updated_at: d.updated_at,
+  }));
+};
+
+export const createDiscount = async (payload: DiscountFormData): Promise<Discount> => {
+  const { data } = await api.post('/discounts', payload);
+  toast.success('Discount created');
+  return {
+    ...data,
+    amount: toNumber(data.amount, 0),
+    is_active: toBoolean(data.is_active, true),
+    sort_order: toNumber(data.sort_order, 0),
+  };
+};
+
+export const updateDiscount = async (id: string, payload: Partial<DiscountFormData>): Promise<Discount> => {
+  const { data } = await api.put(`/discounts/${id}`, payload);
+  toast.success('Discount updated');
+  return {
+    ...data,
+    amount: toNumber(data.amount, 0),
+    is_active: toBoolean(data.is_active, true),
+    sort_order: toNumber(data.sort_order, 0),
+  };
+};
+
+export const deleteDiscount = async (id: string): Promise<void> => {
+  await api.delete(`/discounts/${id}`);
+  toast.success('Discount deleted');
+};
+
+export const toggleDiscountActive = async (id: string): Promise<Discount> => {
+  const { data } = await api.patch(`/discounts/${id}/toggle`);
+  toast.success('Discount status updated');
+  return {
+    ...data,
+    amount: toNumber(data.amount, 0),
+    is_active: toBoolean(data.is_active, true),
+    sort_order: toNumber(data.sort_order, 0),
+  };
+};
+
+export const reorderDiscounts = async (ids: string[]): Promise<void> => {
+  await api.patch('/discounts/reorder', { ids });
+  toast.success('Discounts reordered');
+};
 
 const isNewProductModifierAssignment = (assignment: ProductModifierAssignment): boolean =>
   assignment.id.startsWith('new-');

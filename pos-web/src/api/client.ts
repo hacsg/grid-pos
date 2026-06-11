@@ -463,4 +463,30 @@ export async function redeemVoucher(data: { code: string; staff_id: string; outl
   });
   return response.data;
 }
+
+// ---------------------------------------------------------------------------
+// Discounts (admin-managed, active list for POS)
+// ---------------------------------------------------------------------------
+
+export interface Discount {
+  id: string;
+  name: string;
+  kind: 'percent' | 'fixed';
+  amount: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export async function getActiveDiscounts(): Promise<Discount[]> {
+  const { data } = await api.get('/discounts', { params: { is_active: true } });
+  return (Array.isArray(data) ? data : []).map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    kind: d.kind,
+    amount: Number(d.amount) || 0,
+    is_active: d.is_active,
+    sort_order: d.sort_order ?? 0,
+  }));
+}
+
 // cache-bust 1780963317
