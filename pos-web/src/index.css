@@ -1951,12 +1951,23 @@ img {
   width: 100%;
   height: 100%;
   background: #0a0a0a;
+  overflow: hidden;
 }
 
-.qr-reader video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+/* Force html5-qrcode injected elements (with inline px sizes) to fill container */
+.qr-reader > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+#qr-reader-region {
+  width: 100% !important;
+  height: 100% !important;
+}
+.qr-reader video,
+.qr-reader img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
   display: block;
 }
 
@@ -2419,14 +2430,17 @@ img {
 
 @media (max-width: 640px) {
   .voucher-main {
-    padding: 12px 12px 28px;
+    padding: 8px 10px 18px;
+  }
+  .voucher-center {
+    gap: 10px;
   }
   .voucher-title {
     font-size: 22px;
   }
   .qr-scanner-wrap {
     border-radius: 12px;
-    aspect-ratio: 16 / 10; /* slightly wider on phones */
+    aspect-ratio: 1 / 1; /* square on mobile to reduce vertical footprint vs 16/10 */
   }
   .qr-frame {
     width: 78%;
