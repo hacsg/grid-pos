@@ -111,6 +111,11 @@ export interface OrderRead extends Timestamped {
   status: OrderStatus;
   payment_method: string | null;
   payment_reference: string | null;
+  cash_tendered?: number | string | null;
+  cash_change?: number | string | null;
+  cash_amount?: number | string | null;
+  card_amount?: number | string | null;
+  voucher_amount?: number | string | null;
   loyalty_member_id?: string | null;
   loyalty_points_earned?: number | null;
   loyalty_points_redeemed?: number | null;
@@ -417,6 +422,9 @@ export async function updateOrderStatus(
     payment_method?: string | null;
     payment_reference?: string | null;
     cash_tendered?: number;
+    cash_amount?: number;
+    card_amount?: number;
+    voucher_amount?: number;
   }
 ): Promise<OrderRead> {
   const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload);

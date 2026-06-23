@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CreditCard, Loader2, Printer, Receipt, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Banknote, CheckCircle2, CreditCard, Loader2, Printer, QrCode, Receipt, Split, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   applyVouchersToOrder,
@@ -27,7 +27,8 @@ interface PaymentModalProps {
   onOrderComplete: () => void;
 }
 
-type PaymentMode = 'cash' | 'card' | 'split';
+type PaymentMode = 'cash' | 'card' | 'paynow' | 'split';
+type TerminalPaymentMethod = 'card' | 'paynow';
 type PaymentStep = 'payment' | 'processing' | 'complete';
 
 const CARD_POLL_INTERVAL_MS = 2000;
@@ -39,8 +40,10 @@ interface ReceiptSnapshot {
   totals: Totals;
   vouchers: AppliedVoucher[];
   paymentMode: PaymentMode;
+  terminalPaymentMethod?: TerminalPaymentMethod;
   cashAmount: number;
   cardAmount: number;
+  voucherAmount: number;
   changeDue: number;
 }
 
@@ -48,7 +51,46 @@ interface CardPaymentSession {
   order: OrderRead;
   intentId: string;
   paymentReference: string;
+  paymentMode: 'card' | 'paynow' | 'split';
+  terminalPaymentMethod: TerminalPaymentMethod;
+  cashAmount: number;
+  cardAmount: number;
+  voucherAmount: number;
+  cashTendered?: number;
   startedAt: number;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function paymentModeLabel(mode: PaymentMode): string {
+  if (mode === 'paynow') {
+    return 'PayNow';
+  }
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
+function terminalMethodLabel(method: TerminalPaymentMethod): string {
+  return method === 'paynow' ? 'PayNow' : 'Card';
+}
+
+function receiptPaymentLines(receipt: ReceiptSnapshot): string[] {
+  if (receipt.paymentMode !== 'split') {
+    return [`Payment: ${paymentModeLabel(receipt.paymentMode)}`];
+  }
+
+  const lines = ['Payment: Split'];
+  if (receipt.cashAmount > 0) {
+    lines.push(`  Cash: ${formatCurrency(receipt.cashAmount)}`);
+  }
+  if (receipt.cardAmount > 0) {
+    lines.push(`  ${terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card')}: ${formatCurrency(receipt.cardAmount)}`);
+  }
+  if (receipt.voucherAmount > 0) {
+    lines.push(`  Voucher: ${formatCurrency(receipt.voucherAmount)}`);
+  }
+  return lines;
 }
 
 function getHttpStatus(err: unknown): number | undefined {
@@ -105,7 +147,7 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     `Discount -${formatCurrency(receipt.totals.discount + receipt.totals.loyaltyDiscount)}`,
     ...(receipt.totals.voucherDiscount > 0 ? [`Vouchers -${formatCurrency(receipt.totals.voucherDiscount)}`] : []),
     `Total ${formatCurrency(receipt.totals.total)}`,
-    `Payment ${receipt.paymentMode}`,
+    ...receiptPaymentLines(receipt),
     receipt.changeDue > 0 ? `Change ${formatCurrency(receipt.changeDue)}` : '',
     '',
     ...voucherLines,
@@ -166,6 +208,7 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [step, setStep] = useState<PaymentStep>('payment');
   const [mode, setMode] = useState<PaymentMode>('cash');
+  const [splitSecondMethod, setSplitSecondMethod] = useState<TerminalPaymentMethod>('card');
   const [cashAmount, setCashAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptSnapshot | null>(null);
@@ -177,6 +220,7 @@ export default function PaymentModal({
     if (!open) {
       setStep('payment');
       setMode('cash');
+      setSplitSecondMethod('card');
       setCashAmount('');
       setSubmitting(false);
       setReceipt(null);
@@ -210,33 +254,41 @@ export default function PaymentModal({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (mode === 'split') {
-      setError('Split payment coming soon');
-      return;
-    }
-    if (mode === 'card' && terminalConnected === false) {
-      setError('Payment terminal offline');
-      return;
-    }
-    setError('');
-  }, [mode, cashAmount, terminalConnected]);
-
-  const cashTendered = money(cashAmount);
-  const cardAmount = useMemo(() => {
-    if (mode === 'card') {
-      return totals.total;
-    }
-    return 0;
-  }, [mode, totals.total]);
-  const changeDue = mode === 'cash' ? Math.max(0, cashTendered - totals.total) : 0;
-  const cashDue = mode === 'cash' ? totals.total : Math.min(cashTendered, totals.total);
+  const totalDue = roundMoney(totals.total);
+  const voucherAmount = roundMoney(totals.voucherDiscount);
+  const cashTendered = roundMoney(money(cashAmount));
+  const splitCashAmount = mode === 'split' ? roundMoney(Math.min(Math.max(cashTendered, 0), totalDue)) : 0;
+  const splitTerminalAmount = mode === 'split' ? roundMoney(Math.max(0, totalDue - splitCashAmount)) : 0;
+  const splitCashInputValid = cashTendered >= 0 && cashTendered <= totalDue;
+  const requiresTerminal =
+    mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0);
+  const terminalMethod: TerminalPaymentMethod =
+    mode === 'paynow' ? 'paynow' : mode === 'split' ? splitSecondMethod : 'card';
+  const changeDue = mode === 'cash' ? roundMoney(Math.max(0, cashTendered - totalDue)) : 0;
+  const cashDue = mode === 'cash' ? totalDue : splitCashAmount;
 
   const canComplete =
     items.length > 0 &&
     !submitting &&
-    (mode === 'card' ||
-      (mode === 'cash' && cashTendered >= totals.total));
+    ((mode === 'card' && terminalConnected !== false) ||
+      (mode === 'paynow' && terminalConnected !== false) ||
+      (mode === 'cash' && cashTendered >= totalDue) ||
+      (mode === 'split' &&
+        splitCashInputValid &&
+        (splitCashAmount > 0 || splitTerminalAmount > 0 || voucherAmount > 0) &&
+        (!requiresTerminal || terminalConnected !== false)));
+
+  useEffect(() => {
+    if (mode === 'split' && !splitCashInputValid) {
+      setError('Cash amount must be between zero and the payable total');
+      return;
+    }
+    if (requiresTerminal && terminalConnected === false) {
+      setError('Payment terminal offline');
+      return;
+    }
+    setError('');
+  }, [mode, requiresTerminal, splitCashInputValid, terminalConnected]);
 
   useEffect(() => {
     if (!open || step !== 'processing' || !cardPayment) {
@@ -290,16 +342,36 @@ export default function PaymentModal({
         if (latest.status === 'success') {
           clearPolling();
           try {
+            const statusPayload =
+              cardPayment.paymentMode === 'split'
+                ? {
+                    status: 'paid' as const,
+                    payment_method: 'split',
+                    payment_reference: cardPayment.paymentReference,
+                    cash_tendered: cardPayment.cashTendered,
+                    cash_amount: cardPayment.cashAmount,
+                    card_amount: cardPayment.cardAmount,
+                    voucher_amount: cardPayment.voucherAmount,
+                  }
+                : {
+                    status: 'paid' as const,
+                    payment_method: cardPayment.paymentMode,
+                    payment_reference: cardPayment.paymentReference,
+                  };
             const paidOrder = await updateOrderStatus(cardPayment.order.id, {
-              status: 'paid',
-              payment_method: 'card',
-              payment_reference: cardPayment.paymentReference,
+              ...statusPayload,
             });
             if (cancelled) {
               return;
             }
-            completePaidOrder(paidOrder, 'card');
-            toast.success('Payment successful');
+            completePaidOrder(paidOrder, cardPayment.paymentMode, {
+              terminalPaymentMethod: cardPayment.terminalPaymentMethod,
+              cashAmount: cardPayment.cashAmount,
+              cardAmount: cardPayment.cardAmount,
+              voucherAmount: cardPayment.voucherAmount,
+              changeDue: 0,
+            });
+            toast.success(`${terminalMethodLabel(cardPayment.terminalPaymentMethod)} payment successful`);
           } catch (err: unknown) {
             if (!cancelled) {
               setError(`Payment approved, but order finalization failed: ${getErrorMessage(err, 'Order finalization failed')}`);
@@ -347,18 +419,20 @@ export default function PaymentModal({
     ? step === 'processing'
       ? 'Processing payment...'
       : 'Processing...'
-    : mode === 'split'
-      ? 'Split coming soon'
-      : mode === 'card' && error && terminalConnected !== false
-        ? 'Retry card payment'
+    : requiresTerminal && error && terminalConnected !== false
+      ? `Retry ${mode === 'split' ? 'split' : mode === 'paynow' ? 'PayNow' : paymentModeLabel(mode).toLowerCase()} payment`
         : 'Complete payment';
 
-  async function createPendingOrder(paymentReference: string, voucherCodes: string[] | null): Promise<OrderRead> {
+  async function createPendingOrder(
+    paymentReference: string,
+    voucherCodes: string[] | null,
+    paymentMethod: PaymentMode
+  ): Promise<OrderRead> {
     const pendingOrder = await createOrder({
       outlet_id: session.outlet.id,
       staff_id: session.staff.id,
       status: 'pending',
-      payment_method: mode,
+      payment_method: paymentMethod,
       payment_reference: paymentReference,
       loyalty_member_id: loyalty?.customer.member_id ?? null,
       loyalty_points_redeemed: loyalty?.reward?.points ?? null,
@@ -391,16 +465,30 @@ export default function PaymentModal({
     return pendingOrder;
   }
 
-  function completePaidOrder(paidOrder: OrderRead, paidMode: PaymentMode) {
+  function completePaidOrder(
+    paidOrder: OrderRead,
+    paidMode: PaymentMode,
+    paymentDetails?: {
+      terminalPaymentMethod?: TerminalPaymentMethod;
+      cashAmount?: number;
+      cardAmount?: number;
+      voucherAmount?: number;
+      changeDue?: number;
+    }
+  ) {
     const snapshot: ReceiptSnapshot = {
       order: paidOrder,
       items,
       totals,
       vouchers,
       paymentMode: paidMode,
-      cashAmount: paidMode === 'cash' ? cashDue : 0,
-      cardAmount: paidMode === 'card' ? totals.total : cardAmount,
-      changeDue: paidMode === 'cash' ? changeDue : 0,
+      terminalPaymentMethod:
+        paymentDetails?.terminalPaymentMethod ??
+        (paidMode === 'paynow' ? 'paynow' : paidMode === 'card' ? 'card' : undefined),
+      cashAmount: paymentDetails?.cashAmount ?? (paidMode === 'cash' ? cashDue : 0),
+      cardAmount: paymentDetails?.cardAmount ?? (paidMode === 'card' || paidMode === 'paynow' ? totalDue : 0),
+      voucherAmount: paymentDetails?.voucherAmount ?? 0,
+      changeDue: paymentDetails?.changeDue ?? (paidMode === 'cash' ? changeDue : 0),
     };
     setReceipt(snapshot);
     setStep('complete');
@@ -425,14 +513,10 @@ export default function PaymentModal({
   }
 
   async function completePayment() {
-    if (mode === 'split') {
-      setError('Split payment coming soon');
-      return;
-    }
     if (!canComplete) {
       return;
     }
-    if (mode === 'card' && terminalConnected === false) {
+    if (requiresTerminal && terminalConnected === false) {
       setError('Payment terminal offline');
       toast.error('Payment terminal offline');
       return;
@@ -445,16 +529,23 @@ export default function PaymentModal({
       const paymentReference = `POS-${Date.now()}`;
       const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
 
-      const pendingOrder = await createPendingOrder(paymentReference, voucherCodes);
+      const pendingOrder = await createPendingOrder(paymentReference, voucherCodes, mode);
 
-      if (mode === 'card') {
+      if (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0)) {
+        const paymentAmount = mode === 'split' ? splitTerminalAmount : totalDue;
         try {
-          const intent = await startCardPayment(pendingOrder.id, totals.total);
+          const intent = await startCardPayment(pendingOrder.id, paymentAmount);
           setTerminalConnected(true);
           setCardPayment({
             order: pendingOrder,
             intentId: intent.id,
             paymentReference,
+            paymentMode: mode === 'split' ? 'split' : mode,
+            terminalPaymentMethod: terminalMethod,
+            cashAmount: mode === 'split' ? splitCashAmount : 0,
+            cardAmount: paymentAmount,
+            voucherAmount: mode === 'split' ? voucherAmount : 0,
+            cashTendered: mode === 'split' && splitCashAmount > 0 ? splitCashAmount : undefined,
             startedAt: Date.now(),
           });
           setStep('processing');
@@ -471,14 +562,37 @@ export default function PaymentModal({
         return;
       }
 
-      const paidOrder = await updateOrderStatus(pendingOrder.id, {
-        status: 'paid',
-        payment_method: mode,
-        payment_reference: paymentReference,
-        cash_tendered: mode === 'cash' ? cashTendered : undefined,
-      });
+      const paidOrder =
+        mode === 'split'
+          ? await updateOrderStatus(pendingOrder.id, {
+              status: 'paid',
+              payment_method: 'split',
+              payment_reference: paymentReference,
+              cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
+              cash_amount: splitCashAmount,
+              card_amount: 0,
+              voucher_amount: voucherAmount,
+            })
+          : await updateOrderStatus(pendingOrder.id, {
+              status: 'paid',
+              payment_method: mode,
+              payment_reference: paymentReference,
+              cash_tendered: mode === 'cash' ? cashTendered : undefined,
+            });
 
-      completePaidOrder(paidOrder, mode);
+      completePaidOrder(
+        paidOrder,
+        mode,
+        mode === 'split'
+          ? {
+              terminalPaymentMethod: splitSecondMethod,
+              cashAmount: splitCashAmount,
+              cardAmount: 0,
+              voucherAmount,
+              changeDue: 0,
+            }
+          : undefined
+      );
       toast.success('Order paid');
     } catch (err: unknown) {
       setError(getErrorMessage(err));
@@ -503,7 +617,13 @@ export default function PaymentModal({
       <section className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title">
         <header className="sheet-header">
           <div>
-            <p>{step === 'complete' ? 'Complete' : step === 'processing' ? 'Card payment' : 'Payment'}</p>
+            <p>
+              {step === 'complete'
+                ? 'Complete'
+                : step === 'processing'
+                  ? `${terminalMethodLabel(cardPayment?.terminalPaymentMethod ?? 'card')} payment`
+                  : 'Payment'}
+            </p>
             <h2 id="payment-title">
               {step === 'complete'
                 ? 'Order complete'
@@ -528,19 +648,24 @@ export default function PaymentModal({
         {step === 'payment' ? (
           <>
             <div className="payment-modes" role="tablist" aria-label="Payment mode">
-              {(['cash', 'card', 'split'] as const).map((paymentMode) => (
+              {[
+                { value: 'cash' as const, label: 'Cash', Icon: Banknote },
+                { value: 'card' as const, label: 'Card', Icon: CreditCard },
+                { value: 'paynow' as const, label: 'PayNow', Icon: QrCode },
+                { value: 'split' as const, label: 'Split', Icon: Split },
+              ].map(({ value, label, Icon }) => (
                 <button
-                  key={paymentMode}
-                  className={mode === paymentMode ? 'active' : ''}
+                  key={value}
+                  className={mode === value ? 'active' : ''}
                   type="button"
                   role="tab"
-                  aria-selected={mode === paymentMode}
+                  aria-selected={mode === value}
                   disabled={submitting}
                   onPointerDown={() => tapFeedback()}
-                  onClick={() => setMode(paymentMode)}
+                  onClick={() => setMode(value)}
                 >
-                  {paymentMode === 'card' && <CreditCard size={18} aria-hidden="true" />}
-                  {paymentMode}
+                  <Icon size={18} aria-hidden="true" />
+                  {label}
                 </button>
               ))}
             </div>
@@ -567,18 +692,70 @@ export default function PaymentModal({
                 </label>
               )}
 
-              {mode === 'card' && (
+              {(mode === 'card' || mode === 'paynow') && (
                 <div className="terminal-panel">
-                  <CreditCard size={32} aria-hidden="true" />
-                  <strong>{formatCurrency(totals.total)}</strong>
-                  <span>{terminalConnected === false ? 'Terminal offline' : 'Tap to pay'}</span>
+                  {mode === 'paynow' ? <QrCode size={32} aria-hidden="true" /> : <CreditCard size={32} aria-hidden="true" />}
+                  <strong>{formatCurrency(totalDue)}</strong>
+                  <span>
+                    {terminalConnected === false
+                      ? 'Terminal offline'
+                      : mode === 'paynow'
+                        ? 'PayNow QR'
+                        : 'Tap to pay'}
+                  </span>
                 </div>
               )}
 
               {mode === 'split' && (
-                <div className="split-coming-soon">
-                  <strong>Split payment coming soon</strong>
-                  <span>Use cash or card for this order.</span>
+                <div className="split-payment-panel">
+                  <div className="split-fields">
+                    <label className="amount-field">
+                      Cash amount
+                      <input
+                        value={cashAmount}
+                        onChange={(event) => setCashAmount(event.target.value)}
+                        inputMode="decimal"
+                        autoFocus
+                      />
+                    </label>
+                    <div className="split-card-due">
+                      <span>{terminalMethodLabel(splitSecondMethod)} remainder</span>
+                      <strong>{formatCurrency(splitTerminalAmount)}</strong>
+                    </div>
+                  </div>
+                  <div className="split-method-toggle" role="radiogroup" aria-label="Split terminal method">
+                    {(['card', 'paynow'] as const).map((method) => (
+                      <button
+                        key={method}
+                        className={splitSecondMethod === method ? 'active' : ''}
+                        type="button"
+                        role="radio"
+                        aria-checked={splitSecondMethod === method}
+                        disabled={submitting}
+                        onPointerDown={() => tapFeedback()}
+                        onClick={() => setSplitSecondMethod(method)}
+                      >
+                        {method === 'paynow' ? <QrCode size={16} aria-hidden="true" /> : <CreditCard size={16} aria-hidden="true" />}
+                        {terminalMethodLabel(method)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="split-breakdown">
+                    <div>
+                      <span>Cash</span>
+                      <strong>{formatCurrency(splitCashAmount)}</strong>
+                    </div>
+                    <div>
+                      <span>{terminalMethodLabel(splitSecondMethod)}</span>
+                      <strong>{formatCurrency(splitTerminalAmount)}</strong>
+                    </div>
+                    {voucherAmount > 0 && (
+                      <div>
+                        <span>Voucher</span>
+                        <strong>{formatCurrency(voucherAmount)}</strong>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -615,6 +792,18 @@ export default function PaymentModal({
                     <strong>{formatCurrency(changeDue)}</strong>
                   </div>
                 )}
+                {mode === 'split' && (
+                  <>
+                    <div>
+                      <span>Cash</span>
+                      <strong>{formatCurrency(splitCashAmount)}</strong>
+                    </div>
+                    <div>
+                      <span>{terminalMethodLabel(splitSecondMethod)}</span>
+                      <strong>{formatCurrency(splitTerminalAmount)}</strong>
+                    </div>
+                  </>
+                )}
               </section>
             </div>
 
@@ -639,18 +828,34 @@ export default function PaymentModal({
                 )}
                 <div>
                   <strong>{error ? 'Payment needs attention' : 'Processing payment...'}</strong>
-                  <span>{error ? 'Do not retry card payment until this order is checked.' : 'Waiting for terminal approval'}</span>
+                  <span>{error ? 'Do not retry terminal payment until this order is checked.' : 'Waiting for terminal approval'}</span>
                 </div>
               </div>
-              <section className="payment-summary" aria-label="Card payment summary">
+              <section className="payment-summary" aria-label="Terminal payment summary">
                 <div>
                   <span>Total</span>
-                  <strong>{formatCurrency(totals.total)}</strong>
+                  <strong>{formatCurrency(totalDue)}</strong>
                 </div>
+                {cardPayment?.paymentMode === 'split' && (
+                  <div>
+                    <span>Cash</span>
+                    <strong>{formatCurrency(cardPayment.cashAmount)}</strong>
+                  </div>
+                )}
                 <div>
-                  <span>Payment</span>
-                  <strong>Card</strong>
+                  <span>{cardPayment?.paymentMode === 'split' ? terminalMethodLabel(cardPayment.terminalPaymentMethod) : 'Payment'}</span>
+                  <strong>
+                    {cardPayment?.paymentMode === 'split'
+                      ? formatCurrency(cardPayment.cardAmount)
+                      : terminalMethodLabel(cardPayment?.terminalPaymentMethod ?? 'card')}
+                  </strong>
                 </div>
+                {cardPayment?.paymentMode === 'split' && cardPayment.voucherAmount > 0 && (
+                  <div>
+                    <span>Voucher</span>
+                    <strong>{formatCurrency(cardPayment.voucherAmount)}</strong>
+                  </div>
+                )}
               </section>
             </div>
 
@@ -696,6 +901,45 @@ export default function PaymentModal({
                 <div className="receipt-total">
                   <span>Total</span>
                   <strong>{formatCurrency(receipt.totals.total)}</strong>
+                </div>
+                <div className="receipt-payment">
+                  {receipt.paymentMode === 'split' ? (
+                    <>
+                      <div>
+                        <span>Payment</span>
+                        <strong>Split</strong>
+                      </div>
+                      {receipt.cashAmount > 0 && (
+                        <div>
+                          <span>Cash</span>
+                          <strong>{formatCurrency(receipt.cashAmount)}</strong>
+                        </div>
+                      )}
+                      {receipt.cardAmount > 0 && (
+                        <div>
+                          <span>{terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card')}</span>
+                          <strong>{formatCurrency(receipt.cardAmount)}</strong>
+                        </div>
+                      )}
+                      {receipt.voucherAmount > 0 && (
+                        <div>
+                          <span>Voucher</span>
+                          <strong>{formatCurrency(receipt.voucherAmount)}</strong>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div>
+                      <span>Payment</span>
+                      <strong>{paymentModeLabel(receipt.paymentMode)}</strong>
+                    </div>
+                  )}
+                  {receipt.changeDue > 0 && (
+                    <div>
+                      <span>Change</span>
+                      <strong>{formatCurrency(receipt.changeDue)}</strong>
+                    </div>
+                  )}
                 </div>
                 {receipt.vouchers && receipt.vouchers.length > 0 && (
                   <div className="receipt-vouchers" style={{ marginTop: 8, fontSize: '12px', opacity: 0.85 }}>

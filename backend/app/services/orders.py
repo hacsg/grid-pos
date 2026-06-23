@@ -159,6 +159,52 @@ def _validate_status_transition(order: Order, new_status: OrderStatus) -> None:
         )
 
 
+def _money_or_zero(value: Decimal | None) -> Decimal:
+    """Return a normalized money value for optional split payment amounts."""
+    return quantize_money(value or Decimal("0.00"))
+
+
+def _applied_voucher_total(order: Order) -> Decimal:
+    """Return the voucher amount already applied to an order."""
+    return quantize_money(
+        sum((link.amount_applied for link in order.order_voucher_links), Decimal("0.00"))
+    )
+
+
+def _validate_split_payment_amounts(
+    order: Order,
+    *,
+    cash_amount: Decimal,
+    card_amount: Decimal,
+    voucher_amount: Decimal,
+    cash_tendered: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """Validate split payment coverage and return cash tender/change values."""
+    applied_voucher_total = _applied_voucher_total(order)
+    if voucher_amount != applied_voucher_total:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Split voucher amount must match applied vouchers",
+        )
+
+    if quantize_money(cash_amount + card_amount) != quantize_money(order.total):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Split cash and card/PayNow amounts must equal the payable total",
+        )
+
+    if cash_amount > 0:
+        tendered = _money_or_zero(cash_tendered) if cash_tendered is not None else cash_amount
+        if tendered < cash_amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cash tendered must be greater than or equal to the cash split amount",
+            )
+        return tendered, quantize_money(tendered - cash_amount)
+
+    return None, None
+
+
 async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
     """Create an order, calculate totals, and persist its order items."""
     outlet = await db.get(Outlet, payload.outlet_id)
@@ -255,19 +301,59 @@ async def update_order_status_service(
     payment_method: str | None = None,
     payment_reference: str | None = None,
     cash_tendered: Decimal | None = None,
+    cash_amount: Decimal | None = None,
+    card_amount: Decimal | None = None,
+    voucher_amount: Decimal | None = None,
 ) -> Order:
     """Update order status with transition validation."""
     order = await load_order_or_404(db, order_id)
     _validate_status_transition(order, new_status)
     order.status = new_status
+    effective_payment_method = payment_method if payment_method is not None else order.payment_method
     if payment_method is not None:
         order.payment_method = payment_method
     if payment_reference is not None:
         order.payment_reference = payment_reference
+
+    if effective_payment_method == "split":
+        normalized_cash_amount = _money_or_zero(cash_amount)
+        normalized_card_amount = _money_or_zero(card_amount)
+        normalized_voucher_amount = _money_or_zero(voucher_amount)
+        if new_status == OrderStatus.paid:
+            normalized_cash_tendered, normalized_cash_change = _validate_split_payment_amounts(
+                order,
+                cash_amount=normalized_cash_amount,
+                card_amount=normalized_card_amount,
+                voucher_amount=normalized_voucher_amount,
+                cash_tendered=cash_tendered,
+            )
+            order.cash_tendered = normalized_cash_tendered
+            order.cash_change = normalized_cash_change
+        elif cash_tendered is not None:
+            order.cash_tendered = _money_or_zero(cash_tendered)
+
+        order.cash_amount = normalized_cash_amount
+        order.card_amount = normalized_card_amount
+        order.voucher_amount = normalized_voucher_amount
+    else:
+        if cash_amount is not None:
+            order.cash_amount = _money_or_zero(cash_amount)
+        if card_amount is not None:
+            order.card_amount = _money_or_zero(card_amount)
+        if voucher_amount is not None:
+            order.voucher_amount = _money_or_zero(voucher_amount)
+
     if cash_tendered is not None:
-        order.cash_tendered = cash_tendered
-        # Calculate change: cash_tendered - total (if positive, otherwise 0)
-        order.cash_change = max(Decimal("0"), cash_tendered - order.total)
+        normalized_cash_tendered = _money_or_zero(cash_tendered)
+        if effective_payment_method == "cash" and normalized_cash_tendered < order.total:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cash tendered must be greater than or equal to the payable total",
+            )
+        if effective_payment_method != "split":
+            order.cash_tendered = normalized_cash_tendered
+            # Calculate change: cash_tendered - total (if positive, otherwise 0)
+            order.cash_change = quantize_money(max(Decimal("0"), normalized_cash_tendered - order.total))
     await db.commit()
 
     result = await db.execute(

@@ -6,7 +6,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import extract, func, select, text
+from sqlalchemy import case, extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -110,8 +110,14 @@ async def get_shift_cash_reconciliation(
     cash_stmt = select(
         func.coalesce(
             func.sum(
-                func.coalesce(Order.cash_tendered, 0)
-                - func.coalesce(Order.cash_change, 0)
+                case(
+                    (
+                        Order.payment_method == "split",
+                        func.coalesce(Order.cash_amount, 0),
+                    ),
+                    else_=func.coalesce(Order.cash_tendered, 0)
+                    - func.coalesce(Order.cash_change, 0),
+                )
             ),
             0,
         ).label("expected_cash"),
@@ -121,7 +127,7 @@ async def get_shift_cash_reconciliation(
         Order.outlet_id == shift.outlet_id,
         Order.created_at >= shift.clock_in,
         Order.created_at <= ended_at,
-        Order.payment_method == "cash",
+        Order.payment_method.in_(("cash", "split")),
         Order.status == OrderStatus.paid,
     )
     result = await db.execute(cash_stmt)

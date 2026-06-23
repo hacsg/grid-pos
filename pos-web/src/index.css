@@ -947,9 +947,13 @@ img {
 }
 
 .payment-modes {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 18px 18px 0;
-  text-transform: capitalize;
+}
+
+.payment-modes button {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .pin-login,
@@ -1254,6 +1258,11 @@ img {
   font-weight: 700;
 }
 
+.split-payment-panel {
+  display: grid;
+  gap: 12px;
+}
+
 .spin-icon {
   color: var(--grid-primary);
   animation: spin 1s linear infinite;
@@ -1269,6 +1278,31 @@ img {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 0.65fr);
   gap: 12px;
+}
+
+.split-method-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.split-method-toggle button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--grid-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--grid-text);
+  font-weight: 800;
+}
+
+.split-method-toggle button.active {
+  border-color: var(--grid-primary);
+  background: #e9f3eb;
+  color: var(--grid-primary);
 }
 
 .split-card-due {
@@ -1289,6 +1323,39 @@ img {
 
 .split-card-due strong {
   font-size: 24px;
+}
+
+.split-breakdown,
+.receipt-payment {
+  display: grid;
+  gap: 8px;
+}
+
+.split-breakdown {
+  border: 1px solid var(--grid-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.split-breakdown div,
+.receipt-payment div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.split-breakdown span,
+.receipt-payment span {
+  color: var(--grid-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.receipt-payment {
+  border-top: 1px solid var(--grid-border);
+  padding-top: 10px;
 }
 
 .payment-summary {

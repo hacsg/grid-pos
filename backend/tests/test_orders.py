@@ -287,6 +287,56 @@ class TestUpdateOrderStatus:
         assert data["payment_method"] == "cash"
         assert data["payment_reference"] == "TXN001"
 
+    async def test_pending_to_paid_with_split_amounts(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "payment_reference": "TXN-SPLIT",
+                "cash_tendered": "10.00",
+                "cash_amount": "10.00",
+                "card_amount": "9.98",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "paid"
+        assert data["payment_method"] == "split"
+        assert str(data["cash_amount"]) == "10.00"
+        assert str(data["card_amount"]) == "9.98"
+        assert str(data["voucher_amount"]) == "0.00"
+        assert str(data["cash_change"]) == "0.00"
+
+    async def test_split_amounts_must_cover_payable_total(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "cash_amount": "10.00",
+                "card_amount": "1.00",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "must equal the payable total" in resp.json()["detail"]
+
     async def test_pending_to_cancelled(self, client: AsyncClient, outlet, cashier_staff, product) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
