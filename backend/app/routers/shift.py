@@ -10,6 +10,7 @@ Endpoints
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
@@ -22,12 +23,14 @@ from app.models.staff import Staff
 from app.schemas.shift import (
     ClockInResponse,
     ClockOutResponse,
+    ShiftCloseRequest,
     ShiftRead,
     ShiftSummary,
 )
+from app.services.reports import get_shift_cash_reconciliation
 from app.utils.auth import get_current_staff
 
-router = APIRouter(prefix="/staff", tags=["staff-shifts"])
+router = APIRouter(tags=["staff-shifts"])
 
 
 async def _load_staff_or_404(db: AsyncSession, staff_id: str) -> Staff:
@@ -60,7 +63,7 @@ async def _get_active_shift(db: AsyncSession, staff_id: str) -> Shift | None:
     return result.scalar_one_or_none()
 
 
-@router.post("/{staff_id}/clock-in", response_model=ClockInResponse)
+@router.post("/staff/{staff_id}/clock-in", response_model=ClockInResponse)
 async def clock_in(
     staff_id: str,
     db: AsyncSession = Depends(get_db),
@@ -105,7 +108,7 @@ async def clock_in(
     )
 
 
-@router.post("/{staff_id}/clock-out", response_model=ClockOutResponse)
+@router.post("/staff/{staff_id}/clock-out", response_model=ClockOutResponse)
 async def clock_out(
     staff_id: str,
     db: AsyncSession = Depends(get_db),
@@ -171,7 +174,44 @@ async def clock_out(
     )
 
 
-@router.get("/{staff_id}/shifts/current", response_model=ShiftSummary)
+@router.post("/shifts/{shift_id}/close", response_model=ShiftRead)
+async def close_shift(
+    shift_id: UUID,
+    payload: ShiftCloseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Shift:
+    """Close a shift with counted drawer cash."""
+    shift = await db.get(Shift, shift_id)
+    if shift is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shift not found",
+        )
+
+    if shift.staff_id != current_staff.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only close your own shift",
+        )
+
+    if shift.clock_out is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Shift is already closed",
+        )
+
+    shift.clock_out = datetime.now(timezone.utc)
+    reconciliation = await get_shift_cash_reconciliation(db, shift_id)
+    shift.expected_cash = reconciliation.expected_cash
+    shift.actual_cash = payload.actual_cash
+
+    await db.commit()
+    await db.refresh(shift)
+    return shift
+
+
+@router.get("/staff/{staff_id}/shifts/current", response_model=ShiftSummary)
 async def get_current_shift(
     staff_id: str,
     db: AsyncSession = Depends(get_db),
@@ -194,7 +234,7 @@ async def get_current_shift(
     )
 
 
-@router.get("/{staff_id}/shifts", response_model=list[ShiftRead])
+@router.get("/staff/{staff_id}/shifts", response_model=list[ShiftRead])
 async def list_shifts(
     staff_id: str,
     limit: int = Query(default=20, ge=1, le=100),

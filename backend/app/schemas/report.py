@@ -1,6 +1,6 @@
 """Reporting response schemas for the admin dashboard."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -132,3 +132,17 @@ class SalesSummaryResponse(BaseModel):
     order_count: int = 0
     average_order_value: Money = Decimal("0.00")
     date: date
+
+
+class ShiftCashReconciliation(BaseModel):
+    """Cash reconciliation data for a shift."""
+
+    shift_id: UUID
+    staff_id: UUID
+    started_at: datetime
+    ended_at: datetime | None = None
+    expected_cash: Money = Decimal("0.00")
+    actual_cash: Money | None = None
+    variance: Money = Decimal("0.00")
+    variance_percent: float = 0.0
+    cash_orders_count: int = 0

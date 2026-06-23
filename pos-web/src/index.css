@@ -1174,6 +1174,29 @@ img {
   margin-bottom: 8px;
 }
 
+.terminal-status {
+  margin: 10px 18px 0;
+  border: 1px solid var(--grid-border);
+  border-radius: 8px;
+  background: #f7f7f6;
+  color: var(--grid-muted);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.terminal-status.connected {
+  border-color: #bed8c5;
+  background: #e9f3eb;
+  color: var(--grid-primary);
+}
+
+.terminal-status.offline {
+  border-color: #f1b7aa;
+  background: #fbe9e4;
+  color: #c2412d;
+}
+
 .amount-field {
   display: grid;
   gap: 8px;
@@ -1189,7 +1212,9 @@ img {
 }
 
 .terminal-panel,
-.complete-panel {
+.complete-panel,
+.processing-panel,
+.split-coming-soon {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -1205,6 +1230,39 @@ img {
 
 .terminal-panel strong {
   font-size: 26px;
+}
+
+.processing-panel,
+.split-coming-soon {
+  align-items: flex-start;
+}
+
+.processing-panel div,
+.split-coming-soon {
+  display: grid;
+  gap: 4px;
+}
+
+.processing-panel strong,
+.split-coming-soon strong {
+  font-size: 18px;
+}
+
+.processing-panel span,
+.split-coming-soon span {
+  color: var(--grid-muted);
+  font-weight: 700;
+}
+
+.spin-icon {
+  color: var(--grid-primary);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .split-fields {

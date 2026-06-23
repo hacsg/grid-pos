@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# IMPORTANT: workers=1 is required for KPay WebSocket integration.
+# WebSocket connection state (_active_connections) is stored in-memory per worker.
+# Multiple workers would break daemon communication - each worker has isolated memory.
+# If scaling is needed in future, move WS state to Redis first.

@@ -112,6 +112,16 @@ class StripePaymentAdapter @Inject constructor(
         return stripeTerminalManager.terminalState.value is TerminalState.Ready
     }
 
+    override suspend fun refund(transactionRef: String, amountCents: Long): Flow<PaymentState> {
+        _adapterState.value = PaymentState.Error("Refunds not implemented for Stripe adapter", retryable = false)
+        return _adapterState.asStateFlow()
+    }
+
+    override suspend fun void(transactionRef: String): Flow<PaymentState> {
+        _adapterState.value = PaymentState.Error("Void not implemented for Stripe adapter", retryable = false)
+        return _adapterState.asStateFlow()
+    }
+
     /**
      * Mirror the Stripe Terminal's internal state as generic [PaymentState] values
      * so consumers can observe it without depending on Stripe types.

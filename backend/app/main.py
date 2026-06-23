@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
@@ -8,15 +9,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import check_database_connection
 from app.migrations import run_sql_migrations
-from app.routers import campaigns, customers, discounts, loyalty, orders, outlets, products, reports, shift, staff, vouchers
+from app.routers import campaigns, customers, discounts, kpay, loyalty, orders, outlets, products, reports, shift, staff, vouchers, ws_daemon
 from app.schemas.health import HealthRead
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Run SQL migrations before serving requests."""
+    """Run SQL migrations and start background services before serving requests."""
+    from app.services import payment_intents
+    
     await run_sql_migrations()
-    yield
+    
+    # Start payment intent polling loop
+    polling_task = asyncio.create_task(payment_intents.polling_loop())
+    
+    try:
+        yield
+    finally:
+        # Graceful shutdown: cancel polling loop
+        polling_task.cancel()
+        try:
+            await polling_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -42,6 +57,8 @@ app.include_router(vouchers.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(discounts.router, prefix="/api")
+app.include_router(kpay.router, prefix="/api/kpay", tags=["kpay"])
+app.include_router(ws_daemon.router, tags=["websocket"])
 
 
 @app.get("/health", response_model=HealthRead, tags=["health"])

@@ -202,6 +202,46 @@ api.interceptors.response.use(
   }
 );
 
+type RequestConfig = AxiosRequestConfig & {
+  body?: BodyInit | null;
+};
+
+const STAFF_SESSION_KEY = 'grid_pos_staff_session';
+
+function currentOutletId(): string | null {
+  try {
+    const raw = localStorage.getItem(STAFF_SESSION_KEY);
+    if (!raw) {
+      return null;
+    }
+    const session = JSON.parse(raw) as { outlet?: { id?: unknown } };
+    return typeof session.outlet?.id === 'string' ? session.outlet.id : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function request<T>(url: string, config: RequestConfig = {}): Promise<T> {
+  const { body, ...axiosConfig } = config;
+  const normalizedUrl = url.startsWith('/api/') ? url.slice(4) : url;
+  const outletId = currentOutletId();
+  const headers = {
+    ...(axiosConfig.headers as Record<string, string> | undefined),
+  };
+
+  if (outletId && !headers['X-Outlet-Id']) {
+    headers['X-Outlet-Id'] = outletId;
+  }
+
+  const { data } = await api.request<T>({
+    ...axiosConfig,
+    url: normalizedUrl,
+    headers,
+    data: axiosConfig.data ?? body,
+  });
+  return data;
+}
+
 function unwrapList<T>(payload: T[] | { data: T[] }): T[] {
   return Array.isArray(payload) ? payload : payload.data;
 }
@@ -372,7 +412,12 @@ export async function createOrder(payload: OrderCreate): Promise<OrderRead> {
 
 export async function updateOrderStatus(
   orderId: string,
-  payload: { status: OrderStatus; payment_method?: string | null; payment_reference?: string | null }
+  payload: {
+    status: OrderStatus;
+    payment_method?: string | null;
+    payment_reference?: string | null;
+    cash_tendered?: number;
+  }
 ): Promise<OrderRead> {
   const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload);
   return data;

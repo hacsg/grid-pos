@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
@@ -33,12 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import sg.hundredacre.grid.payments.PaymentProvider
-import sg.hundredacre.grid.ui.screens.shift.ClockInConfirmation
-import sg.hundredacre.grid.ui.screens.shift.ClockOutDialog
-import sg.hundredacre.grid.ui.screens.shift.ShiftHistorySection
-import sg.hundredacre.grid.ui.screens.shift.ShiftSectionCard
 import sg.hundredacre.grid.ui.theme.GridBackground
-import sg.hundredacre.grid.ui.theme.GridBorder
 import sg.hundredacre.grid.ui.theme.GridPrimary
 import sg.hundredacre.grid.ui.theme.GridSurface
 import sg.hundredacre.grid.ui.theme.GridTextPrimary
@@ -52,11 +46,6 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val selectedProvider by viewModel.selectedProvider.collectAsState()
-    val shiftState by viewModel.shiftState.collectAsState()
-
-    // Set staff info on first composition (normally comes from auth)
-    // TODO: Replace with actual logged-in staff ID/name from auth state
-    viewModel.setStaffInfo(staffId = "default", staffName = "Staff")
 
     Scaffold(
         topBar = {
@@ -92,55 +81,7 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // ═══════════════════════════════════
-            // SHIFT SECTION
-            // ═══════════════════════════════════
-            Text(
-                "Shift",
-                fontFamily = InterFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                color = GridTextPrimary
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                "Clock in and out to track your work hours.",
-                fontFamily = InterFontFamily,
-                fontWeight = FontWeight.Normal,
-                fontSize = 13.sp,
-                color = GridTextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            ShiftSectionCard(
-                isClockedIn = shiftState.isClockedIn,
-                shiftDuration = shiftState.shiftDuration,
-                onToggleClock = {
-                    if (shiftState.isClockedIn) {
-                        viewModel.requestClockOut()
-                    } else {
-                        viewModel.clockIn()
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Recent shift history
-            ShiftHistorySection(
-                shifts = shiftState.shifts.take(10)
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-            HorizontalDivider(color = GridBorder.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ═══════════════════════════════════
-            // PAYMENT PROVIDER SECTION
-            // ═══════════════════════════════════
+            // Payment provider section
             Text(
                 "Payment Provider",
                 fontFamily = InterFontFamily,
@@ -249,28 +190,6 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    // ── Dialogs ───────────────────────────────
-
-    // Clock-in confirmation
-    if (shiftState.showClockInConfirmation) {
-        ClockInConfirmation(
-            staffName = shiftState.staffName,
-            clockInTime = shiftState.clockInTime ?: System.currentTimeMillis(),
-            onDismiss = { viewModel.dismissClockInConfirmation() }
-        )
-    }
-
-    // Clock-out confirmation dialog
-    if (shiftState.showClockOutDialog) {
-        ClockOutDialog(
-            shiftDuration = shiftState.shiftDuration,
-            ordersProcessed = shiftState.ordersProcessed,
-            totalSales = shiftState.totalSales,
-            onConfirm = { viewModel.confirmClockOut() },
-            onDismiss = { viewModel.dismissClockOutDialog() }
-        )
     }
 }
 

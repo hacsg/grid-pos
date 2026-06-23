@@ -7,6 +7,7 @@ from app.models.modifier import ModifierGroup, ModifierOption, ProductModifierGr
 from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
+from app.models.payment_intent import PaymentIntent
 from app.models.product import Product
 from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
@@ -25,6 +26,7 @@ __all__ = [
     "OrderStatus",
     "OrderVoucher",
     "Outlet",
+    "PaymentIntent",
     "Product",
     "ProductModifierGroup",
     "Shift",

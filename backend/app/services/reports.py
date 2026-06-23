@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy import extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -14,6 +15,7 @@ from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.product import Product
+from app.models.shift import Shift
 from app.models.staff import Staff
 from app.schemas.report import (
     CategoryBreakdown,
@@ -25,6 +27,7 @@ from app.schemas.report import (
     ProductPerformance,
     ProductReportResponse,
     SalesSummaryResponse,
+    ShiftCashReconciliation,
     StaffPerformance,
     StaffReportResponse,
     WeeklyReportResponse,
@@ -79,6 +82,76 @@ def _apply_outlet_filter(stmt, outlet_id: UUID | None, *, model=Order):
     if outlet_id is not None:
         return stmt.where(model.outlet_id == outlet_id)
     return stmt
+
+
+def _quantize_money(value: Decimal) -> Decimal:
+    """Return a two-decimal money value."""
+    return value.quantize(Decimal("0.01"))
+
+
+# ---------------------------------------------------------------------------
+# Shift cash reconciliation
+# ---------------------------------------------------------------------------
+
+
+async def get_shift_cash_reconciliation(
+    db: AsyncSession,
+    shift_id: UUID,
+) -> ShiftCashReconciliation:
+    """Return expected vs actual cash for a single shift."""
+    shift = await db.get(Shift, shift_id)
+    if shift is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shift not found",
+        )
+
+    ended_at = shift.clock_out or datetime.now(UTC)
+    cash_stmt = select(
+        func.coalesce(
+            func.sum(
+                func.coalesce(Order.cash_tendered, 0)
+                - func.coalesce(Order.cash_change, 0)
+            ),
+            0,
+        ).label("expected_cash"),
+        func.count(Order.id).label("cash_orders_count"),
+    ).where(
+        Order.staff_id == shift.staff_id,
+        Order.outlet_id == shift.outlet_id,
+        Order.created_at >= shift.clock_in,
+        Order.created_at <= ended_at,
+        Order.payment_method == "cash",
+        Order.status == OrderStatus.paid,
+    )
+    result = await db.execute(cash_stmt)
+    row = result.one()
+
+    expected_cash = _quantize_money(Decimal(str(row.expected_cash or 0)))
+    actual_cash = (
+        _quantize_money(Decimal(str(shift.actual_cash)))
+        if shift.actual_cash is not None
+        else None
+    )
+
+    variance = Decimal("0.00")
+    variance_percent = 0.0
+    if actual_cash is not None:
+        variance = _quantize_money(actual_cash - expected_cash)
+        if expected_cash != 0:
+            variance_percent = float((variance / expected_cash) * Decimal("100"))
+
+    return ShiftCashReconciliation(
+        shift_id=shift.id,
+        staff_id=shift.staff_id,
+        started_at=shift.clock_in,
+        ended_at=shift.clock_out,
+        expected_cash=expected_cash,
+        actual_cash=actual_cash,
+        variance=variance,
+        variance_percent=variance_percent,
+        cash_orders_count=int(row.cash_orders_count or 0),
+    )
 
 
 # ---------------------------------------------------------------------------

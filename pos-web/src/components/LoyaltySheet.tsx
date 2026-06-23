@@ -50,6 +50,12 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
   const [flash, setFlash] = useState(false);
   const isStartingRef = useRef(false);
   const lastDetectedRef = useRef<string>('');
+  const onDetectedRef = useRef(onDetected);
+
+  // Keep ref updated without causing re-renders
+  useEffect(() => {
+    onDetectedRef.current = onDetected;
+  }, [onDetected]);
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -108,7 +114,7 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
           // ignore
         }
 
-        onDetected(trimmed);
+        onDetectedRef.current(trimmed);
       };
 
       const handleFrameError = () => {
@@ -180,7 +186,7 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
     } finally {
       isStartingRef.current = false;
     }
-  }, [onDetected]);
+  }, []);
 
   // Manage start/stop/pause/resume based on paused prop
   useEffect(() => {

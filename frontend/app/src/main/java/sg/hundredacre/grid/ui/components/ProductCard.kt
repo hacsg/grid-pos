@@ -70,14 +70,14 @@ fun ProductCard(
     ) {
         Box {
             Column {
-                // Product image (100dp height for 15.6" display, rounded top corners)
+                // Product image (80dp height, rounded top corners)
                 if (imageUrl != null) {
                     AsyncImage(
                         model = imageUrl,
                         contentDescription = title,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(100.dp)
+                            .height(80.dp)
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                         contentScale = ContentScale.Crop
                     )
@@ -86,7 +86,7 @@ fun ProductCard(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(100.dp)
+                            .height(80.dp)
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                             .background(GridBorder),
                         contentAlignment = Alignment.Center
@@ -95,7 +95,7 @@ fun ProductCard(
                             text = title.take(1),
                             fontFamily = InterFontFamily,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 28.sp,
+                            fontSize = 24.sp,
                             color = GridTextPrimary.copy(alpha = 0.3f)
                         )
                     }
@@ -105,12 +105,12 @@ fun ProductCard(
                 Column(
                     modifier = Modifier.padding(8.dp)
                 ) {
-                    // Title: 15sp Semibold, 2 lines max (larger for 15.6")
+                    // Title: 14sp Semibold, 2 lines max
                     Text(
                         text = title,
                         fontFamily = InterFontFamily,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         color = GridTextPrimary
@@ -118,9 +118,9 @@ fun ProductCard(
 
                     Spacer(modifier = Modifier.size(4.dp))
 
-                    // Price: 18sp Bold, #2D5F5D — S$ for Singapore
+                    // Price: 18sp Bold, #2D5F5D
                     Text(
-                        text = "S$${String.format("%.2f", price)}",
+                        text = "$${String.format("%.2f", price)}",
                         fontFamily = InterFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,

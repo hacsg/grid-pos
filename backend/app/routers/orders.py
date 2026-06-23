@@ -109,6 +109,7 @@ async def update_order_status(
         payload.status,
         payment_method=payload.payment_method,
         payment_reference=payload.payment_reference,
+        cash_tendered=payload.cash_tendered,
     )
 
 

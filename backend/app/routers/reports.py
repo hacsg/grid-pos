@@ -13,10 +13,12 @@ from app.schemas.report import (
     OutletReportResponse,
     ProductReportResponse,
     SalesSummaryResponse,
+    ShiftCashReconciliation,
     StaffReportResponse,
     WeeklyReportResponse,
 )
 from app.services.reports import (
+    get_shift_cash_reconciliation,
     get_daily_report,
     get_monthly_report,
     get_outlet_report,
@@ -34,6 +36,15 @@ async def sales_summary(db: AsyncSession = Depends(get_db)) -> SalesSummaryRespo
     """Return today's total sales, order count, and average order value."""
     today = datetime.now(UTC).date()
     return await get_sales_summary(db, today)
+
+
+@router.get("/cash-reconciliation", response_model=ShiftCashReconciliation)
+async def cash_reconciliation(
+    shift_id: UUID = Query(..., description="Shift ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ShiftCashReconciliation:
+    """Return expected vs actual cash for a shift."""
+    return await get_shift_cash_reconciliation(db, shift_id)
 
 
 @router.get("/daily", response_model=DailyReportResponse)

@@ -254,6 +254,7 @@ async def update_order_status_service(
     new_status: OrderStatus,
     payment_method: str | None = None,
     payment_reference: str | None = None,
+    cash_tendered: Decimal | None = None,
 ) -> Order:
     """Update order status with transition validation."""
     order = await load_order_or_404(db, order_id)
@@ -263,6 +264,10 @@ async def update_order_status_service(
         order.payment_method = payment_method
     if payment_reference is not None:
         order.payment_reference = payment_reference
+    if cash_tendered is not None:
+        order.cash_tendered = cash_tendered
+        # Calculate change: cash_tendered - total (if positive, otherwise 0)
+        order.cash_change = max(Decimal("0"), cash_tendered - order.total)
     await db.commit()
 
     result = await db.execute(

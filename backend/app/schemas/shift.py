@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.schemas.common import ORMModel, UUIDSchema
+from app.schemas.common import Money, ORMModel, UUIDSchema
 
 
 class ShiftRead(UUIDSchema):
@@ -18,6 +18,8 @@ class ShiftRead(UUIDSchema):
     clock_out: datetime | None = None
     orders_processed: int | None = 0
     total_sales: Decimal | None = Field(default=Decimal("0.00"), max_digits=10, decimal_places=2)
+    expected_cash: Money | None = None
+    actual_cash: Money | None = None
     created_at: datetime
 
 
@@ -41,6 +43,12 @@ class ClockOutResponse(ORMModel):
     orders_processed: int
     total_sales: Decimal
     message: str = "Clocked out successfully"
+
+
+class ShiftCloseRequest(ORMModel):
+    """Payload for closing a shift with counted drawer cash."""
+
+    actual_cash: Money = Field(..., ge=0)
 
 
 class ShiftSummary(ORMModel):

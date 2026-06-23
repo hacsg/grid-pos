@@ -1,10 +1,13 @@
 package sg.hundredacre.grid.payments
 
+import sg.hundredacre.grid.payments.kpay.KPayCredentials
+import sg.hundredacre.grid.payments.kpay.KPayTerminalAdapter
+
 /**
  * Supported payment providers in Grid POS.
  *
  * - [STRIPE_TAP_TO_PAY]:  Stripe Terminal SDK — NFC Tap to Pay on Android.
- * - [KPAY_WIRED]:         KPay wired terminal via USB or Bluetooth.
+ * - [KPAY_WIRED]:         KPay POS LAN (2-in-1 mode) on http://127.0.0.1:18080.
  * - [HITPAY_WIRED]:       HitPay wired terminal via USB or Bluetooth.
  */
 enum class PaymentProvider(val displayName: String) {
@@ -33,25 +36,20 @@ enum class PaymentProvider(val displayName: String) {
  * Factory that creates the appropriate [PaymentAdapter] for a given [PaymentProvider].
  *
  * [StripePaymentAdapter] is a Hilt singleton (wraps [StripeTerminalManager]).
- * [WiredTerminalAdapter] instances are created on demand with the correct label and
- * connection type — they are stateless placeholders until the real protocol is implemented.
+ * [KPayTerminalAdapter] is created for KPAY_WIRED with real LAN API client.
+ * Other wired providers still use the placeholder [WiredTerminalAdapter].
  */
 class PaymentAdapterFactory @javax.inject.Inject constructor(
-    private val stripePaymentAdapter: StripePaymentAdapter
+    private val stripePaymentAdapter: StripePaymentAdapter,
+    private val kpayCredentials: KPayCredentials
 ) {
     /**
      * Return the [PaymentAdapter] matching the given [provider].
-     *
-     * Stripe adapters are singletons shared across the app.
-     * Wired terminal adapters are created fresh each time (they have no persistent state).
      */
     fun create(provider: PaymentProvider): PaymentAdapter {
         return when (provider) {
             PaymentProvider.STRIPE_TAP_TO_PAY -> stripePaymentAdapter
-            PaymentProvider.KPAY_WIRED -> WiredTerminalAdapter(
-                providerLabel = provider.displayName,
-                connectionType = WiredConnectionType.USB
-            )
+            PaymentProvider.KPAY_WIRED -> KPayTerminalAdapter(credentials = kpayCredentials)
             PaymentProvider.HITPAY_WIRED -> WiredTerminalAdapter(
                 providerLabel = provider.displayName,
                 connectionType = WiredConnectionType.BLUETOOTH

@@ -43,6 +43,12 @@ class Shift(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     total_sales: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 2), nullable=True, default=Decimal("0.00")
     )
+    expected_cash: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    actual_cash: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
 
     staff = relationship("Staff", backref="shifts")
     outlet = relationship("Outlet", backref="shifts")

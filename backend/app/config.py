@@ -22,6 +22,11 @@ class Settings(BaseSettings):
         default="https://plotholders-api-production.up.railway.app",
         alias="PLOT_HOLDERS_API_URL",
     )
+    kpay_daemon_token: str = Field(
+        default="",
+        alias="KPAY_DAEMON_TOKEN",
+        description="Shared token for Go daemon WebSocket authentication",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

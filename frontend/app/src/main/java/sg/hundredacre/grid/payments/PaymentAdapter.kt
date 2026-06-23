@@ -70,4 +70,19 @@ interface PaymentAdapter {
      * Check whether the adapter is currently connected to a terminal/reader.
      */
     fun isConnected(): Boolean
+
+    /**
+     * Refund a previous transaction.
+     *
+     * @param transactionRef The original transaction reference (transactionNo or outTradeNo).
+     * @param amountCents Amount to refund in cents.
+     */
+    suspend fun refund(transactionRef: String, amountCents: Long): Flow<PaymentState>
+
+    /**
+     * Void/Cancel a previous transaction.
+     *
+     * @param transactionRef The original transaction reference.
+     */
+    suspend fun void(transactionRef: String): Flow<PaymentState>
 }

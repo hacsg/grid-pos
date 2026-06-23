@@ -11,7 +11,6 @@ import sg.hundredacre.grid.data.models.Order
 import sg.hundredacre.grid.data.models.OrderItem
 import sg.hundredacre.grid.data.models.Product
 import sg.hundredacre.grid.data.models.ProductModifier
-import sg.hundredacre.grid.sync.SyncManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -59,15 +58,13 @@ class CartRepository @Inject constructor(
 
 @Singleton
 class OrderRepository @Inject constructor(
-    private val orderDao: OrderDao,
-    private val syncManager: SyncManager
+    private val orderDao: OrderDao
 ) {
     fun getAllOrders(): Flow<List<Order>> = orderDao.getAllOrders()
 
     suspend fun createOrder(order: Order, items: List<OrderItem>): Long {
         val orderId = orderDao.insertOrder(order)
         orderDao.insertOrderItems(items.map { it.copy(orderId = orderId) })
-        syncManager.trackNewOrder(orderId) // ← enqueue background sync
         return orderId
     }
 
