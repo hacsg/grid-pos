@@ -316,6 +316,11 @@ export default function LoyaltySheet({
   const [scannerPaused, setScannerPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const loadingRef = useRef(loading);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
+
+  const onCustomerSelectRef = useRef(onCustomerSelect);
+  useEffect(() => { onCustomerSelectRef.current = onCustomerSelect; }, [onCustomerSelect]);
 
   const rewards = useMemo(() => deriveRewards(selectedCustomer), [selectedCustomer]);
   const lifetimeMoments = selectedCustomer?.lifetime_moments ?? selectedCustomer?.points ?? 0;
@@ -371,7 +376,7 @@ export default function LoyaltySheet({
 
   const handleQrDetected = useCallback((detectedCode: string) => {
     const trimmed = detectedCode.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loadingRef.current) return;
 
     setLookupCode(trimmed);
     setScannerPaused(true);
@@ -381,7 +386,7 @@ export default function LoyaltySheet({
       try {
         setLoading(true);
         const customer = await lookupLoyalty(trimmed);
-        onCustomerSelect(customer);
+        onCustomerSelectRef.current(customer);
         setLookupCode('');
         setShowScanner(false);
       } catch {
@@ -392,7 +397,7 @@ export default function LoyaltySheet({
         setLoading(false);
       }
     })();
-  }, [loading, lookupLoyalty, onCustomerSelect]);
+  }, [lookupLoyalty]);
 
   return (
     <div className="modal-backdrop" role="presentation">

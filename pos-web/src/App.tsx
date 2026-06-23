@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
@@ -363,20 +363,20 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     setDiscount(null);
   }
 
-  function handleCustomerSelect(customer: LoyaltyMember) {
+  const handleCustomerSelect = useCallback((customer: LoyaltyMember) => {
     setLoyalty((current) => ({
       customer,
       reward: current?.customer.member_id === customer.member_id ? current.reward : null,
     }));
-  }
+  }, []);
 
-  function handleRedeem(reward: LoyaltyReward) {
+  const handleRedeem = useCallback((reward: LoyaltyReward) => {
     tapFeedback();
-    if (!loyalty?.customer) {
-      return;
-    }
-    setLoyalty({ customer: loyalty.customer, reward });
-  }
+    setLoyalty((current) => {
+      if (!current?.customer) return current;
+      return { customer: current.customer, reward };
+    });
+  }, []);
 
   function handleApplyVoucher(v: AppliedVoucher) {
     tapFeedback();
@@ -398,6 +398,15 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     setVouchers([]);
     setCartOpen(false);
   }
+
+  const handleCloseLoyalty = useCallback(() => setLoyaltyOpen(false), []);
+
+  const handleSkipLoyalty = useCallback(() => {
+    setLoyalty(null);
+    setLoyaltyOpen(false);
+  }, []);
+
+  const handleContinueLoyalty = useCallback(() => setLoyaltyOpen(false), []);
 
   if (!session) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -468,14 +477,11 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           open={loyaltyOpen}
           selectedCustomer={loyalty?.customer ?? null}
           selectedReward={loyalty?.reward ?? null}
-          onClose={() => setLoyaltyOpen(false)}
+          onClose={handleCloseLoyalty}
           onCustomerSelect={handleCustomerSelect}
           onRedeem={handleRedeem}
-          onSkip={() => {
-            setLoyalty(null);
-            setLoyaltyOpen(false);
-          }}
-          onContinue={() => setLoyaltyOpen(false)}
+          onSkip={handleSkipLoyalty}
+          onContinue={handleContinueLoyalty}
         />
       </ErrorBoundary>
       <VoucherSheet
