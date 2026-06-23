@@ -1,17 +1,25 @@
 """Outlet management API routes."""
 
+import base64
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.outlet import Outlet
-from app.schemas.outlet import OutletCreate, OutletRead, OutletUpdate
+from app.schemas.outlet import OutletCreate, OutletRead, OutletUpdate, PayNowQrRead
 
 router = APIRouter(prefix="/outlets", tags=["outlets"])
+
+PAYNOW_QR_MAX_BYTES = 500 * 1024
+PAYNOW_QR_CONTENT_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/jpg": "jpeg",
+}
 
 
 async def load_outlet_or_404(db: AsyncSession, outlet_id: UUID) -> Outlet:
@@ -52,6 +60,55 @@ async def get_outlet(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> Out
     return await load_outlet_or_404(db, outlet_id)
 
 
+@router.get("/{outlet_id}/paynow-qr", response_model=PayNowQrRead)
+async def get_paynow_qr(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> PayNowQrRead:
+    """Return the current manual PayNow QR for customer display."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    return PayNowQrRead(outlet_id=outlet.id, paynow_qr_url=outlet.paynow_qr_url)
+
+
+@router.put("/{outlet_id}/paynow-qr", response_model=PayNowQrRead)
+async def upload_paynow_qr(
+    outlet_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> PayNowQrRead:
+    """Upload or replace the manual PayNow QR code for an outlet."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    content_type = (file.content_type or "").lower()
+    image_type = PAYNOW_QR_CONTENT_TYPES.get(content_type)
+    if image_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PayNow QR must be a PNG or JPG image",
+        )
+
+    content = await file.read(PAYNOW_QR_MAX_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PayNow QR image is empty")
+    if len(content) > PAYNOW_QR_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="PayNow QR image must be 500KB or smaller",
+        )
+
+    encoded = base64.b64encode(content).decode("ascii")
+    outlet.paynow_qr_url = f"data:image/{image_type};base64,{encoded}"
+    await db.commit()
+    await db.refresh(outlet)
+    return PayNowQrRead(outlet_id=outlet.id, paynow_qr_url=outlet.paynow_qr_url)
+
+
+@router.delete("/{outlet_id}/paynow-qr", response_model=PayNowQrRead)
+async def delete_paynow_qr(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> PayNowQrRead:
+    """Remove the manual PayNow QR code for an outlet."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    outlet.paynow_qr_url = None
+    await db.commit()
+    await db.refresh(outlet)
+    return PayNowQrRead(outlet_id=outlet.id, paynow_qr_url=None)
+
+
 @router.patch("/{outlet_id}", response_model=OutletRead)
 async def update_outlet(
     outlet_id: UUID,
@@ -81,4 +138,3 @@ async def delete_outlet(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> 
     await db.delete(outlet)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

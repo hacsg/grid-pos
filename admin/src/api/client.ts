@@ -343,6 +343,7 @@ export const getOutlets = async (params?: {
     name: o.name as string,
     address: o.address as string,
     phone: (o.phone as string | null) ?? null,
+    paynow_qr_url: (o.paynow_qr_url as string | null) ?? null,
     created_at: o.created_at as string,
     updated_at: o.updated_at as string,
   }));
@@ -369,6 +370,27 @@ export const updateOutlet = async (id: string, outlet: Partial<OutletFormData>):
 export const deleteOutlet = async (id: string): Promise<void> => {
   await api.delete(`/outlets/${id}`);
   toast.success('Outlet deleted successfully');
+};
+
+export interface PayNowQrResponse {
+  outlet_id: string;
+  paynow_qr_url: string | null;
+}
+
+export const uploadPayNowQr = async (id: string, file: File): Promise<PayNowQrResponse> => {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.put<PayNowQrResponse>(`/outlets/${id}/paynow-qr`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  toast.success('PayNow QR updated');
+  return data;
+};
+
+export const deletePayNowQr = async (id: string): Promise<PayNowQrResponse> => {
+  const { data } = await api.delete<PayNowQrResponse>(`/outlets/${id}/paynow-qr`);
+  toast.success('PayNow QR removed');
+  return data;
 };
 
 // Reports

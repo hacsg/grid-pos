@@ -21,6 +21,7 @@ export interface OrderSnapshot {
 export type DisplayMessage =
   | { type: 'ORDER_UPDATE'; payload: OrderSnapshot }
   | { type: 'PAYMENT_START'; payload: { total: number } }
+  | { type: 'PAYNOW_QR'; payload: { qrUrl: string; total: number } }
   | { type: 'PAYMENT_COMPLETE'; payload: { total: number; pointsEarned?: number | null } }
   | { type: 'ORDER_COMPLETE' };
 

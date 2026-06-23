@@ -1,5 +1,7 @@
 """Outlet request and response schemas."""
 
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 from app.schemas.common import TimestampSchema
@@ -28,3 +30,11 @@ class OutletUpdate(BaseModel):
 class OutletRead(OutletBase, TimestampSchema):
     """Outlet response payload."""
 
+    paynow_qr_url: str | None = None
+
+
+class PayNowQrRead(BaseModel):
+    """Current PayNow QR data URL for an outlet."""
+
+    outlet_id: UUID
+    paynow_qr_url: str | None = None

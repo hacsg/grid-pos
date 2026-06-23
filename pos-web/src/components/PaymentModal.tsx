@@ -5,6 +5,7 @@ import {
   applyVouchersToOrder,
   createOrder,
   formatCurrency,
+  getPayNowQr,
   money,
   redeemLoyalty,
   updateOrderStatus,
@@ -45,6 +46,8 @@ interface ReceiptSnapshot {
   cardAmount: number;
   voucherAmount: number;
   changeDue: number;
+  manualPayNow: boolean;
+  paynowConfirmedAt?: string | null;
 }
 
 interface CardPaymentSession {
@@ -75,8 +78,24 @@ function terminalMethodLabel(method: TerminalPaymentMethod): string {
   return method === 'paynow' ? 'PayNow' : 'Card';
 }
 
+function formatReceiptTime(value?: string | null): string {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toLocaleTimeString('en-SG', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function receiptPaymentLines(receipt: ReceiptSnapshot): string[] {
   if (receipt.paymentMode !== 'split') {
+    if (receipt.paymentMode === 'paynow' && receipt.manualPayNow) {
+      return [
+        'Payment: PayNow (Manual)',
+        `Amount: ${formatCurrency(receipt.cardAmount)}`,
+        `Confirmed: ${formatReceiptTime(receipt.paynowConfirmedAt)}`,
+      ];
+    }
     return [`Payment: ${paymentModeLabel(receipt.paymentMode)}`];
   }
 
@@ -85,10 +104,17 @@ function receiptPaymentLines(receipt: ReceiptSnapshot): string[] {
     lines.push(`  Cash: ${formatCurrency(receipt.cashAmount)}`);
   }
   if (receipt.cardAmount > 0) {
-    lines.push(`  ${terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card')}: ${formatCurrency(receipt.cardAmount)}`);
+    const label =
+      receipt.manualPayNow && receipt.terminalPaymentMethod === 'paynow'
+        ? 'PayNow (Manual)'
+        : terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card');
+    lines.push(`  ${label}: ${formatCurrency(receipt.cardAmount)}`);
   }
   if (receipt.voucherAmount > 0) {
     lines.push(`  Voucher: ${formatCurrency(receipt.voucherAmount)}`);
+  }
+  if (receipt.manualPayNow) {
+    lines.push(`Confirmed: ${formatReceiptTime(receipt.paynowConfirmedAt)}`);
   }
   return lines;
 }
@@ -215,6 +241,9 @@ export default function PaymentModal({
   const [error, setError] = useState('');
   const [terminalConnected, setTerminalConnected] = useState<boolean | null>(null);
   const [cardPayment, setCardPayment] = useState<CardPaymentSession | null>(null);
+  const [payNowQrUrl, setPayNowQrUrl] = useState<string | null>(null);
+  const [payNowQrLoading, setPayNowQrLoading] = useState(false);
+  const [payNowQrError, setPayNowQrError] = useState('');
 
   useEffect(() => {
     if (!open) {
@@ -227,6 +256,9 @@ export default function PaymentModal({
       setError('');
       setTerminalConnected(null);
       setCardPayment(null);
+      setPayNowQrUrl(null);
+      setPayNowQrLoading(false);
+      setPayNowQrError('');
     }
   }, [open]);
 
@@ -260,10 +292,26 @@ export default function PaymentModal({
   const splitCashAmount = mode === 'split' ? roundMoney(Math.min(Math.max(cashTendered, 0), totalDue)) : 0;
   const splitTerminalAmount = mode === 'split' ? roundMoney(Math.max(0, totalDue - splitCashAmount)) : 0;
   const splitCashInputValid = cashTendered >= 0 && cashTendered <= totalDue;
-  const requiresTerminal =
-    mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0);
   const terminalMethod: TerminalPaymentMethod =
     mode === 'paynow' ? 'paynow' : mode === 'split' ? splitSecondMethod : 'card';
+  const manualPayNowAmount =
+    mode === 'paynow'
+      ? totalDue
+      : mode === 'split' && splitSecondMethod === 'paynow' && splitTerminalAmount > 0
+        ? splitTerminalAmount
+        : 0;
+  const manualPayNowEligible = manualPayNowAmount > 0;
+  const manualPayNowActive = terminalConnected === false && manualPayNowEligible;
+  const manualPayNowReady = manualPayNowActive && !payNowQrLoading && Boolean(payNowQrUrl);
+  const terminalUnavailable =
+    terminalConnected === false &&
+    (mode === 'card' || (mode === 'split' && splitSecondMethod === 'card' && splitTerminalAmount > 0));
+  const requiresTerminal =
+    mode === 'card' ||
+    (mode === 'paynow' && !manualPayNowActive) ||
+    (mode === 'split' &&
+      splitTerminalAmount > 0 &&
+      (splitSecondMethod === 'card' || !manualPayNowActive));
   const changeDue = mode === 'cash' ? roundMoney(Math.max(0, cashTendered - totalDue)) : 0;
   const cashDue = mode === 'cash' ? totalDue : splitCashAmount;
 
@@ -271,24 +319,95 @@ export default function PaymentModal({
     items.length > 0 &&
     !submitting &&
     ((mode === 'card' && terminalConnected !== false) ||
-      (mode === 'paynow' && terminalConnected !== false) ||
+      (mode === 'paynow' && (terminalConnected !== false || manualPayNowReady)) ||
       (mode === 'cash' && cashTendered >= totalDue) ||
       (mode === 'split' &&
         splitCashInputValid &&
         (splitCashAmount > 0 || splitTerminalAmount > 0 || voucherAmount > 0) &&
-        (!requiresTerminal || terminalConnected !== false)));
+        (splitTerminalAmount <= 0 ||
+          (splitSecondMethod === 'card'
+            ? terminalConnected !== false
+            : terminalConnected !== false || manualPayNowReady))));
 
   useEffect(() => {
     if (mode === 'split' && !splitCashInputValid) {
       setError('Cash amount must be between zero and the payable total');
       return;
     }
-    if (requiresTerminal && terminalConnected === false) {
+    if (terminalUnavailable) {
       setError('Payment terminal offline');
       return;
     }
+    if (manualPayNowActive && !payNowQrLoading && !payNowQrUrl) {
+      setError(payNowQrError || 'Manual PayNow QR code is not configured');
+      return;
+    }
     setError('');
-  }, [mode, requiresTerminal, splitCashInputValid, terminalConnected]);
+  }, [
+    manualPayNowActive,
+    mode,
+    payNowQrError,
+    payNowQrLoading,
+    payNowQrUrl,
+    splitCashInputValid,
+    terminalUnavailable,
+  ]);
+
+  useEffect(() => {
+    if (!open || step !== 'payment' || !manualPayNowActive) {
+      setPayNowQrLoading(false);
+      setPayNowQrError('');
+      return;
+    }
+
+    let cancelled = false;
+    setPayNowQrLoading(true);
+    setPayNowQrError('');
+
+    getPayNowQr(session.outlet.id)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setPayNowQrUrl(response.paynow_qr_url);
+        if (!response.paynow_qr_url) {
+          setPayNowQrError('Manual PayNow QR code is not configured');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPayNowQrUrl(null);
+          setPayNowQrError('Manual PayNow QR code could not be loaded');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPayNowQrLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [manualPayNowActive, open, session.outlet.id, step]);
+
+  useEffect(() => {
+    if (!open || step !== 'payment' || !manualPayNowActive || !payNowQrUrl) {
+      return;
+    }
+
+    try {
+      broadcast({
+        type: 'PAYNOW_QR',
+        payload: {
+          qrUrl: payNowQrUrl,
+          total: manualPayNowAmount,
+        },
+      });
+    } catch {
+      // Customer display is optional.
+    }
+  }, [manualPayNowActive, manualPayNowAmount, open, payNowQrUrl, step]);
 
   useEffect(() => {
     if (!open || step !== 'processing' || !cardPayment) {
@@ -410,7 +529,9 @@ export default function PaymentModal({
   }
 
   const terminalStatusText =
-    terminalConnected === null
+    manualPayNowActive
+      ? 'Terminal offline - Manual PayNow'
+      : terminalConnected === null
       ? 'Checking terminal...'
       : terminalConnected
         ? 'Terminal connected ✓'
@@ -419,6 +540,8 @@ export default function PaymentModal({
     ? step === 'processing'
       ? 'Processing payment...'
       : 'Processing...'
+    : manualPayNowActive
+      ? 'Payment received'
     : requiresTerminal && error && terminalConnected !== false
       ? `Retry ${mode === 'split' ? 'split' : mode === 'paynow' ? 'PayNow' : paymentModeLabel(mode).toLowerCase()} payment`
         : 'Complete payment';
@@ -474,6 +597,8 @@ export default function PaymentModal({
       cardAmount?: number;
       voucherAmount?: number;
       changeDue?: number;
+      manualPayNow?: boolean;
+      paynowConfirmedAt?: string | null;
     }
   ) {
     const snapshot: ReceiptSnapshot = {
@@ -489,6 +614,8 @@ export default function PaymentModal({
       cardAmount: paymentDetails?.cardAmount ?? (paidMode === 'card' || paidMode === 'paynow' ? totalDue : 0),
       voucherAmount: paymentDetails?.voucherAmount ?? 0,
       changeDue: paymentDetails?.changeDue ?? (paidMode === 'cash' ? changeDue : 0),
+      manualPayNow: paymentDetails?.manualPayNow ?? false,
+      paynowConfirmedAt: paymentDetails?.paynowConfirmedAt ?? paidOrder.paynow_confirmed_at ?? null,
     };
     setReceipt(snapshot);
     setStep('complete');
@@ -512,13 +639,39 @@ export default function PaymentModal({
     onOrderComplete();
   }
 
+  function renderManualPayNowPanel(amount: number) {
+    return (
+      <div className="manual-paynow-panel">
+        <div className="manual-paynow-banner">
+          <QrCode size={18} aria-hidden="true" />
+          <span>Terminal offline - Manual PayNow</span>
+        </div>
+        <strong>{formatCurrency(amount)}</strong>
+        <div className="manual-paynow-qr">
+          {payNowQrLoading ? (
+            <Loader2 className="spin-icon" size={34} aria-hidden="true" />
+          ) : payNowQrUrl ? (
+            <img src={payNowQrUrl} alt="Manual PayNow QR code" />
+          ) : (
+            <QrCode size={54} aria-hidden="true" />
+          )}
+        </div>
+        <span>{payNowQrUrl ? 'Scan and pay, then confirm below' : payNowQrError || 'No QR code configured'}</span>
+      </div>
+    );
+  }
+
   async function completePayment() {
     if (!canComplete) {
       return;
     }
-    if (requiresTerminal && terminalConnected === false) {
+    if (terminalUnavailable) {
       setError('Payment terminal offline');
       toast.error('Payment terminal offline');
+      return;
+    }
+    if (manualPayNowActive && !payNowQrUrl) {
+      setError(payNowQrError || 'Manual PayNow QR code is not configured');
       return;
     }
 
@@ -526,12 +679,46 @@ export default function PaymentModal({
     setError('');
 
     try {
-      const paymentReference = `POS-${Date.now()}`;
+      const paymentReference = manualPayNowActive ? 'MANUAL' : `POS-${Date.now()}`;
       const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
 
       const pendingOrder = await createPendingOrder(paymentReference, voucherCodes, mode);
 
-      if (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0)) {
+      if (manualPayNowActive) {
+        const confirmedAt = new Date().toISOString();
+        const paidOrder =
+          mode === 'split'
+            ? await updateOrderStatus(pendingOrder.id, {
+                status: 'paid',
+                payment_method: 'split',
+                payment_reference: paymentReference,
+                cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
+                cash_amount: splitCashAmount,
+                card_amount: splitTerminalAmount,
+                voucher_amount: voucherAmount,
+                paynow_confirmed_at: confirmedAt,
+              })
+            : await updateOrderStatus(pendingOrder.id, {
+                status: 'paid',
+                payment_method: 'paynow',
+                payment_reference: paymentReference,
+                paynow_confirmed_at: confirmedAt,
+              });
+
+        completePaidOrder(paidOrder, mode, {
+          terminalPaymentMethod: 'paynow',
+          cashAmount: mode === 'split' ? splitCashAmount : 0,
+          cardAmount: mode === 'split' ? splitTerminalAmount : totalDue,
+          voucherAmount: mode === 'split' ? voucherAmount : 0,
+          changeDue: 0,
+          manualPayNow: true,
+          paynowConfirmedAt: paidOrder.paynow_confirmed_at ?? confirmedAt,
+        });
+        toast.success('Manual PayNow confirmed');
+        return;
+      }
+
+      if (requiresTerminal && (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0))) {
         const paymentAmount = mode === 'split' ? splitTerminalAmount : totalDue;
         try {
           const intent = await startCardPayment(pendingOrder.id, paymentAmount);
@@ -693,17 +880,21 @@ export default function PaymentModal({
               )}
 
               {(mode === 'card' || mode === 'paynow') && (
-                <div className="terminal-panel">
-                  {mode === 'paynow' ? <QrCode size={32} aria-hidden="true" /> : <CreditCard size={32} aria-hidden="true" />}
-                  <strong>{formatCurrency(totalDue)}</strong>
-                  <span>
-                    {terminalConnected === false
-                      ? 'Terminal offline'
-                      : mode === 'paynow'
-                        ? 'PayNow QR'
-                        : 'Tap to pay'}
-                  </span>
-                </div>
+                mode === 'paynow' && manualPayNowActive ? (
+                  renderManualPayNowPanel(totalDue)
+                ) : (
+                  <div className="terminal-panel">
+                    {mode === 'paynow' ? <QrCode size={32} aria-hidden="true" /> : <CreditCard size={32} aria-hidden="true" />}
+                    <strong>{formatCurrency(totalDue)}</strong>
+                    <span>
+                      {terminalConnected === false
+                        ? 'Terminal offline'
+                        : mode === 'paynow'
+                          ? 'PayNow QR'
+                          : 'Tap to pay'}
+                    </span>
+                  </div>
+                )
               )}
 
               {mode === 'split' && (
@@ -746,7 +937,7 @@ export default function PaymentModal({
                       <strong>{formatCurrency(splitCashAmount)}</strong>
                     </div>
                     <div>
-                      <span>{terminalMethodLabel(splitSecondMethod)}</span>
+                      <span>{manualPayNowActive ? 'PayNow (Manual)' : terminalMethodLabel(splitSecondMethod)}</span>
                       <strong>{formatCurrency(splitTerminalAmount)}</strong>
                     </div>
                     {voucherAmount > 0 && (
@@ -756,6 +947,7 @@ export default function PaymentModal({
                       </div>
                     )}
                   </div>
+                  {manualPayNowActive && renderManualPayNowPanel(splitTerminalAmount)}
                 </div>
               )}
 
@@ -799,7 +991,7 @@ export default function PaymentModal({
                       <strong>{formatCurrency(splitCashAmount)}</strong>
                     </div>
                     <div>
-                      <span>{terminalMethodLabel(splitSecondMethod)}</span>
+                      <span>{manualPayNowActive ? 'PayNow (Manual)' : terminalMethodLabel(splitSecondMethod)}</span>
                       <strong>{formatCurrency(splitTerminalAmount)}</strong>
                     </div>
                   </>
@@ -917,7 +1109,11 @@ export default function PaymentModal({
                       )}
                       {receipt.cardAmount > 0 && (
                         <div>
-                          <span>{terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card')}</span>
+                          <span>
+                            {receipt.manualPayNow && receipt.terminalPaymentMethod === 'paynow'
+                              ? 'PayNow (Manual)'
+                              : terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card')}
+                          </span>
                           <strong>{formatCurrency(receipt.cardAmount)}</strong>
                         </div>
                       )}
@@ -929,9 +1125,27 @@ export default function PaymentModal({
                       )}
                     </>
                   ) : (
+                    <>
+                      <div>
+                        <span>Payment</span>
+                        <strong>
+                          {receipt.paymentMode === 'paynow' && receipt.manualPayNow
+                            ? 'PayNow (Manual)'
+                            : paymentModeLabel(receipt.paymentMode)}
+                        </strong>
+                      </div>
+                      {receipt.paymentMode === 'paynow' && receipt.manualPayNow && (
+                        <div>
+                          <span>Amount</span>
+                          <strong>{formatCurrency(receipt.cardAmount)}</strong>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {receipt.manualPayNow && (
                     <div>
-                      <span>Payment</span>
-                      <strong>{paymentModeLabel(receipt.paymentMode)}</strong>
+                      <span>Confirmed</span>
+                      <strong>{formatReceiptTime(receipt.paynowConfirmedAt)}</strong>
                     </div>
                   )}
                   {receipt.changeDue > 0 && (

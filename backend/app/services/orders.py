@@ -304,6 +304,7 @@ async def update_order_status_service(
     cash_amount: Decimal | None = None,
     card_amount: Decimal | None = None,
     voucher_amount: Decimal | None = None,
+    paynow_confirmed_at: datetime | None = None,
 ) -> Order:
     """Update order status with transition validation."""
     order = await load_order_or_404(db, order_id)
@@ -342,6 +343,9 @@ async def update_order_status_service(
             order.card_amount = _money_or_zero(card_amount)
         if voucher_amount is not None:
             order.voucher_amount = _money_or_zero(voucher_amount)
+
+    if paynow_confirmed_at is not None:
+        order.paynow_confirmed_at = paynow_confirmed_at
 
     if cash_tendered is not None:
         normalized_cash_tendered = _money_or_zero(cash_tendered)

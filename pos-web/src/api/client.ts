@@ -18,6 +18,7 @@ export interface Outlet extends Timestamped {
   name: string;
   address: string;
   phone: string | null;
+  paynow_qr_url?: string | null;
 }
 
 export interface Modifier extends Timestamped {
@@ -116,6 +117,7 @@ export interface OrderRead extends Timestamped {
   cash_amount?: number | string | null;
   card_amount?: number | string | null;
   voucher_amount?: number | string | null;
+  paynow_confirmed_at?: string | null;
   loyalty_member_id?: string | null;
   loyalty_points_earned?: number | null;
   loyalty_points_redeemed?: number | null;
@@ -136,6 +138,11 @@ export interface OrderRead extends Timestamped {
     modifiers: SelectedModifier[];
     notes: string | null;
   }>;
+}
+
+export interface PayNowQrResponse {
+  outlet_id: string;
+  paynow_qr_url: string | null;
 }
 
 export interface LoyaltyMember {
@@ -351,6 +358,13 @@ export async function getOutlets(): Promise<Outlet[]> {
   return unwrapList(data);
 }
 
+export async function getPayNowQr(outletId: string): Promise<PayNowQrResponse> {
+  const { data } = await api.get<PayNowQrResponse>(`/outlets/${outletId}/paynow-qr`, {
+    silent: true,
+  } as SilentRequestConfig);
+  return data;
+}
+
 export async function loginWithPin(outletId: string, pin: string): Promise<TokenResponse> {
   const { data } = await api.post<TokenResponse>('/auth/login', {
     outlet_id: outletId,
@@ -425,6 +439,7 @@ export async function updateOrderStatus(
     cash_amount?: number;
     card_amount?: number;
     voucher_amount?: number;
+    paynow_confirmed_at?: string;
   }
 ): Promise<OrderRead> {
   const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload);

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { DISPLAY_CHANNEL, type DisplayItem, type DisplayMessage, type OrderSnapshot } from './channel';
 import { formatCurrency } from '@/api/client';
 
-type Phase = 'idle' | 'order' | 'processing' | 'thanks' | 'resetting';
+type Phase = 'idle' | 'order' | 'processing' | 'paynowQr' | 'thanks' | 'resetting';
 
 interface DisplayState {
   phase: Phase;
@@ -10,6 +10,7 @@ interface DisplayState {
   paymentTotal: number | null;
   pointsEarned: number | null;
   brandName: string;
+  paynowQrUrl: string | null;
 }
 
 const IDLE_RESET_DELAY = 5000;
@@ -21,6 +22,7 @@ export default function CustomerDisplay() {
     paymentTotal: null,
     pointsEarned: null,
     brandName: 'HAC',
+    paynowQrUrl: null,
   });
   const [resetTimer, setResetTimer] = useState<number | null>(null);
 
@@ -47,12 +49,12 @@ export default function CustomerDisplay() {
 
         setState((prev) => {
           // During payment or post-payment, ignore ORDER_UPDATE (keeps processing/thanks visible)
-          if (prev.phase === 'processing' || prev.phase === 'thanks' || prev.phase === 'resetting') {
+          if (prev.phase === 'processing' || prev.phase === 'paynowQr' || prev.phase === 'thanks' || prev.phase === 'resetting') {
             return prev;
           }
 
           if (!hasItems) {
-            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName };
+            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName, paynowQrUrl: null };
           }
 
           // Active order
@@ -62,6 +64,7 @@ export default function CustomerDisplay() {
             paymentTotal: null,
             pointsEarned: null,
             brandName,
+            paynowQrUrl: null,
           };
         });
       }
@@ -71,6 +74,18 @@ export default function CustomerDisplay() {
           ...prev,
           phase: 'processing',
           paymentTotal: msg.payload?.total ?? prev.snapshot?.total ?? 0,
+          paynowQrUrl: null,
+        }));
+      }
+
+      if (msg.type === 'PAYNOW_QR') {
+        setState((prev) => ({
+          phase: 'paynowQr',
+          snapshot: null,
+          paymentTotal: msg.payload?.total ?? prev.snapshot?.total ?? prev.paymentTotal ?? 0,
+          pointsEarned: null,
+          brandName: prev.brandName,
+          paynowQrUrl: msg.payload?.qrUrl ?? null,
         }));
       }
 
@@ -89,6 +104,7 @@ export default function CustomerDisplay() {
           paymentTotal: total,
           pointsEarned: points,
           brandName: prev.brandName,
+          paynowQrUrl: null,
         }));
       }
 
@@ -98,14 +114,14 @@ export default function CustomerDisplay() {
           if (prev.phase !== 'thanks') {
             // If somehow we get complete without thanks, just go idle after delay
             const t = window.setTimeout(() => {
-              setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName });
+              setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName, paynowQrUrl: null });
             }, IDLE_RESET_DELAY);
             setResetTimer(t);
             return { ...prev, phase: 'resetting' };
           }
 
           const t = window.setTimeout(() => {
-            setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName });
+            setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName, paynowQrUrl: null });
             setResetTimer(null);
           }, IDLE_RESET_DELAY);
 
@@ -136,7 +152,7 @@ export default function CustomerDisplay() {
     };
   }, [resetTimer]);
 
-  const { phase, snapshot, paymentTotal, pointsEarned, brandName } = state;
+  const { phase, snapshot, paymentTotal, pointsEarned, brandName, paynowQrUrl } = state;
 
   const items: DisplayItem[] = snapshot?.items ?? [];
   const total = snapshot?.total ?? paymentTotal ?? 0;
@@ -228,6 +244,15 @@ export default function CustomerDisplay() {
             </div>
             <div className="display-processing-text">Processing payment…</div>
             <div className="display-processing-total">{formatCurrency(paymentTotal ?? total)}</div>
+          </div>
+        )}
+
+        {/* MANUAL PAYNOW QR */}
+        {phase === 'paynowQr' && paynowQrUrl && (
+          <div className="display-paynow-qr" key={phase}>
+            <div className="display-paynow-message">Scan and pay {formatCurrency(paymentTotal ?? total)}</div>
+            <img src={paynowQrUrl} alt="PayNow QR code" />
+            <div className="display-paynow-amount">{formatCurrency(paymentTotal ?? total)}</div>
           </div>
         )}
 

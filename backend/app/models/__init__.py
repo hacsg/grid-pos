@@ -18,6 +18,7 @@ __all__ = [
     "Category",
     "Campaign",
     "Customer",
+    "LoyaltyMember",
     "Discount",
     "ModifierGroup",
     "ModifierOption",
@@ -35,3 +36,6 @@ __all__ = [
     "Voucher",
     "VoucherType",
 ]
+
+# Backwards-compatible export for older tests/importers; loyalty is proxied through Customer.
+LoyaltyMember = Customer

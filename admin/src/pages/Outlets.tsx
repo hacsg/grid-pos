@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, Plus, Trash2, Upload, XCircle } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Table from '@/components/ui/Table';
 import Button from '@/components/ui/Button';
@@ -10,6 +10,8 @@ import {
   useCreateOutlet,
   useUpdateOutlet,
   useDeleteOutlet,
+  useUploadPayNowQr,
+  useDeletePayNowQr,
 } from '@/hooks/useOutlets';
 import type { Outlet, OutletFormData } from '@/types';
 
@@ -70,6 +72,67 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
   );
 }
 
+function PayNowQrControls({ outlet }: { outlet: Outlet }) {
+  const uploadQr = useUploadPayNowQr();
+  const deleteQr = useDeletePayNowQr();
+  const isBusy = uploadQr.isPending || deleteQr.isPending;
+
+  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    uploadQr.mutate({ outletId: outlet.id, file });
+  };
+
+  const handleDelete = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!window.confirm(`Remove manual PayNow QR for "${outlet.name}"?`)) return;
+    deleteQr.mutate(outlet.id);
+  };
+
+  return (
+    <div className="flex items-center gap-3" onClick={(event) => event.stopPropagation()}>
+      <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-lg border border-gray-200 bg-surface">
+        {outlet.paynow_qr_url ? (
+          <img src={outlet.paynow_qr_url} alt={`${outlet.name} PayNow QR`} className="h-full w-full object-contain" />
+        ) : (
+          <ImageIcon className="h-5 w-5 text-text-muted" />
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <label
+          className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-surface ${
+            isBusy ? 'pointer-events-none opacity-50' : ''
+          }`}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {outlet.paynow_qr_url ? 'Replace' : 'Upload'}
+          <input
+            className="hidden"
+            type="file"
+            accept="image/png,image/jpeg"
+            disabled={isBusy}
+            onChange={handleUpload}
+          />
+        </label>
+        {outlet.paynow_qr_url && (
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface hover:text-error disabled:opacity-50"
+            disabled={isBusy}
+            onClick={handleDelete}
+            aria-label={`Remove ${outlet.name} PayNow QR`}
+            title="Remove QR"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Outlets() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingOutlet, setEditingOutlet] = useState<Outlet | null>(null);
@@ -115,6 +178,11 @@ export default function Outlets() {
       key: 'phone',
       header: 'Phone',
       render: (outlet: Outlet) => outlet.phone || '—',
+    },
+    {
+      key: 'paynow_qr',
+      header: 'Manual PayNow',
+      render: (outlet: Outlet) => <PayNowQrControls outlet={outlet} />,
     },
     {
       key: 'actions',

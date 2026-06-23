@@ -173,6 +173,7 @@ export interface Outlet {
   name: string;
   address: string;
   phone: string | null;
+  paynow_qr_url?: string | null;
   created_at: string;
   updated_at: string;
 }

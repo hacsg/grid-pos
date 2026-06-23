@@ -1,0 +1,7 @@
+# Frontend .railwayignore
+node_modules/
+dist/
+.cache/
+.env
+.env.local
+*.log

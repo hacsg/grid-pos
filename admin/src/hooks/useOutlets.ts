@@ -4,6 +4,8 @@ import {
   createOutlet,
   updateOutlet,
   deleteOutlet,
+  uploadPayNowQr,
+  deletePayNowQr,
 } from '@/api/client';
 import type { OutletFormData } from '@/types';
 
@@ -43,6 +45,26 @@ export function useDeleteOutlet() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outlets'] });
       queryClient.invalidateQueries({ queryKey: ['staff'] });
+    },
+  });
+}
+
+export function useUploadPayNowQr() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ outletId, file }: { outletId: string; file: File }) => uploadPayNowQr(outletId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outlets'] });
+    },
+  });
+}
+
+export function useDeletePayNowQr() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (outletId: string) => deletePayNowQr(outletId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outlets'] });
     },
   });
 }

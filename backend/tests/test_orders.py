@@ -287,6 +287,31 @@ class TestUpdateOrderStatus:
         assert data["payment_method"] == "cash"
         assert data["payment_reference"] == "TXN001"
 
+    async def test_pending_to_paid_manual_paynow_timestamp(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+        confirmed_at = "2026-06-23T06:30:00+00:00"
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "paynow",
+                "payment_reference": "MANUAL",
+                "paynow_confirmed_at": confirmed_at,
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "paid"
+        assert data["payment_method"] == "paynow"
+        assert data["payment_reference"] == "MANUAL"
+        assert data["paynow_confirmed_at"].startswith("2026-06-23T06:30:00")
+
     async def test_pending_to_paid_with_split_amounts(
         self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:

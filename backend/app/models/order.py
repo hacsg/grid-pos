@@ -1,10 +1,11 @@
 """Order SQLAlchemy model."""
 
 from decimal import Decimal
+from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -56,6 +57,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cash_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     card_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     voucher_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    paynow_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     loyalty_member_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     loyalty_points_earned: Mapped[int | None] = mapped_column(Integer, nullable=True)
