@@ -475,13 +475,9 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       )}>
         <LoyaltySheet
           open={loyaltyOpen}
-          selectedCustomer={loyalty?.customer ?? null}
-          selectedReward={loyalty?.reward ?? null}
+          session={session}
+          totals={totals}
           onClose={handleCloseLoyalty}
-          onCustomerSelect={handleCustomerSelect}
-          onRedeem={handleRedeem}
-          onSkip={handleSkipLoyalty}
-          onContinue={handleContinueLoyalty}
         />
       </ErrorBoundary>
       <VoucherSheet
