@@ -994,6 +994,12 @@ export default function PaymentModal({
                       <span>{manualPayNowActive ? 'PayNow (Manual)' : terminalMethodLabel(splitSecondMethod)}</span>
                       <strong>{formatCurrency(splitTerminalAmount)}</strong>
                     </div>
+                    {voucherAmount > 0 && (
+                      <div>
+                        <span>Voucher</span>
+                        <strong>{formatCurrency(voucherAmount)}</strong>
+                      </div>
+                    )}
                   </>
                 )}
               </section>
