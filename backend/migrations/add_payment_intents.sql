@@ -3,9 +3,9 @@
 -- Purpose: Track payment transactions for KPayPOS terminals via Go daemon
 
 CREATE TABLE IF NOT EXISTS payment_intents (
-    id VARCHAR(36) PRIMARY KEY,
-    outlet_id VARCHAR(36) NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
-    order_id VARCHAR(36) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY,
+    outlet_id UUID NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     out_trade_no VARCHAR(64) UNIQUE NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',

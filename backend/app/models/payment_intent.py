@@ -3,9 +3,11 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import Uuid
 
 from app.database import Base
 
@@ -22,9 +24,9 @@ class PaymentIntent(Base):
     __tablename__ = "payment_intents"
     
     # Primary key and references
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID4
-    outlet_id: Mapped[str] = mapped_column(String(36), ForeignKey("outlets.id", ondelete="CASCADE"), nullable=False)
-    order_id: Mapped[str] = mapped_column(String(36), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    outlet_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("outlets.id", ondelete="CASCADE"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
     
     # KPay transaction reference (unique across all terminals)
     out_trade_no: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)

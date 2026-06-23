@@ -54,7 +54,7 @@ async def create_payment_intent(
     out_trade_no = f"KPAY-{timestamp}-{random_suffix}"
     
     intent = PaymentIntent(
-        id=str(uuid.uuid4()),
+        id=uuid.uuid4(),
         outlet_id=outlet_id,
         order_id=order_id,
         out_trade_no=out_trade_no,
