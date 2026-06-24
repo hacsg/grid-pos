@@ -57,6 +57,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cash_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     card_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     voucher_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    cdc_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     paynow_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     loyalty_member_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)

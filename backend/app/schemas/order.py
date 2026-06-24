@@ -68,6 +68,7 @@ class OrderStatusUpdate(BaseModel):
     cash_amount: Decimal | None = Field(default=None, ge=0)
     card_amount: Decimal | None = Field(default=None, ge=0)
     voucher_amount: Decimal | None = Field(default=None, ge=0)
+    cdc_amount: Decimal | None = Field(default=None, ge=0)
     paynow_confirmed_at: datetime | None = None
 
 
@@ -87,6 +88,7 @@ class OrderRead(TimestampSchema):
     cash_amount: Money | None = None
     card_amount: Money | None = None
     voucher_amount: Money | None = None
+    cdc_amount: Money | None = None
     paynow_confirmed_at: datetime | None = None
     loyalty_member_id: UUID | None = None
     customer_id: str | None = None
@@ -127,6 +129,7 @@ class OrderSummaryRead(ORMModel):
     cash_amount: Money | None = None
     card_amount: Money | None = None
     voucher_amount: Money | None = None
+    cdc_amount: Money | None = None
     paynow_confirmed_at: datetime | None = None
     loyalty_member_id: UUID | None = None
     customer_id: str | None = None

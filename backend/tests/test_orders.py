@@ -341,6 +341,59 @@ class TestUpdateOrderStatus:
         assert str(data["voucher_amount"]) == "0.00"
         assert str(data["cash_change"]) == "0.00"
 
+    async def test_split_with_cdc_voucher_tender(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        # Total is 19.98: cash 5.00 + CDC 4.98 + card 10.00 must cover it.
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "payment_reference": "TXN-CDC",
+                "cash_tendered": "5.00",
+                "cash_amount": "5.00",
+                "card_amount": "10.00",
+                "cdc_amount": "4.98",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "paid"
+        assert str(data["cash_amount"]) == "5.00"
+        assert str(data["card_amount"]) == "10.00"
+        assert str(data["cdc_amount"]) == "4.98"
+
+    async def test_split_cdc_can_cover_full_total(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        # CDC voucher covers the entire 19.98 total; no cash/card.
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "payment_reference": "TXN-CDC-FULL",
+                "cash_amount": "0.00",
+                "card_amount": "0.00",
+                "cdc_amount": "19.98",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert str(resp.json()["cdc_amount"]) == "19.98"
+
     async def test_split_amounts_must_cover_payable_total(
         self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:

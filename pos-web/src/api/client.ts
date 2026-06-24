@@ -117,6 +117,7 @@ export interface OrderRead extends Timestamped {
   cash_amount?: number | string | null;
   card_amount?: number | string | null;
   voucher_amount?: number | string | null;
+  cdc_amount?: number | string | null;
   paynow_confirmed_at?: string | null;
   loyalty_member_id?: string | null;
   loyalty_points_earned?: number | null;
@@ -439,6 +440,7 @@ export async function updateOrderStatus(
     cash_amount?: number;
     card_amount?: number;
     voucher_amount?: number;
+    cdc_amount?: number;
     paynow_confirmed_at?: string;
   }
 ): Promise<OrderRead> {

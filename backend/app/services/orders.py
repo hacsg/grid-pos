@@ -177,6 +177,7 @@ def _validate_split_payment_amounts(
     cash_amount: Decimal,
     card_amount: Decimal,
     voucher_amount: Decimal,
+    cdc_amount: Decimal,
     cash_tendered: Decimal | None,
 ) -> tuple[Decimal | None, Decimal | None]:
     """Validate split payment coverage and return cash tender/change values."""
@@ -187,10 +188,12 @@ def _validate_split_payment_amounts(
             detail="Split voucher amount must match applied vouchers",
         )
 
-    if quantize_money(cash_amount + card_amount) != quantize_money(order.total):
+    # CDC vouchers are a cash-like tender entered by the cashier; together with
+    # cash and card/PayNow they must cover the payable total.
+    if quantize_money(cash_amount + card_amount + cdc_amount) != quantize_money(order.total):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Split cash and card/PayNow amounts must equal the payable total",
+            detail="Split cash, CDC and card/PayNow amounts must equal the payable total",
         )
 
     if cash_amount > 0:
@@ -304,6 +307,7 @@ async def update_order_status_service(
     cash_amount: Decimal | None = None,
     card_amount: Decimal | None = None,
     voucher_amount: Decimal | None = None,
+    cdc_amount: Decimal | None = None,
     paynow_confirmed_at: datetime | None = None,
 ) -> Order:
     """Update order status with transition validation."""
@@ -320,12 +324,14 @@ async def update_order_status_service(
         normalized_cash_amount = _money_or_zero(cash_amount)
         normalized_card_amount = _money_or_zero(card_amount)
         normalized_voucher_amount = _money_or_zero(voucher_amount)
+        normalized_cdc_amount = _money_or_zero(cdc_amount)
         if new_status == OrderStatus.paid:
             normalized_cash_tendered, normalized_cash_change = _validate_split_payment_amounts(
                 order,
                 cash_amount=normalized_cash_amount,
                 card_amount=normalized_card_amount,
                 voucher_amount=normalized_voucher_amount,
+                cdc_amount=normalized_cdc_amount,
                 cash_tendered=cash_tendered,
             )
             order.cash_tendered = normalized_cash_tendered
@@ -336,6 +342,7 @@ async def update_order_status_service(
         order.cash_amount = normalized_cash_amount
         order.card_amount = normalized_card_amount
         order.voucher_amount = normalized_voucher_amount
+        order.cdc_amount = normalized_cdc_amount
     else:
         if cash_amount is not None:
             order.cash_amount = _money_or_zero(cash_amount)
@@ -343,6 +350,8 @@ async def update_order_status_service(
             order.card_amount = _money_or_zero(card_amount)
         if voucher_amount is not None:
             order.voucher_amount = _money_or_zero(voucher_amount)
+        if cdc_amount is not None:
+            order.cdc_amount = _money_or_zero(cdc_amount)
 
     if paynow_confirmed_at is not None:
         order.paynow_confirmed_at = paynow_confirmed_at

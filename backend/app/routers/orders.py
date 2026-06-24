@@ -113,6 +113,7 @@ async def update_order_status(
         cash_amount=payload.cash_amount,
         card_amount=payload.card_amount,
         voucher_amount=payload.voucher_amount,
+        cdc_amount=payload.cdc_amount,
         paynow_confirmed_at=payload.paynow_confirmed_at,
     )
 

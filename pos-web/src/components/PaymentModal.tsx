@@ -45,6 +45,7 @@ interface ReceiptSnapshot {
   cashAmount: number;
   cardAmount: number;
   voucherAmount: number;
+  cdcAmount: number;
   changeDue: number;
   manualPayNow: boolean;
   paynowConfirmedAt?: string | null;
@@ -59,6 +60,7 @@ interface CardPaymentSession {
   cashAmount: number;
   cardAmount: number;
   voucherAmount: number;
+  cdcAmount: number;
   cashTendered?: number;
   startedAt: number;
 }
@@ -102,6 +104,9 @@ function receiptPaymentLines(receipt: ReceiptSnapshot): string[] {
   const lines = ['Payment: Split'];
   if (receipt.cashAmount > 0) {
     lines.push(`  Cash: ${formatCurrency(receipt.cashAmount)}`);
+  }
+  if (receipt.cdcAmount > 0) {
+    lines.push(`  CDC voucher: ${formatCurrency(receipt.cdcAmount)}`);
   }
   if (receipt.cardAmount > 0) {
     const label =
@@ -236,6 +241,7 @@ export default function PaymentModal({
   const [mode, setMode] = useState<PaymentMode>('cash');
   const [splitSecondMethod, setSplitSecondMethod] = useState<TerminalPaymentMethod>('card');
   const [cashAmount, setCashAmount] = useState('');
+  const [cdcAmount, setCdcAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptSnapshot | null>(null);
   const [error, setError] = useState('');
@@ -251,6 +257,7 @@ export default function PaymentModal({
       setMode('cash');
       setSplitSecondMethod('card');
       setCashAmount('');
+      setCdcAmount('');
       setSubmitting(false);
       setReceipt(null);
       setError('');
@@ -289,9 +296,12 @@ export default function PaymentModal({
   const totalDue = roundMoney(totals.total);
   const voucherAmount = roundMoney(totals.voucherDiscount);
   const cashTendered = roundMoney(money(cashAmount));
-  const splitCashAmount = mode === 'split' ? roundMoney(Math.min(Math.max(cashTendered, 0), totalDue)) : 0;
-  const splitTerminalAmount = mode === 'split' ? roundMoney(Math.max(0, totalDue - splitCashAmount)) : 0;
-  const splitCashInputValid = cashTendered >= 0 && cashTendered <= totalDue;
+  // CDC vouchers are a cashier-entered tender; cap at the payable total.
+  const splitCdcAmount = mode === 'split' ? roundMoney(Math.min(Math.max(money(cdcAmount), 0), totalDue)) : 0;
+  const splitCashCap = roundMoney(Math.max(0, totalDue - splitCdcAmount));
+  const splitCashAmount = mode === 'split' ? roundMoney(Math.min(Math.max(cashTendered, 0), splitCashCap)) : 0;
+  const splitTerminalAmount = mode === 'split' ? roundMoney(Math.max(0, totalDue - splitCashAmount - splitCdcAmount)) : 0;
+  const splitCashInputValid = cashTendered >= 0 && money(cdcAmount) >= 0;
   const terminalMethod: TerminalPaymentMethod =
     mode === 'paynow' ? 'paynow' : mode === 'split' ? splitSecondMethod : 'card';
   const manualPayNowAmount =
@@ -323,7 +333,7 @@ export default function PaymentModal({
       (mode === 'cash' && cashTendered >= totalDue) ||
       (mode === 'split' &&
         splitCashInputValid &&
-        (splitCashAmount > 0 || splitTerminalAmount > 0 || voucherAmount > 0) &&
+        (splitCashAmount > 0 || splitTerminalAmount > 0 || splitCdcAmount > 0 || voucherAmount > 0) &&
         (splitTerminalAmount <= 0 ||
           (splitSecondMethod === 'card'
             ? terminalConnected !== false
@@ -331,7 +341,7 @@ export default function PaymentModal({
 
   useEffect(() => {
     if (mode === 'split' && !splitCashInputValid) {
-      setError('Cash amount must be between zero and the payable total');
+      setError('Cash and CDC amounts cannot be negative');
       return;
     }
     if (terminalUnavailable) {
@@ -471,6 +481,7 @@ export default function PaymentModal({
                     cash_amount: cardPayment.cashAmount,
                     card_amount: cardPayment.cardAmount,
                     voucher_amount: cardPayment.voucherAmount,
+                    cdc_amount: cardPayment.cdcAmount,
                   }
                 : {
                     status: 'paid' as const,
@@ -488,6 +499,7 @@ export default function PaymentModal({
               cashAmount: cardPayment.cashAmount,
               cardAmount: cardPayment.cardAmount,
               voucherAmount: cardPayment.voucherAmount,
+              cdcAmount: cardPayment.cdcAmount,
               changeDue: 0,
             });
             toast.success(`${terminalMethodLabel(cardPayment.terminalPaymentMethod)} payment successful`);
@@ -596,6 +608,7 @@ export default function PaymentModal({
       cashAmount?: number;
       cardAmount?: number;
       voucherAmount?: number;
+      cdcAmount?: number;
       changeDue?: number;
       manualPayNow?: boolean;
       paynowConfirmedAt?: string | null;
@@ -613,6 +626,7 @@ export default function PaymentModal({
       cashAmount: paymentDetails?.cashAmount ?? (paidMode === 'cash' ? cashDue : 0),
       cardAmount: paymentDetails?.cardAmount ?? (paidMode === 'card' || paidMode === 'paynow' ? totalDue : 0),
       voucherAmount: paymentDetails?.voucherAmount ?? 0,
+      cdcAmount: paymentDetails?.cdcAmount ?? 0,
       changeDue: paymentDetails?.changeDue ?? (paidMode === 'cash' ? changeDue : 0),
       manualPayNow: paymentDetails?.manualPayNow ?? false,
       paynowConfirmedAt: paymentDetails?.paynowConfirmedAt ?? paidOrder.paynow_confirmed_at ?? null,
@@ -696,6 +710,7 @@ export default function PaymentModal({
                 cash_amount: splitCashAmount,
                 card_amount: splitTerminalAmount,
                 voucher_amount: voucherAmount,
+                cdc_amount: splitCdcAmount,
                 paynow_confirmed_at: confirmedAt,
               })
             : await updateOrderStatus(pendingOrder.id, {
@@ -710,6 +725,7 @@ export default function PaymentModal({
           cashAmount: mode === 'split' ? splitCashAmount : 0,
           cardAmount: mode === 'split' ? splitTerminalAmount : totalDue,
           voucherAmount: mode === 'split' ? voucherAmount : 0,
+          cdcAmount: mode === 'split' ? splitCdcAmount : 0,
           changeDue: 0,
           manualPayNow: true,
           paynowConfirmedAt: paidOrder.paynow_confirmed_at ?? confirmedAt,
@@ -732,6 +748,7 @@ export default function PaymentModal({
             cashAmount: mode === 'split' ? splitCashAmount : 0,
             cardAmount: paymentAmount,
             voucherAmount: mode === 'split' ? voucherAmount : 0,
+            cdcAmount: mode === 'split' ? splitCdcAmount : 0,
             cashTendered: mode === 'split' && splitCashAmount > 0 ? splitCashAmount : undefined,
             startedAt: Date.now(),
           });
@@ -759,6 +776,7 @@ export default function PaymentModal({
               cash_amount: splitCashAmount,
               card_amount: 0,
               voucher_amount: voucherAmount,
+              cdc_amount: splitCdcAmount,
             })
           : await updateOrderStatus(pendingOrder.id, {
               status: 'paid',
@@ -776,6 +794,7 @@ export default function PaymentModal({
               cashAmount: splitCashAmount,
               cardAmount: 0,
               voucherAmount,
+              cdcAmount: splitCdcAmount,
               changeDue: 0,
             }
           : undefined
@@ -909,10 +928,19 @@ export default function PaymentModal({
                         autoFocus
                       />
                     </label>
-                    <div className="split-card-due">
-                      <span>{terminalMethodLabel(splitSecondMethod)} remainder</span>
-                      <strong>{formatCurrency(splitTerminalAmount)}</strong>
-                    </div>
+                    <label className="amount-field">
+                      CDC voucher
+                      <input
+                        value={cdcAmount}
+                        onChange={(event) => setCdcAmount(event.target.value)}
+                        inputMode="decimal"
+                        placeholder="0.00"
+                      />
+                    </label>
+                  </div>
+                  <div className="split-card-due">
+                    <span>{terminalMethodLabel(splitSecondMethod)} remainder</span>
+                    <strong>{formatCurrency(splitTerminalAmount)}</strong>
                   </div>
                   <div className="split-method-toggle" role="radiogroup" aria-label="Split terminal method">
                     {(['card', 'paynow'] as const).map((method) => (
@@ -936,6 +964,12 @@ export default function PaymentModal({
                       <span>Cash</span>
                       <strong>{formatCurrency(splitCashAmount)}</strong>
                     </div>
+                    {splitCdcAmount > 0 && (
+                      <div>
+                        <span>CDC voucher</span>
+                        <strong>{formatCurrency(splitCdcAmount)}</strong>
+                      </div>
+                    )}
                     <div>
                       <span>{manualPayNowActive ? 'PayNow (Manual)' : terminalMethodLabel(splitSecondMethod)}</span>
                       <strong>{formatCurrency(splitTerminalAmount)}</strong>
@@ -990,6 +1024,12 @@ export default function PaymentModal({
                       <span>Cash</span>
                       <strong>{formatCurrency(splitCashAmount)}</strong>
                     </div>
+                    {splitCdcAmount > 0 && (
+                      <div>
+                        <span>CDC voucher</span>
+                        <strong>{formatCurrency(splitCdcAmount)}</strong>
+                      </div>
+                    )}
                     <div>
                       <span>{manualPayNowActive ? 'PayNow (Manual)' : terminalMethodLabel(splitSecondMethod)}</span>
                       <strong>{formatCurrency(splitTerminalAmount)}</strong>
@@ -1038,6 +1078,12 @@ export default function PaymentModal({
                   <div>
                     <span>Cash</span>
                     <strong>{formatCurrency(cardPayment.cashAmount)}</strong>
+                  </div>
+                )}
+                {cardPayment?.paymentMode === 'split' && cardPayment.cdcAmount > 0 && (
+                  <div>
+                    <span>CDC voucher</span>
+                    <strong>{formatCurrency(cardPayment.cdcAmount)}</strong>
                   </div>
                 )}
                 <div>
@@ -1111,6 +1157,12 @@ export default function PaymentModal({
                         <div>
                           <span>Cash</span>
                           <strong>{formatCurrency(receipt.cashAmount)}</strong>
+                        </div>
+                      )}
+                      {receipt.cdcAmount > 0 && (
+                        <div>
+                          <span>CDC voucher</span>
+                          <strong>{formatCurrency(receipt.cdcAmount)}</strong>
                         </div>
                       )}
                       {receipt.cardAmount > 0 && (
