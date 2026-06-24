@@ -78,6 +78,7 @@ img {
 .pos-shell {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr);
+  grid-template-rows: 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -104,7 +105,7 @@ img {
 .product-stage {
   display: flex;
   min-width: 0;
-  height: 100dvh;
+  height: 100%;
   flex-direction: column;
   background: var(--grid-background);
 }
@@ -1965,14 +1966,32 @@ img {
    ======================================== */
 
 .build-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   background: #f59e0b;
   color: #1a1a1a;
   font-size: 12px;
   font-weight: 600;
-  text-align: center;
   padding: 4px 12px;
   letter-spacing: 0.01em;
   flex-shrink: 0;
+}
+
+.build-banner-close {
+  background: none;
+  border: none;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.build-banner-close:hover {
+  opacity: 1;
 }
 
 .staff-shell {

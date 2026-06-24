@@ -6,9 +6,11 @@ COPY . .
 ARG VITE_API_URL=https://grid-backend-production-5fd0.up.railway.app/api
 ARG BUILD_VERSION
 ARG RAILWAY_DEPLOYMENT_ID
+ARG RAILWAY_GIT_COMMIT_SHA
 ENV VITE_API_URL=$VITE_API_URL
 ENV BUILD_VERSION=$BUILD_VERSION
-RUN echo "Build: $BUILD_VERSION deploy: $RAILWAY_DEPLOYMENT_ID" && npm run build
+ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
+RUN echo "Build: ${RAILWAY_GIT_COMMIT_SHA:-$BUILD_VERSION} deploy: $RAILWAY_DEPLOYMENT_ID" && npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html

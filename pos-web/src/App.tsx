@@ -533,9 +533,12 @@ function StaffTabs({ active }: { active: 'pos' | 'vouchers' }) {
   );
 }
 
+const DEBUG_KEY = 'grid_pos_debug';
+
 function StaffShell() {
   const location = useLocation();
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
+  const [debugOn, setDebugOn] = useState(() => localStorage.getItem(DEBUG_KEY) !== '0');
 
   const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
 
@@ -562,11 +565,20 @@ function StaffShell() {
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
 
+  function toggleDebug() {
+    const next = !debugOn;
+    next ? localStorage.removeItem(DEBUG_KEY) : localStorage.setItem(DEBUG_KEY, '0');
+    setDebugOn(next);
+  }
+
   return (
     <div className="staff-shell">
-      <div className="build-banner">
-        Build <strong>{__BUILD_HASH__}</strong> · {buildTime} SGT
-      </div>
+      {debugOn && (
+        <div className="build-banner">
+          Build <strong>{__BUILD_HASH__}</strong> · {buildTime} SGT
+          <button className="build-banner-close" onClick={toggleDebug} title="Hide debug banner">✕</button>
+        </div>
+      )}
       <div className="staff-topbar">
         <StaffTabs active={activeTab} />
         <div className="staff-session-info">
