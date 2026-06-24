@@ -1965,7 +1965,8 @@ img {
    ======================================== */
 
 .staff-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--grid-background);
