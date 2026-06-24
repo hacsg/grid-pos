@@ -575,7 +575,9 @@ function StaffShell() {
     <div className="staff-shell">
       {debugOn && (
         <div className="build-banner">
-          Build <strong>{__BUILD_HASH__}</strong> · {buildTime} SGT
+          <strong>{__BUILD_HASH__}</strong>
+          {__BUILD_MESSAGE__ && <span className="build-banner-msg">{__BUILD_MESSAGE__}</span>}
+          <span className="build-banner-time">{buildTime} SGT</span>
           <button className="build-banner-close" onClick={toggleDebug} title="Hide debug banner">✕</button>
         </div>
       )}
