@@ -634,12 +634,9 @@ function StaffTabs({ active }: { active: 'pos' | 'vouchers' }) {
   );
 }
 
-const DEBUG_KEY = 'grid_pos_debug';
-
 function StaffShell() {
   const location = useLocation();
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
-  const [debugOn, setDebugOn] = useState(() => localStorage.getItem(DEBUG_KEY) === '1');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
@@ -667,22 +664,8 @@ function StaffShell() {
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
 
-  function toggleDebug() {
-    const next = !debugOn;
-    next ? localStorage.setItem(DEBUG_KEY, '1') : localStorage.removeItem(DEBUG_KEY);
-    setDebugOn(next);
-  }
-
   return (
     <div className="staff-shell">
-      {debugOn && (
-        <div className="build-banner">
-          <strong>{__BUILD_HASH__}</strong>
-          {__BUILD_MESSAGE__ && <span className="build-banner-msg">{__BUILD_MESSAGE__}</span>}
-          <span className="build-banner-time">{buildTime} SGT</span>
-          <button className="build-banner-close" onClick={toggleDebug} title="Hide debug banner">✕</button>
-        </div>
-      )}
       <div className="staff-topbar">
         <StaffTabs active={activeTab} />
         <button
@@ -738,17 +721,15 @@ function StaffShell() {
                 <strong>{session.outlet.name}</strong>
               </div>
 
-              <label className="settings-toggle">
-                <span>
-                  <strong>Debug banner</strong>
-                  <small>Show the build version bar at the top</small>
-                </span>
-                <input type="checkbox" checked={debugOn} onChange={toggleDebug} />
-              </label>
-
               <div className="settings-build">
-                <div><span>Build</span><strong>{__BUILD_HASH__}</strong></div>
-                {__BUILD_MESSAGE__ && <div><span>Notes</span><strong>{__BUILD_MESSAGE__}</strong></div>}
+                <div className="settings-build-title">Current build</div>
+                <div><span>Version</span><strong>{__BUILD_HASH__}</strong></div>
+                {__BUILD_MESSAGE__ && (
+                  <div className="settings-build-notes">
+                    <span>Notes</span>
+                    <strong>{__BUILD_MESSAGE__}</strong>
+                  </div>
+                )}
                 <div><span>Deployed</span><strong>{buildTime} SGT</strong></div>
               </div>
 

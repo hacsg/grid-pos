@@ -10,6 +10,10 @@ function gitHash() {
 }
 
 function gitMessage() {
+  // Railway exposes the commit message as a build/deploy variable; prefer it
+  // because the Docker build context has no .git directory.
+  const fromEnv = process.env.RAILWAY_GIT_COMMIT_MESSAGE;
+  if (fromEnv) return fromEnv.trim();
   try { return execSync('git log -1 --pretty=%s').toString().trim(); }
   catch { return ''; }
 }

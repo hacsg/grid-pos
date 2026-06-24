@@ -105,6 +105,7 @@ img {
 .product-stage {
   display: flex;
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex-direction: column;
   background: var(--grid-background);
@@ -385,6 +386,7 @@ img {
 .cart-sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex-direction: column;
   overflow: hidden;
@@ -2203,6 +2205,7 @@ img {
 
 .staff-topbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2319,7 +2322,15 @@ img {
   background: #faf9f6;
 }
 
-.settings-build div {
+.settings-build-title {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grid-muted);
+}
+
+.settings-build > div:not(.settings-build-title):not(.settings-build-notes) {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2335,6 +2346,23 @@ img {
 .settings-build strong {
   text-align: right;
   word-break: break-word;
+}
+
+.settings-build-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-build-notes span {
+  font-size: 12px;
+}
+
+.settings-build-notes strong {
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 .settings-logout {
