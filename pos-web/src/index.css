@@ -70,13 +70,15 @@ img {
 
 .pos-root {
   position: relative;
-  min-height: 100dvh;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pos-shell {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr);
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -381,7 +383,7 @@ img {
 .cart-sidebar {
   display: flex;
   min-width: 0;
-  height: 100dvh;
+  height: 100%;
   flex-direction: column;
   border-left: 1px solid var(--grid-border);
   background: var(--grid-surface);
@@ -2031,6 +2033,9 @@ img {
 .staff-content {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ========================================
