@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Archive,
   BadgePercent,
   ChevronDown,
   ChevronUp,
@@ -24,6 +25,8 @@ interface CartSidebarProps {
   loyalty: LoyaltySelection | null;
   vouchers: AppliedVoucher[];
   isOpen: boolean;
+  parkedCount: number;
+  onOpenParked: () => void;
   onToggleOpen: () => void;
   onIncrement: (lineId: string) => void;
   onDecrement: (lineId: string) => void;
@@ -49,6 +52,8 @@ export default function CartSidebar({
   loyalty,
   vouchers,
   isOpen,
+  parkedCount,
+  onOpenParked,
   onToggleOpen,
   onIncrement,
   onDecrement,
@@ -96,16 +101,30 @@ export default function CartSidebar({
           <h2>Current sale</h2>
           <p>{itemCount} item{itemCount === 1 ? '' : 's'}</p>
         </div>
-        <button
-          className="icon-button hide-desktop"
-          type="button"
-          aria-label="Close cart"
-          title="Close"
-          onPointerDown={() => tapFeedback()}
-          onClick={onToggleOpen}
-        >
-          <X size={20} aria-hidden="true" />
-        </button>
+        <div className="cart-header-actions">
+          {parkedCount > 0 && (
+            <button
+              className="parked-trigger"
+              type="button"
+              onPointerDown={() => tapFeedback()}
+              onClick={onOpenParked}
+            >
+              <Archive size={16} aria-hidden="true" />
+              Parked
+              <span className="parked-badge">{parkedCount}</span>
+            </button>
+          )}
+          <button
+            className="icon-button hide-desktop"
+            type="button"
+            aria-label="Close cart"
+            title="Close"
+            onPointerDown={() => tapFeedback()}
+            onClick={onToggleOpen}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <div className="cart-chips" aria-live="polite">

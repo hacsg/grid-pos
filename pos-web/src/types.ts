@@ -38,6 +38,15 @@ export interface AppliedVoucher {
   id?: string;
 }
 
+export interface ParkedCart {
+  id: string;
+  parkedAt: string;
+  items: CartItem[];
+  discount: Discount | null;
+  loyalty: LoyaltySelection | null;
+  vouchers: AppliedVoucher[];
+}
+
 export interface Totals {
   subtotal: number;
   tax: number;

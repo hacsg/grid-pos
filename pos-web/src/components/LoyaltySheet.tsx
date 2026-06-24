@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { QrCode, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { QrCode, Search, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { api } from '@/api/client';
+import { api, formatCurrency, lookupLoyalty, type LoyaltyMember } from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
 import type { StaffSession, Totals } from '@/types';
 
@@ -14,73 +14,125 @@ interface LoyaltySheetProps {
 
 const QR_READER_ID = 'qr-reader-loyalty-simple';
 
+type Status = 'idle' | 'scanning' | 'looking' | 'found' | 'earning' | 'success' | 'error';
+
 export default function LoyaltySheet({ open, session, totals, onClose }: LoyaltySheetProps) {
-  const [status, setStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
+  const [code, setCode] = useState('');
+  const [member, setMember] = useState<LoyaltyMember | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   if (!open) {
     return null;
   }
 
-  const handleScan = async () => {
-    setStatus('scanning');
-    setMessage('Point camera at QR code...');
-
-    const scanner = new Html5Qrcode(QR_READER_ID, { verbose: false });
-    
-    return new Promise<void>((resolve, reject) => {
-      scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 200, height: 200 } },
-        async (decodedText) => {
-          await scanner.stop();
-          const memberId = decodedText.trim();
-          
-          try {
-            const response = await api.post('/loyalty/earn', {
-              customer_id: memberId,
-              order_total: totals.total,
-              outlet: session.outlet.name,
-            });
-            
-            setStatus('success');
-            setMessage(`Points earned! ${response.data.points_earned || 'Transaction recorded.'}`);
-            tapFeedback();
-            resolve();
-          } catch (err: any) {
-            setStatus('error');
-            setMessage(err.response?.data?.detail || 'Failed to earn points. Please try again.');
-            reject(err);
-          }
-        },
-        () => {}
-      ).catch((err) => {
-        setStatus('error');
-        setMessage('Camera error. Please allow camera access and try again.');
-        reject(err);
-      });
-    });
-  };
-
-  const handleClose = () => {
+  function resetState() {
     setStatus('idle');
     setMessage('');
+    setCode('');
+    setMember(null);
+  }
+
+  async function stopScanner() {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    if (scanner) {
+      try {
+        await scanner.stop();
+      } catch {
+        // already stopped
+      }
+    }
+  }
+
+  async function earnFor(memberId: string) {
+    setStatus('earning');
+    setMessage('Recording points...');
+    try {
+      const response = await api.post('/loyalty/earn', {
+        customer_id: memberId,
+        order_total: totals.total,
+        outlet: session.outlet.name,
+      });
+      const earned = response.data?.points_earned;
+      setStatus('success');
+      setMessage(earned != null ? `${earned} points earned` : 'Points recorded');
+      tapFeedback();
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(err?.response?.data?.detail || 'Failed to record points. Please try again.');
+    }
+  }
+
+  async function handleLookup() {
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setMessage('Enter a phone number or member ID');
+      return;
+    }
+    tapFeedback();
+    setStatus('looking');
+    setMessage('');
+    try {
+      const found = await lookupLoyalty(trimmed);
+      setMember(found);
+      setStatus('found');
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(err?.response?.data?.detail || 'Member not found. Check the number and try again.');
+    }
+  }
+
+  async function handleScan() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('error');
+      setMessage('No camera available on this device. Enter the member number instead.');
+      return;
+    }
+    tapFeedback();
+    setStatus('scanning');
+    setMessage('Point camera at the Acre Club QR code...');
+
+    const scanner = new Html5Qrcode(QR_READER_ID, { verbose: false });
+    scannerRef.current = scanner;
+
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        async (decodedText) => {
+          await stopScanner();
+          await earnFor(decodedText.trim());
+        },
+        () => {}
+      );
+    } catch {
+      scannerRef.current = null;
+      setStatus('error');
+      setMessage('Could not start the camera. Allow camera access or enter the member number.');
+    }
+  }
+
+  async function handleClose() {
+    await stopScanner();
+    resetState();
     onClose();
-  };
+  }
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section 
-        className="loyalty-sheet" 
-        role="dialog" 
-        aria-modal="true" 
+      <section
+        className="loyalty-sheet"
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="loyalty-title"
-        style={{ maxWidth: '400px', margin: 'auto' }}
+        style={{ maxWidth: '420px', margin: 'auto' }}
       >
         <header className="sheet-header">
           <div>
             <p>Acre Club</p>
-            <h2 id="loyalty-title">Earn Points</h2>
+            <h2 id="loyalty-title">Earn points</h2>
           </div>
           <button
             className="icon-button"
@@ -93,78 +145,108 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
           </button>
         </header>
 
-        <div style={{ padding: '24px', textAlign: 'center' }}>
-          {status === 'idle' && (
+        <div className="loyalty-body">
+          {(status === 'idle' || status === 'looking' || status === 'error') && (
             <>
-              <div style={{ marginBottom: '16px' }}>
-                <QrCode size={48} style={{ margin: '0 auto', opacity: 0.5 }} />
+              <p className="loyalty-prompt">Look up a member by phone or scan their QR.</p>
+              <div className="loyalty-lookup">
+                <label className="search-field">
+                  <Search size={20} aria-hidden="true" />
+                  <input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleLookup();
+                    }}
+                    placeholder="Phone number or member ID"
+                    inputMode="tel"
+                    autoFocus
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleLookup}
+                  onPointerDown={() => tapFeedback()}
+                  disabled={status === 'looking'}
+                >
+                  {status === 'looking' ? 'Looking up...' : 'Look up'}
+                </button>
               </div>
-              <p style={{ marginBottom: '8px', fontSize: '16px' }}>
-                Scan customer's Acre Club QR code
-              </p>
-              <p style={{ marginBottom: '24px', fontSize: '14px', opacity: 0.7 }}>
-                Order total: ${totals.total.toFixed(2)}
-              </p>
+
               <button
-                className="primary-button"
+                className="secondary-button loyalty-scan-btn"
+                type="button"
                 onClick={handleScan}
                 onPointerDown={() => tapFeedback()}
-                style={{ width: '100%', padding: '12px' }}
               >
-                Scan QR Code
+                <QrCode size={18} aria-hidden="true" />
+                Scan QR code instead
               </button>
+
+              <p className="loyalty-total">Order total: {formatCurrency(totals.total)}</p>
+
+              {status === 'error' && message && <p className="form-error">{message}</p>}
             </>
           )}
 
           {status === 'scanning' && (
             <>
-              <div id={QR_READER_ID} style={{ width: '100%', maxWidth: '300px', margin: '0 auto 16px' }} />
-              <p style={{ fontSize: '14px', opacity: 0.7 }}>{message}</p>
-            </>
-          )}
-
-          {status === 'success' && (
-            <>
-              <div style={{ 
-                fontSize: '48px', 
-                marginBottom: '16px',
-                color: '#10b981'
-              }}>
-                ✓
-              </div>
-              <p style={{ fontSize: '16px', marginBottom: '24px', fontWeight: '500' }}>
-                {message}
-              </p>
+              <div id={QR_READER_ID} className="loyalty-scanner" />
+              <p className="loyalty-prompt">{message}</p>
               <button
-                className="primary-button"
-                onClick={handleClose}
-                onPointerDown={() => tapFeedback()}
-                style={{ width: '100%', padding: '12px' }}
+                className="secondary-button"
+                type="button"
+                onClick={async () => {
+                  await stopScanner();
+                  resetState();
+                }}
               >
-                Done
+                Cancel scan
               </button>
             </>
           )}
 
-          {status === 'error' && (
+          {status === 'found' && member && (
             <>
-              <div style={{ 
-                fontSize: '48px', 
-                marginBottom: '16px',
-                color: '#ef4444'
-              }}>
-                ✗
+              <div className="loyalty-member-card">
+                <div className="loyalty-member-top">
+                  <strong>{member.name}</strong>
+                  <span className="tier-badge">{member.tier}</span>
+                </div>
+                <p>
+                  {member.points} pts available
+                  {member.phone ? ` · ${member.phone}` : ''}
+                </p>
               </div>
-              <p style={{ fontSize: '14px', marginBottom: '24px', color: '#ef4444' }}>
-                {message}
-              </p>
+              <p className="loyalty-total">Order total: {formatCurrency(totals.total)}</p>
               <button
-                className="secondary-button"
+                className="primary-button loyalty-confirm"
+                type="button"
+                onClick={() => earnFor(member.customer_id || member.member_id)}
+                onPointerDown={() => tapFeedback()}
+              >
+                Earn points for this sale
+              </button>
+              <button className="secondary-button" type="button" onClick={resetState}>
+                Use a different member
+              </button>
+            </>
+          )}
+
+          {status === 'earning' && <p className="loyalty-prompt">{message}</p>}
+
+          {status === 'success' && (
+            <>
+              <div className="loyalty-result success">✓</div>
+              <p className="loyalty-result-msg">{message}</p>
+              <button
+                className="primary-button"
+                type="button"
                 onClick={handleClose}
                 onPointerDown={() => tapFeedback()}
-                style={{ width: '100%', padding: '12px' }}
               >
-                Close
+                Done
               </button>
             </>
           )}

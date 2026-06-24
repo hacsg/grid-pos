@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
-import { WifiOff } from 'lucide-react';
+import { ChevronDown, LogOut, WifiOff, X } from 'lucide-react';
 import CartSidebar from '@/components/CartSidebar';
 import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
@@ -11,6 +11,7 @@ import ProductGrid from '@/components/ProductGrid';
 import VoucherRedemption from '@/components/VoucherRedemption';
 import DiscountSheet from '@/components/DiscountSheet';
 import VoucherSheet from '@/components/VoucherSheet';
+import ParkedSheet from '@/components/ParkedSheet';
 import CustomerDisplay from '@/display/CustomerDisplay';
 import {
   getActiveDiscounts,
@@ -21,7 +22,7 @@ import {
   type LoyaltyReward,
   type Product,
 } from '@/api/client';
-import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, ParkedCart, StaffSession, Totals } from '@/types';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { tapFeedback } from '@/utils/haptics';
 import { broadcast } from '@/display/channel';
@@ -57,6 +58,48 @@ function loadSession(): StaffSession | null {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem('auth_token');
     return null;
+  }
+}
+
+function loadParkedCarts(): ParkedCart[] {
+  try {
+    const raw = localStorage.getItem(PARKED_CART_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    // New format: array of parked carts.
+    if (Array.isArray(parsed)) {
+      return parsed.filter((cart) => Array.isArray(cart?.items));
+    }
+    // Legacy format: single parked cart object — migrate to array.
+    if (parsed && Array.isArray(parsed.items)) {
+      return [
+        {
+          id: parsed.parkedAt ?? 'legacy',
+          parkedAt: parsed.parkedAt ?? new Date().toISOString(),
+          items: parsed.items,
+          discount: parsed.discount ?? null,
+          loyalty: parsed.loyalty ?? null,
+          vouchers: parsed.vouchers ?? [],
+        },
+      ];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function saveParkedCarts(carts: ParkedCart[]) {
+  try {
+    if (carts.length === 0) {
+      localStorage.removeItem(PARKED_CART_KEY);
+    } else {
+      localStorage.setItem(PARKED_CART_KEY, JSON.stringify(carts));
+    }
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -142,6 +185,8 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   const [discountPickerOpen, setDiscountPickerOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>(() => loadParkedCarts());
+  const [parkedOpen, setParkedOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
 
   useEffect(() => {
@@ -335,18 +380,65 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       toast.error('Cart is empty');
       return;
     }
-    localStorage.setItem(
-      PARKED_CART_KEY,
-      JSON.stringify({
-        parkedAt: new Date().toISOString(),
-        items: cartItems,
-        discount,
-        loyalty,
-        vouchers,
-      })
-    );
+    const entry: ParkedCart = {
+      id: `${Date.now()}`,
+      parkedAt: new Date().toISOString(),
+      items: cartItems,
+      discount,
+      loyalty,
+      vouchers,
+    };
+    setParkedCarts((prev) => {
+      const next = [entry, ...prev];
+      saveParkedCarts(next);
+      return next;
+    });
     clearCart();
     toast.success('Cart parked');
+  }
+
+  function resumeParked(id: string) {
+    tapFeedback();
+    const target = parkedCarts.find((cart) => cart.id === id);
+    if (!target) {
+      return;
+    }
+    setParkedCarts((prev) => {
+      // If the current cart has items, park it back in place of the resumed one.
+      const remaining = prev.filter((cart) => cart.id !== id);
+      const next =
+        cartItems.length > 0
+          ? [
+              {
+                id: `${Date.now()}`,
+                parkedAt: new Date().toISOString(),
+                items: cartItems,
+                discount,
+                loyalty,
+                vouchers,
+              },
+              ...remaining,
+            ]
+          : remaining;
+      saveParkedCarts(next);
+      return next;
+    });
+    setCartItems(target.items);
+    setDiscount(target.discount);
+    setLoyalty(target.loyalty);
+    setVouchers(target.vouchers);
+    setParkedOpen(false);
+    setCartOpen(true);
+    toast.success(cartItems.length > 0 ? 'Swapped to parked cart' : 'Cart resumed');
+  }
+
+  function discardParked(id: string) {
+    tapFeedback();
+    setParkedCarts((prev) => {
+      const next = prev.filter((cart) => cart.id !== id);
+      saveParkedCarts(next);
+      return next;
+    });
   }
 
   function openDiscountPicker() {
@@ -444,6 +536,8 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           loyalty={loyalty}
           vouchers={vouchers}
           isOpen={cartOpen}
+          parkedCount={parkedCarts.length}
+          onOpenParked={() => setParkedOpen(true)}
           onToggleOpen={() => setCartOpen((open) => !open)}
           onIncrement={(lineId) => updateQuantity(lineId, 1)}
           onDecrement={(lineId) => updateQuantity(lineId, -1)}
@@ -508,6 +602,13 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         onClose={() => setPaymentOpen(false)}
         onOrderComplete={handleOrderComplete}
       />
+      <ParkedSheet
+        open={parkedOpen}
+        parked={parkedCarts}
+        onClose={() => setParkedOpen(false)}
+        onResume={resumeParked}
+        onDiscard={discardParked}
+      />
     </div>
   );
 }
@@ -538,7 +639,8 @@ const DEBUG_KEY = 'grid_pos_debug';
 function StaffShell() {
   const location = useLocation();
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
-  const [debugOn, setDebugOn] = useState(() => localStorage.getItem(DEBUG_KEY) !== '0');
+  const [debugOn, setDebugOn] = useState(() => localStorage.getItem(DEBUG_KEY) === '1');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
 
@@ -567,7 +669,7 @@ function StaffShell() {
 
   function toggleDebug() {
     const next = !debugOn;
-    next ? localStorage.removeItem(DEBUG_KEY) : localStorage.setItem(DEBUG_KEY, '0');
+    next ? localStorage.setItem(DEBUG_KEY, '1') : localStorage.removeItem(DEBUG_KEY);
     setDebugOn(next);
   }
 
@@ -583,11 +685,17 @@ function StaffShell() {
       )}
       <div className="staff-topbar">
         <StaffTabs active={activeTab} />
-        <div className="staff-session-info">
+        <button
+          className="staff-session-info"
+          type="button"
+          onClick={() => { tapFeedback(); setSettingsOpen(true); }}
+          aria-label="Open settings"
+        >
           <span className="staff-session-outlet">{session.outlet.name}</span>
           <span className="staff-session-divider">•</span>
           <span className="staff-session-staff">{session.staff.name}</span>
-        </div>
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
       </div>
 
       <div className="staff-content">
@@ -597,6 +705,65 @@ function StaffShell() {
           <VoucherRedemption session={session} onLogout={handleLogout} />
         )}
       </div>
+
+      {settingsOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
+          <section
+            className="loyalty-sheet settings-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+            style={{ maxWidth: '420px', margin: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="sheet-header">
+              <div>
+                <p>Signed in</p>
+                <h2 id="settings-title">{session.staff.name}</h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close settings"
+                onClick={() => setSettingsOpen(false)}
+                onPointerDown={() => tapFeedback()}
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="settings-body">
+              <div className="settings-row">
+                <span>Outlet</span>
+                <strong>{session.outlet.name}</strong>
+              </div>
+
+              <label className="settings-toggle">
+                <span>
+                  <strong>Debug banner</strong>
+                  <small>Show the build version bar at the top</small>
+                </span>
+                <input type="checkbox" checked={debugOn} onChange={toggleDebug} />
+              </label>
+
+              <div className="settings-build">
+                <div><span>Build</span><strong>{__BUILD_HASH__}</strong></div>
+                {__BUILD_MESSAGE__ && <div><span>Notes</span><strong>{__BUILD_MESSAGE__}</strong></div>}
+                <div><span>Deployed</span><strong>{buildTime} SGT</strong></div>
+              </div>
+
+              <button
+                className="secondary-button danger-text settings-logout"
+                type="button"
+                onClick={() => { setSettingsOpen(false); handleLogout(); }}
+              >
+                <LogOut size={18} aria-hidden="true" />
+                Sign out
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
