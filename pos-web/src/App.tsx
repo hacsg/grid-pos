@@ -556,8 +556,17 @@ function StaffShell() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  const buildTime = new Date(__BUILD_TIME__).toLocaleString('en-SG', {
+    timeZone: 'Asia/Singapore',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+
   return (
     <div className="staff-shell">
+      <div className="build-banner">
+        Build <strong>{__BUILD_HASH__}</strong> · {buildTime} SGT
+      </div>
       <div className="staff-topbar">
         <StaffTabs active={activeTab} />
         <div className="staff-session-info">
