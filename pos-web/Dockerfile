@@ -1,13 +1,14 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN rm -rf node_modules && npm ci
 COPY . .
 ARG VITE_API_URL=https://grid-backend-production-5fd0.up.railway.app/api
 ARG BUILD_VERSION
+ARG RAILWAY_DEPLOYMENT_ID
 ENV VITE_API_URL=$VITE_API_URL
 ENV BUILD_VERSION=$BUILD_VERSION
-RUN echo "Building version: $BUILD_VERSION at $(date -u +%Y-%m-%dT%H:%M:%SZ)" && npm run build
+RUN echo "Build: $BUILD_VERSION deploy: $RAILWAY_DEPLOYMENT_ID" && npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
