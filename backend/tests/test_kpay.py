@@ -49,6 +49,7 @@ class TestNormalizeSaleResult:
             "ref_no": "REF-1",
             "pay_method": 3,
             "pay_result": 1,
+            "reason": "Insufficient funds",
             "extra": "ignored",
         }
         result = pi._normalize_sale_result(event)
@@ -58,6 +59,7 @@ class TestNormalizeSaleResult:
             "ref_no": "REF-1",
             "pay_method": 3,
             "pay_result": 1,
+            "reason": "Insufficient funds",
         }
 
 

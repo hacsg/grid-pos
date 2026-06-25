@@ -44,6 +44,14 @@ class StaffLoginRequest(BaseModel):
     outlet_id: UUID | None = None
 
 
+class StaffRosterEntry(BaseModel):
+    """Minimal, unauthenticated staff entry for the POS login picker."""
+
+    id: UUID
+    name: str
+    role: str
+
+
 class StaffRead(StaffBase, TimestampSchema):
     """Staff response payload without PIN hash."""
 

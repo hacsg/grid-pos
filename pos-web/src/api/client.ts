@@ -366,6 +366,19 @@ export async function getPayNowQr(outletId: string): Promise<PayNowQrResponse> {
   return data;
 }
 
+export interface StaffRosterEntry {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export async function getStaffRoster(outletId: string): Promise<StaffRosterEntry[]> {
+  const { data } = await api.get<StaffRosterEntry[] | { data: StaffRosterEntry[] }>('/auth/staff-roster', {
+    params: { outlet_id: outletId },
+  });
+  return unwrapList(data);
+}
+
 export async function loginWithPin(outletId: string, pin: string, name?: string): Promise<TokenResponse> {
   const { data } = await api.post<TokenResponse>('/auth/login', {
     outlet_id: outletId,

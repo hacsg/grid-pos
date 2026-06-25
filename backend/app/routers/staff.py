@@ -22,6 +22,7 @@ from app.schemas.staff import (
     StaffCreate,
     StaffLoginRequest,
     StaffRead,
+    StaffRosterEntry,
     StaffUpdate,
     TokenRefreshResponse,
     TokenResponse,
@@ -57,6 +58,27 @@ async def _ensure_outlet_exists(db: AsyncSession, outlet_id: UUID) -> None:
 # ---------------------------------------------------------------------------
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@auth_router.get("/staff-roster", response_model=list[StaffRosterEntry])
+async def staff_roster(
+    outlet_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[StaffRosterEntry]:
+    """Public roster of active staff at an outlet, for the POS login picker.
+
+    Returns names only (no PINs/credentials) so the cashier can tap their name
+    before entering a PIN.
+    """
+    result = await db.execute(
+        select(Staff)
+        .where(Staff.outlet_id == outlet_id, Staff.is_active.is_(True))
+        .order_by(Staff.name)
+    )
+    return [
+        StaffRosterEntry(id=staff.id, name=staff.name, role=staff.role.value)
+        for staff in result.scalars().all()
+    ]
 
 
 @auth_router.post("/login", response_model=TokenResponse)

@@ -14,6 +14,7 @@ import {
 import { getPaymentStatus, getTerminalConnection, startCardPayment, voidCardPayment, type PaymentIntent } from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { printReceipt as printReceiptUsb } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
@@ -187,43 +188,6 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-async function tryWebUsbPrint(text: string): Promise<boolean> {
-  const usb = (navigator as Navigator & { usb?: any }).usb;
-  if (!usb) {
-    return false;
-  }
-
-  try {
-    const device = await usb.requestDevice({ filters: [{ classCode: 7 }] });
-    await device.open();
-    if (!device.configuration) {
-      await device.selectConfiguration(1);
-    }
-    const selectedInterface = device.configuration.interfaces.find((usbInterface: any) =>
-      usbInterface.alternates.some((alternate: any) =>
-        alternate.endpoints.some((endpoint: any) => endpoint.direction === 'out')
-      )
-    );
-    const alternate = selectedInterface?.alternates.find((entry: any) =>
-      entry.endpoints.some((endpoint: any) => endpoint.direction === 'out')
-    );
-    const endpoint = alternate?.endpoints.find((entry: any) => entry.direction === 'out');
-    if (!selectedInterface || !endpoint) {
-      await device.close();
-      return false;
-    }
-    await device.claimInterface(selectedInterface.interfaceNumber);
-    const encoder = new TextEncoder();
-    const payload = encoder.encode(`${text}\n\n\x1dV\x00`);
-    await device.transferOut(endpoint.endpointNumber, payload);
-    await device.releaseInterface(selectedInterface.interfaceNumber);
-    await device.close();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export default function PaymentModal({
@@ -837,7 +801,7 @@ export default function PaymentModal({
     }
     tapFeedback();
     const text = buildReceiptText(receipt, session);
-    const printed = await tryWebUsbPrint(text);
+    const printed = await printReceiptUsb(text);
     if (!printed) {
       toast.error('Receipt print failed — receipt preview is below');
     }

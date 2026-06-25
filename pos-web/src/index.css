@@ -1167,6 +1167,103 @@ img {
   font-weight: 600;
 }
 
+.staff-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.staff-picker-label {
+  margin: 0;
+  color: var(--grid-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.staff-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  border: 1px solid var(--grid-border);
+  border-radius: 12px;
+  background: var(--grid-surface);
+  color: var(--grid-text);
+  cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+}
+
+.staff-tile:hover {
+  border-color: #c8d6cc;
+  box-shadow: 0 8px 20px rgba(26, 26, 26, 0.08);
+  transform: translateY(-1px);
+}
+
+.staff-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #e9f3eb;
+  color: var(--grid-primary);
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.staff-avatar.small {
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
+}
+
+.staff-tile-name {
+  font-weight: 800;
+  font-size: 15px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.staff-tile-role {
+  font-size: 12px;
+  color: var(--grid-muted);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.staff-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--grid-border);
+  border-radius: 999px;
+  background: var(--grid-surface);
+  color: var(--grid-text);
+  cursor: pointer;
+}
+
+.staff-selected-name {
+  font-weight: 800;
+  flex: 1;
+  text-align: left;
+}
+
+.staff-selected-change {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--grid-primary);
+}
+
 .segmented-control,
 .payment-modes {
   display: grid;
@@ -2406,6 +2503,43 @@ img {
 .settings-logout {
   width: 100%;
   margin-top: 4px;
+}
+
+.settings-printer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--grid-border);
+  border-radius: 12px;
+}
+
+.settings-printer > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-printer small {
+  color: var(--grid-muted);
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-printer-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-printer-actions .secondary-button {
+  min-height: 40px;
+  padding: 0 12px;
 }
 
 .staff-session-outlet {

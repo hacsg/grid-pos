@@ -25,6 +25,7 @@ import {
 import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, ParkedCart, StaffSession, Totals } from '@/types';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { tapFeedback } from '@/utils/haptics';
+import { connectPrinter, forgetPrinter, getSavedPrinter, isPrintingSupported } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
 
 const SESSION_KEY = 'grid_pos_staff_session';
@@ -638,6 +639,24 @@ function StaffShell() {
   const location = useLocation();
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
+
+  async function handleConnectPrinter() {
+    tapFeedback();
+    try {
+      const saved = await connectPrinter();
+      setPrinterName(saved.name);
+      toast.success(`Printer set: ${saved.name}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not set printer');
+    }
+  }
+
+  function handleForgetPrinter() {
+    tapFeedback();
+    forgetPrinter();
+    setPrinterName(null);
+  }
 
   const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
 
@@ -720,6 +739,25 @@ function StaffShell() {
                 <span>Outlet</span>
                 <strong>{session.outlet.name}</strong>
               </div>
+
+              {isPrintingSupported() && (
+                <div className="settings-printer">
+                  <div>
+                    <strong>Receipt printer</strong>
+                    <small>{printerName ? printerName : 'Not set — you will be asked once'}</small>
+                  </div>
+                  <div className="settings-printer-actions">
+                    {printerName && (
+                      <button className="secondary-button" type="button" onClick={handleForgetPrinter}>
+                        Forget
+                      </button>
+                    )}
+                    <button className="secondary-button" type="button" onClick={handleConnectPrinter}>
+                      {printerName ? 'Change' : 'Connect'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="settings-build">
                 <div className="settings-build-title">Current build</div>

@@ -33,7 +33,7 @@ func (h *Handler) startSale(ctx context.Context, c Command) []any {
 
 func (h *Handler) query(ctx context.Context, c Command, typ string) []any {
 	q, err := h.client.Query(ctx, c.OutTradeNo); if err != nil { return []any{errEvent(c.RequestID, err)} }
-	return []any{map[string]any{"type": typ, "request_id": c.RequestID, "out_trade_no": c.OutTradeNo, "pay_result": q.PayResult, "transaction_no": q.TransactionNo, "ref_no": q.RefNo, "pay_method": q.PayMethod}}
+	return []any{map[string]any{"type": typ, "request_id": c.RequestID, "out_trade_no": c.OutTradeNo, "pay_result": q.PayResult, "transaction_no": q.TransactionNo, "ref_no": q.RefNo, "pay_method": q.PayMethod, "reason": q.Reason}}
 }
 func (h *Handler) simple(c Command, typ string, fn func() error) []any {
 	if err := fn(); err != nil { return []any{errEvent(c.RequestID, err)} }

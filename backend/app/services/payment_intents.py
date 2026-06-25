@@ -152,6 +152,7 @@ def _normalize_sale_result(event: dict) -> dict:
         "ref_no": event.get("ref_no"),
         "pay_method": event.get("pay_method"),
         "pay_result": event.get("pay_result"),
+        "reason": event.get("reason"),
     }
 
 
@@ -216,7 +217,9 @@ async def finalize_sale(session: AsyncSession, intent: PaymentIntent, event: dic
     label = _PAYRESULT_LABELS.get(code, f"payResult={event.get('pay_result')}")
     # payResult 1 = pending: the terminal hasn't reached a final state yet.
     status_value = "timeout" if code in (-1, 1) else "failed"
-    message = f"Card payment {label}"
+    # Surface the terminal's human-readable decline reason when present.
+    reason = (event.get("reason") or "").strip()
+    message = f"Card payment {label}" + (f": {reason}" if reason else "")
     await update_payment_intent_status(
         session, intent.id, status=status_value, kpay_response=result, error_message=message,
     )

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Delete, UserRound } from 'lucide-react';
+import { ChevronLeft, Delete, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getOutlets, loginWithPin } from '@/api/client';
+import { getOutlets, getStaffRoster, loginWithPin, type StaffRosterEntry } from '@/api/client';
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 
@@ -12,10 +12,19 @@ interface LoginScreenProps {
 
 const pinKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [pin, setPin] = useState('');
   const [selectedOutletId, setSelectedOutletId] = useState('');
-  const [username, setUsername] = useState('');
+  const [selectedStaff, setSelectedStaff] = useState<StaffRosterEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
 
@@ -29,7 +38,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     [outletsQuery.data, selectedOutletId]
   );
 
-  const canSubmit = Boolean(selectedOutlet) && username.trim().length > 0;
+  const rosterQuery = useQuery({
+    queryKey: ['staff-roster', selectedOutletId],
+    queryFn: () => getStaffRoster(selectedOutletId),
+    enabled: Boolean(selectedOutletId),
+  });
 
   useEffect(() => {
     if (!selectedOutletId && outletsQuery.data?.length) {
@@ -37,20 +50,21 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
   }, [outletsQuery.data, selectedOutletId]);
 
+  // Reset the staff selection when the outlet changes.
   useEffect(() => {
-    if (pin.length === 4 && canSubmit) {
+    setSelectedStaff(null);
+    setPin('');
+  }, [selectedOutletId]);
+
+  useEffect(() => {
+    if (pin.length === 4 && selectedOutlet && selectedStaff) {
       void submitPin(pin);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pin, canSubmit]);
+  }, [pin, selectedOutlet, selectedStaff]);
 
   async function submitPin(nextPin = pin) {
-    if (!selectedOutlet) {
-      toast.error('Select an outlet');
-      return;
-    }
-    if (!username.trim()) {
-      toast.error('Enter your username');
+    if (!selectedOutlet || !selectedStaff) {
       return;
     }
     if (nextPin.length !== 4) {
@@ -59,7 +73,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
     try {
       setLoading(true);
-      const response = await loginWithPin(selectedOutlet.id, nextPin, username);
+      const response = await loginWithPin(selectedOutlet.id, nextPin, selectedStaff.name);
       onLogin({
         token: response.access_token,
         staff: response.staff,
@@ -88,6 +102,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     setPin((current) => (current.length >= 4 ? current : `${current}${key}`));
   }
 
+  const roster = rosterQuery.data ?? [];
+
   return (
     <main className="login-shell">
       <section className="login-panel" aria-label="Staff login">
@@ -114,42 +130,70 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           </select>
         </label>
 
-        <label className="field-label">
-          Username
-          <div className="input-with-icon">
-            <UserRound size={18} aria-hidden="true" />
-            <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Your staff name"
-              autoComplete="username"
-              autoCapitalize="none"
+        {!selectedStaff ? (
+          <div className="staff-picker" aria-label="Select staff">
+            <p className="staff-picker-label">Tap your name</p>
+            {rosterQuery.isLoading && <div className="login-hint">Loading staff…</div>}
+            {!rosterQuery.isLoading && roster.length === 0 && (
+              <div className="login-hint">No staff found for this outlet</div>
+            )}
+            <div className="staff-grid">
+              {roster.map((staff) => (
+                <button
+                  key={staff.id}
+                  type="button"
+                  className="staff-tile"
+                  onClick={() => {
+                    tapFeedback();
+                    setSelectedStaff(staff);
+                    setPin('');
+                  }}
+                >
+                  <span className="staff-avatar" aria-hidden="true">{initials(staff.name) || <UserRound size={20} />}</span>
+                  <span className="staff-tile-name">{staff.name}</span>
+                  <span className="staff-tile-role">{staff.role}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="pin-login">
+            <button
+              type="button"
+              className="staff-selected"
+              onClick={() => {
+                tapFeedback();
+                setSelectedStaff(null);
+                setPin('');
+              }}
               disabled={loading}
-            />
-          </div>
-        </label>
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+              <span className="staff-avatar small" aria-hidden="true">{initials(selectedStaff.name)}</span>
+              <span className="staff-selected-name">{selectedStaff.name}</span>
+              <span className="staff-selected-change">Change</span>
+            </button>
 
-        <div className="pin-login">
-          <div className={`pin-display${shake ? ' shake' : ''}`} aria-label="PIN">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <span key={index} className={pin[index] ? 'filled' : ''} />
-            ))}
+            <div className={`pin-display${shake ? ' shake' : ''}`} aria-label="PIN">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <span key={index} className={pin[index] ? 'filled' : ''} />
+              ))}
+            </div>
+            <div className="pin-pad">
+              {pinKeys.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={loading}
+                  aria-label={key === 'backspace' ? 'Backspace' : key === 'clear' ? 'Clear' : key}
+                  onClick={() => pressKey(key)}
+                >
+                  {key === 'backspace' ? <Delete size={22} aria-hidden="true" /> : key === 'clear' ? 'Clear' : key}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="pin-pad">
-            {pinKeys.map((key) => (
-              <button
-                key={key}
-                type="button"
-                disabled={loading || (!canSubmit && key !== 'clear' && key !== 'backspace')}
-                aria-label={key === 'backspace' ? 'Backspace' : key === 'clear' ? 'Clear' : key}
-                onClick={() => pressKey(key)}
-              >
-                {key === 'backspace' ? <Delete size={22} aria-hidden="true" /> : key === 'clear' ? 'Clear' : key}
-              </button>
-            ))}
-          </div>
-          {!username.trim() && <p className="login-hint">Enter your username, then your 4-digit PIN</p>}
-        </div>
+        )}
       </section>
     </main>
   );
