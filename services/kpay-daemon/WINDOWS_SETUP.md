@@ -25,26 +25,27 @@ You can find it at:
 Create a file called `.env` in `C:\KPayDaemon\` with this content:
 
 ```env
-# Railway WebSocket URL (where daemon connects to Grid POS backend)
-KPAY_DAEMON_WS_URL=wss://grid-backend-production-5fd0.up.railway.app/ws/daemon
+# This outlet's UUID (get from Grid POS app / admin - see below)
+OUTLET_ID=YOUR_OUTLET_UUID_HERE
 
-# Authentication token (MUST match Railway backend KPAY_DAEMON_TOKEN)
-KPAY_DAEMON_TOKEN=***
-# This outlet's UUID (get from Grid POS app - see below)
-KPAY_OUTLET_ID=YOUR_OUTLET_UUID_HERE
+# Backend WebSocket URL (where the daemon connects to the Grid POS backend)
+RAILWAY_WS_URL=wss://grid-backend-production-5fd0.up.railway.app/ws/daemon
 
-# KPay terminal IP address on your local network
-# (terminal must be on same LAN as this Windows PC)
-KPAY_TERMINAL_BASE_URL=http://192.168.1.50:18080
+# Shared auth token (MUST match KPAY_DAEMON_TOKEN on the Railway backend)
+DAEMON_AUTH_TOKEN=YOUR_SHARED_TOKEN_HERE
+
+# KPay terminal on your LAN — bare IP maps to http://<ip>:18080 automatically
+KPAT_TERMINAL_IP=192.168.1.50
 
 # KPay API credentials (provided by KPay)
-KPAY_APP_ID=your_app_id_here
-KPAY_AP...n
-# KPay manager password (for refunds/cancels)
-KPAY_M...rd=123456
+KPAT_APP_ID=your_app_id_here
+KPAT_APP_SECRET=your_app_secret_here
 
-# Local test mode (set to true to skip Railway connection)
-KPAY_LOCAL_TEST=false
+# KPay manager password (for void/refund)
+KPAT_MANAGER_PASSWORD=123456
+
+# Local test mode (set to 1 to skip the WS connection and run :9000)
+# KPAY_LOCAL_TEST=1
 ```
 
 ## Step 4: Get Your Outlet ID
@@ -87,9 +88,10 @@ INFO Daemon ready, waiting for commands...
 ```
 
 **If you see errors:**
-- "Connection refused" → Railway backend is down or URL is wrong
-- "Authentication failed" → KPAY_DAEMON_TOKEN doesn't match Railway
-- "Cannot reach terminal" → KPAY_TERMINAL_BASE_URL is wrong or terminal is off
+- "missing required env: ..." → a variable name in `.env` is wrong/blank (names are case-sensitive: OUTLET_ID, RAILWAY_WS_URL, DAEMON_AUTH_TOKEN, KPAT_TERMINAL_IP, KPAT_APP_ID, KPAT_APP_SECRET, KPAT_MANAGER_PASSWORD)
+- "Connection refused" → Railway backend is down or RAILWAY_WS_URL is wrong
+- "Authentication failed" → DAEMON_AUTH_TOKEN doesn't match the backend KPAY_DAEMON_TOKEN
+- "Cannot reach terminal" → KPAT_TERMINAL_IP is wrong or the terminal is off
 
 Press `Ctrl+C` to stop.
 
@@ -139,7 +141,8 @@ type C:\KPayDaemon\daemon.log
 **"Terminal offline" in POS:**
 - Daemon logs should show "Connected to Railway"
 - Check Railway logs for WebSocket connection messages
-- Verify KPAY_DAEMON_TOKEN matches on both sides
+- Verify the daemon's DAEMON_AUTH_TOKEN matches the backend KPAY_DAEMON_TOKEN
+- Confirm the daemon's OUTLET_ID matches the outlet you're logged into on the POS
 
 **Cannot reach terminal:**
 - Ping terminal IP: `ping 192.168.1.50`
@@ -165,6 +168,6 @@ Once daemon is running:
 ## Security Notes
 
 - Keep `.env` file secure (contains tokens and credentials)
-- KPAY_DAEMON_TOKEN should be changed if compromised
+- DAEMON_AUTH_TOKEN should be changed if compromised (and updated on the backend too)
 - KPay credentials are sensitive - don't share
 - Daemon only accepts commands from Railway (authenticated)
