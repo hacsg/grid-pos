@@ -16,6 +16,7 @@ export interface OrderSnapshot {
   total: number;
   loyaltyCustomerName?: string;
   brandName?: string;
+  brandLogoUrl?: string | null;
 }
 
 export type DisplayMessage =
@@ -23,7 +24,10 @@ export type DisplayMessage =
   | { type: 'PAYMENT_START'; payload: { total: number } }
   | { type: 'PAYNOW_QR'; payload: { qrUrl: string; total: number } }
   | { type: 'PAYMENT_COMPLETE'; payload: { total: number; pointsEarned?: number | null } }
-  | { type: 'ORDER_COMPLETE' };
+  | { type: 'ORDER_COMPLETE' }
+  // Sent by the customer display on load so the POS re-broadcasts current state
+  // (so the idle/welcome screen shows branding even if opened mid-session).
+  | { type: 'DISPLAY_HELLO' };
 
 let channel: BroadcastChannel | null = null;
 

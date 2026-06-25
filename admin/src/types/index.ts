@@ -174,6 +174,7 @@ export interface Outlet {
   address: string;
   phone: string | null;
   paynow_qr_url?: string | null;
+  logo_url?: string | null;
   created_at: string;
   updated_at: string;
 }

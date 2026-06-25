@@ -31,6 +31,7 @@ class OutletRead(OutletBase, TimestampSchema):
     """Outlet response payload."""
 
     paynow_qr_url: str | None = None
+    logo_url: str | None = None
 
 
 class PayNowQrRead(BaseModel):
@@ -38,3 +39,10 @@ class PayNowQrRead(BaseModel):
 
     outlet_id: UUID
     paynow_qr_url: str | None = None
+
+
+class OutletLogoRead(BaseModel):
+    """Current shop logo data URL for an outlet (shown on the customer display)."""
+
+    outlet_id: UUID
+    logo_url: str | None = None

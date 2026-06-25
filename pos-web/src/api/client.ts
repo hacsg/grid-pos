@@ -19,6 +19,7 @@ export interface Outlet extends Timestamped {
   address: string;
   phone: string | null;
   paynow_qr_url?: string | null;
+  logo_url?: string | null;
 }
 
 export interface Modifier extends Timestamped {

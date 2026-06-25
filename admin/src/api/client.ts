@@ -344,6 +344,7 @@ export const getOutlets = async (params?: {
     address: o.address as string,
     phone: (o.phone as string | null) ?? null,
     paynow_qr_url: (o.paynow_qr_url as string | null) ?? null,
+    logo_url: (o.logo_url as string | null) ?? null,
     created_at: o.created_at as string,
     updated_at: o.updated_at as string,
   }));
@@ -390,6 +391,27 @@ export const uploadPayNowQr = async (id: string, file: File): Promise<PayNowQrRe
 export const deletePayNowQr = async (id: string): Promise<PayNowQrResponse> => {
   const { data } = await api.delete<PayNowQrResponse>(`/outlets/${id}/paynow-qr`);
   toast.success('PayNow QR removed');
+  return data;
+};
+
+export interface OutletLogoResponse {
+  outlet_id: string;
+  logo_url: string | null;
+}
+
+export const uploadOutletLogo = async (id: string, file: File): Promise<OutletLogoResponse> => {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.put<OutletLogoResponse>(`/outlets/${id}/logo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  toast.success('Logo updated');
+  return data;
+};
+
+export const deleteOutletLogo = async (id: string): Promise<OutletLogoResponse> => {
+  const { data } = await api.delete<OutletLogoResponse>(`/outlets/${id}/logo`);
+  toast.success('Logo removed');
   return data;
 };
 

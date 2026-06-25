@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DISPLAY_CHANNEL, type DisplayItem, type DisplayMessage, type OrderSnapshot } from './channel';
+import { broadcast, DISPLAY_CHANNEL, type DisplayItem, type DisplayMessage, type OrderSnapshot } from './channel';
 import { formatCurrency } from '@/api/client';
 
 type Phase = 'idle' | 'order' | 'processing' | 'paynowQr' | 'thanks' | 'resetting';
@@ -10,6 +10,7 @@ interface DisplayState {
   paymentTotal: number | null;
   pointsEarned: number | null;
   brandName: string;
+  brandLogoUrl: string | null;
   paynowQrUrl: string | null;
 }
 
@@ -22,6 +23,7 @@ export default function CustomerDisplay() {
     paymentTotal: null,
     pointsEarned: null,
     brandName: 'HAC',
+    brandLogoUrl: null,
     paynowQrUrl: null,
   });
   const [resetTimer, setResetTimer] = useState<number | null>(null);
@@ -46,24 +48,25 @@ export default function CustomerDisplay() {
         const payload = msg.payload;
         const hasItems = Array.isArray(payload?.items) && payload.items.length > 0;
         const brandName = payload?.brandName ?? 'HAC';
+        const brandLogoUrl = payload?.brandLogoUrl ?? null;
 
         setState((prev) => {
-          // During payment or post-payment, ignore ORDER_UPDATE (keeps processing/thanks visible)
+          // During payment or post-payment, ignore ORDER_UPDATE but keep branding fresh.
           if (prev.phase === 'processing' || prev.phase === 'paynowQr' || prev.phase === 'thanks' || prev.phase === 'resetting') {
-            return prev;
+            return { ...prev, brandName, brandLogoUrl };
           }
 
           if (!hasItems) {
-            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName, paynowQrUrl: null };
+            return { phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName, brandLogoUrl, paynowQrUrl: null };
           }
 
-          // Active order
           return {
             phase: 'order',
             snapshot: payload,
             paymentTotal: null,
             pointsEarned: null,
             brandName,
+            brandLogoUrl,
             paynowQrUrl: null,
           };
         });
@@ -80,11 +83,11 @@ export default function CustomerDisplay() {
 
       if (msg.type === 'PAYNOW_QR') {
         setState((prev) => ({
+          ...prev,
           phase: 'paynowQr',
           snapshot: null,
           paymentTotal: msg.payload?.total ?? prev.snapshot?.total ?? prev.paymentTotal ?? 0,
           pointsEarned: null,
-          brandName: prev.brandName,
           paynowQrUrl: msg.payload?.qrUrl ?? null,
         }));
       }
@@ -93,38 +96,34 @@ export default function CustomerDisplay() {
         const total = msg.payload?.total ?? 0;
         const points = msg.payload?.pointsEarned ?? null;
 
-        // Clear any pending reset timer
         if (resetTimer) {
           window.clearTimeout(resetTimer);
         }
 
         setState((prev) => ({
+          ...prev,
           phase: 'thanks',
           snapshot: null,
           paymentTotal: total,
           pointsEarned: points,
-          brandName: prev.brandName,
           paynowQrUrl: null,
         }));
       }
 
       if (msg.type === 'ORDER_COMPLETE') {
         setState((prev) => {
-          // Only transition from thanks -> resetting with timer
-          if (prev.phase !== 'thanks') {
-            // If somehow we get complete without thanks, just go idle after delay
-            const t = window.setTimeout(() => {
-              setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName, paynowQrUrl: null });
-            }, IDLE_RESET_DELAY);
-            setResetTimer(t);
-            return { ...prev, phase: 'resetting' };
-          }
-
           const t = window.setTimeout(() => {
-            setState({ phase: 'idle', snapshot: null, paymentTotal: null, pointsEarned: null, brandName: prev.brandName, paynowQrUrl: null });
+            setState((cur) => ({
+              phase: 'idle',
+              snapshot: null,
+              paymentTotal: null,
+              pointsEarned: null,
+              brandName: cur.brandName,
+              brandLogoUrl: cur.brandLogoUrl,
+              paynowQrUrl: null,
+            }));
             setResetTimer(null);
           }, IDLE_RESET_DELAY);
-
           setResetTimer(t);
           return { ...prev, phase: 'resetting' };
         });
@@ -132,6 +131,8 @@ export default function CustomerDisplay() {
     };
 
     ch.addEventListener('message', handleMessage);
+    // Ask the POS to send current branding/state so idle shows the shop logo.
+    broadcast({ type: 'DISPLAY_HELLO' });
 
     return () => {
       ch.removeEventListener('message', handleMessage);
@@ -143,7 +144,6 @@ export default function CustomerDisplay() {
     };
   }, [resetTimer]);
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (resetTimer) {
@@ -152,11 +152,21 @@ export default function CustomerDisplay() {
     };
   }, [resetTimer]);
 
-  const { phase, snapshot, paymentTotal, pointsEarned, brandName, paynowQrUrl } = state;
+  const { phase, snapshot, paymentTotal, pointsEarned, brandName, brandLogoUrl, paynowQrUrl } = state;
 
   const items: DisplayItem[] = snapshot?.items ?? [];
   const total = snapshot?.total ?? paymentTotal ?? 0;
   const displayBrandName = snapshot?.brandName ?? brandName;
+  const logoUrl = snapshot?.brandLogoUrl ?? brandLogoUrl;
+
+  const mark = (size: 'large' | 'small') =>
+    logoUrl ? (
+      <img className={`display-logo${size === 'small' ? ' small' : ''}`} src={logoUrl} alt={displayBrandName} />
+    ) : (
+      <div className={`display-mark${size === 'small' ? ' small' : ''}`} aria-hidden="true">
+        {displayBrandName.slice(0, 3).toUpperCase()}
+      </div>
+    );
 
   return (
     <div className="customer-display">
@@ -165,9 +175,7 @@ export default function CustomerDisplay() {
         {phase === 'idle' && (
           <div className="display-idle" key={phase}>
             <div className="display-brand">
-              <div className="display-mark" aria-hidden="true">
-                HAC
-              </div>
+              {mark('large')}
               <div className="display-brand-name">{displayBrandName}</div>
             </div>
             <div className="display-welcome">Welcome</div>
@@ -178,9 +186,7 @@ export default function CustomerDisplay() {
         {phase === 'order' && snapshot && (
           <div className="display-order" key={phase}>
             <div className="display-order-header">
-              <div className="display-mark small" aria-hidden="true">
-                HAC
-              </div>
+              {mark('small')}
               <div>
                 <div className="display-order-title">Current order</div>
                 {snapshot.loyaltyCustomerName && (
@@ -239,9 +245,7 @@ export default function CustomerDisplay() {
         {/* PAYMENT PROCESSING */}
         {phase === 'processing' && (
           <div className="display-processing" key={phase}>
-            <div className="display-mark small" aria-hidden="true">
-              HAC
-            </div>
+            {mark('small')}
             <div className="display-processing-text">Processing payment…</div>
             <div className="display-processing-total">{formatCurrency(paymentTotal ?? total)}</div>
           </div>
@@ -259,9 +263,7 @@ export default function CustomerDisplay() {
         {/* PAYMENT COMPLETE / THANK YOU */}
         {(phase === 'thanks' || phase === 'resetting') && (
           <div className="display-thanks" key={phase}>
-            <div className="display-mark small" aria-hidden="true">
-              HAC
-            </div>
+            {mark('small')}
             <div className="display-thanks-title">Thank you</div>
             <div className="display-thanks-total">{formatCurrency(paymentTotal ?? total)}</div>
             {pointsEarned != null && pointsEarned > 0 && (

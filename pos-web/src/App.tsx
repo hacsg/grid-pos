@@ -118,7 +118,8 @@ function buildDisplaySnapshot(
   discount: Discount | null,
   loyalty: LoyaltySelection | null,
   vouchers: AppliedVoucher[] = [],
-  brandName?: string
+  brandName?: string,
+  brandLogoUrl?: string | null
 ) {
   const displayItems = items.map((item) => {
     const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
@@ -142,6 +143,7 @@ function buildDisplaySnapshot(
     total: totals.total,
     loyaltyCustomerName: loyalty?.customer?.name,
     brandName: brandName ?? 'HAC',
+    brandLogoUrl: brandLogoUrl ?? null,
   };
 }
 
@@ -151,12 +153,13 @@ function syncDisplay(
   discount: Discount | null,
   loyalty: LoyaltySelection | null,
   vouchers: AppliedVoucher[] = [],
-  brandName?: string
+  brandName?: string,
+  brandLogoUrl?: string | null
 ) {
   try {
     broadcast({
       type: 'ORDER_UPDATE',
-      payload: buildDisplaySnapshot(items, totals, discount, loyalty, vouchers, brandName),
+      payload: buildDisplaySnapshot(items, totals, discount, loyalty, vouchers, brandName, brandLogoUrl),
     });
   } catch {
     // Never block cashier on display broadcast
@@ -275,7 +278,31 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     if (!session) {
       return;
     }
-    syncDisplay(cartItems, totals, discount, loyalty, vouchers, session.outlet.name);
+    syncDisplay(cartItems, totals, discount, loyalty, vouchers, session.outlet.name, session.outlet.logo_url);
+  }, [cartItems, discount, loyalty, vouchers, totals, session]);
+
+  // When the customer display (2nd screen) loads, it sends DISPLAY_HELLO; reply
+  // with the current snapshot so its idle/welcome screen shows the shop branding.
+  useEffect(() => {
+    if (!session || typeof BroadcastChannel === 'undefined') {
+      return;
+    }
+    let ch: BroadcastChannel | null = null;
+    try {
+      ch = new BroadcastChannel('grid-pos-display');
+    } catch {
+      return;
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'DISPLAY_HELLO') {
+        syncDisplay(cartItems, totals, discount, loyalty, vouchers, session.outlet.name, session.outlet.logo_url);
+      }
+    };
+    ch.addEventListener('message', onMessage);
+    return () => {
+      ch?.removeEventListener('message', onMessage);
+      try { ch?.close(); } catch { /* ignore */ }
+    };
   }, [cartItems, discount, loyalty, vouchers, totals, session]);
 
   function handleLogin(nextSession: StaffSession) {

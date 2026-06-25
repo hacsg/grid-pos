@@ -12,6 +12,8 @@ import {
   useDeleteOutlet,
   useUploadPayNowQr,
   useDeletePayNowQr,
+  useUploadOutletLogo,
+  useDeleteOutletLogo,
 } from '@/hooks/useOutlets';
 import type { Outlet, OutletFormData } from '@/types';
 
@@ -133,6 +135,67 @@ function PayNowQrControls({ outlet }: { outlet: Outlet }) {
   );
 }
 
+function LogoControls({ outlet }: { outlet: Outlet }) {
+  const uploadLogo = useUploadOutletLogo();
+  const deleteLogo = useDeleteOutletLogo();
+  const isBusy = uploadLogo.isPending || deleteLogo.isPending;
+
+  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    uploadLogo.mutate({ outletId: outlet.id, file });
+  };
+
+  const handleDelete = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!window.confirm(`Remove shop logo for "${outlet.name}"?`)) return;
+    deleteLogo.mutate(outlet.id);
+  };
+
+  return (
+    <div className="flex items-center gap-3" onClick={(event) => event.stopPropagation()}>
+      <div className="grid h-14 w-20 place-items-center overflow-hidden rounded-lg border border-gray-200 bg-surface">
+        {outlet.logo_url ? (
+          <img src={outlet.logo_url} alt={`${outlet.name} logo`} className="h-full w-full object-contain" />
+        ) : (
+          <ImageIcon className="h-5 w-5 text-text-muted" />
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <label
+          className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-surface ${
+            isBusy ? 'pointer-events-none opacity-50' : ''
+          }`}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {outlet.logo_url ? 'Replace' : 'Upload'}
+          <input
+            className="hidden"
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+            disabled={isBusy}
+            onChange={handleUpload}
+          />
+        </label>
+        {outlet.logo_url && (
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface hover:text-error disabled:opacity-50"
+            disabled={isBusy}
+            onClick={handleDelete}
+            aria-label={`Remove ${outlet.name} logo`}
+            title="Remove logo"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Outlets() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingOutlet, setEditingOutlet] = useState<Outlet | null>(null);
@@ -183,6 +246,11 @@ export default function Outlets() {
       key: 'paynow_qr',
       header: 'Manual PayNow',
       render: (outlet: Outlet) => <PayNowQrControls outlet={outlet} />,
+    },
+    {
+      key: 'logo',
+      header: 'Shop logo',
+      render: (outlet: Outlet) => <LogoControls outlet={outlet} />,
     },
     {
       key: 'actions',

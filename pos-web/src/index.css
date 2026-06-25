@@ -2007,6 +2007,26 @@ img {
   border-radius: 12px;
 }
 
+.display-logo {
+  width: auto;
+  max-width: 300px;
+  max-height: 180px;
+  object-fit: contain;
+  /* White plate so logos of any colour stay visible on the dark display. */
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 18px 24px;
+  margin-bottom: 20px;
+}
+
+.display-logo.small {
+  max-width: 150px;
+  max-height: 64px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
 .display-brand-name {
   font-size: 22px;
   font-weight: 600;

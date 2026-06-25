@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.outlet import Outlet
-from app.schemas.outlet import OutletCreate, OutletRead, OutletUpdate, PayNowQrRead
+from app.schemas.outlet import OutletCreate, OutletLogoRead, OutletRead, OutletUpdate, PayNowQrRead
 
 router = APIRouter(prefix="/outlets", tags=["outlets"])
 
@@ -19,6 +19,15 @@ PAYNOW_QR_CONTENT_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpeg",
     "image/jpg": "jpeg",
+}
+
+LOGO_MAX_BYTES = 1024 * 1024
+LOGO_CONTENT_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/jpg": "jpeg",
+    "image/svg+xml": "svg+xml",
+    "image/webp": "webp",
 }
 
 
@@ -107,6 +116,55 @@ async def delete_paynow_qr(outlet_id: UUID, db: AsyncSession = Depends(get_db)) 
     await db.commit()
     await db.refresh(outlet)
     return PayNowQrRead(outlet_id=outlet.id, paynow_qr_url=None)
+
+
+@router.get("/{outlet_id}/logo", response_model=OutletLogoRead)
+async def get_logo(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> OutletLogoRead:
+    """Return the current shop logo for the customer display."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    return OutletLogoRead(outlet_id=outlet.id, logo_url=outlet.logo_url)
+
+
+@router.put("/{outlet_id}/logo", response_model=OutletLogoRead)
+async def upload_logo(
+    outlet_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> OutletLogoRead:
+    """Upload or replace the shop logo shown on the customer display."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    content_type = (file.content_type or "").lower()
+    image_type = LOGO_CONTENT_TYPES.get(content_type)
+    if image_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Logo must be a PNG, JPG, SVG or WebP image",
+        )
+
+    content = await file.read(LOGO_MAX_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logo image is empty")
+    if len(content) > LOGO_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Logo image must be 1MB or smaller",
+        )
+
+    encoded = base64.b64encode(content).decode("ascii")
+    outlet.logo_url = f"data:image/{image_type};base64,{encoded}"
+    await db.commit()
+    await db.refresh(outlet)
+    return OutletLogoRead(outlet_id=outlet.id, logo_url=outlet.logo_url)
+
+
+@router.delete("/{outlet_id}/logo", response_model=OutletLogoRead)
+async def delete_logo(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> OutletLogoRead:
+    """Remove the shop logo for an outlet."""
+    outlet = await load_outlet_or_404(db, outlet_id)
+    outlet.logo_url = None
+    await db.commit()
+    await db.refresh(outlet)
+    return OutletLogoRead(outlet_id=outlet.id, logo_url=None)
 
 
 @router.patch("/{outlet_id}", response_model=OutletRead)
