@@ -9,22 +9,32 @@ Handles the lifecycle of payment transactions that flow through the Go daemon:
 State machine: pending → processing → success | failed | timeout | cancelled
 """
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal
+from app.config import settings
 from app.models.order import Order
 from app.models.payment_intent import PaymentIntent
-from app.routers.ws_daemon import get_daemon_connection, send_to_daemon
+from app.routers.ws_daemon import send_to_daemon
 
 log = logging.getLogger(__name__)
+
+
+def _to_cents(amount: Decimal) -> int:
+    """Convert a money Decimal to integer cents without float rounding error."""
+    return int((amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100))
+
+
+def new_out_trade_no(prefix: str = "KPAY") -> str:
+    """Generate a unique merchant transaction reference for a KPay operation."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return f"{prefix}-{timestamp}-{uuid.uuid4().hex[:8].upper()}"
 
 
 # ============================================================================
@@ -49,10 +59,8 @@ async def create_payment_intent(
         Created PaymentIntent with generated out_trade_no
     """
     # Generate unique transaction reference for KPay
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    random_suffix = uuid.uuid4().hex[:8].upper()
-    out_trade_no = f"KPAY-{timestamp}-{random_suffix}"
-    
+    out_trade_no = new_out_trade_no()
+
     intent = PaymentIntent(
         id=uuid.uuid4(),
         outlet_id=outlet_id,
@@ -76,6 +84,18 @@ async def get_payment_intent(session: AsyncSession, intent_id: str) -> Optional[
     return result.scalar_one_or_none()
 
 
+async def get_successful_intent_for_order(
+    session: AsyncSession, order_id: str
+) -> Optional[PaymentIntent]:
+    """Return the most recent successful card payment intent for an order."""
+    result = await session.execute(
+        select(PaymentIntent)
+        .where(PaymentIntent.order_id == order_id, PaymentIntent.status == "success")
+        .order_by(PaymentIntent.created_at.desc())
+    )
+    return result.scalars().first()
+
+
 async def update_payment_intent_status(
     session: AsyncSession,
     intent_id: str,
@@ -96,22 +116,22 @@ async def update_payment_intent_status(
     )
     await session.execute(stmt)
     
-    # If terminal state, also update the order
-    if status in ("success", "failed") and kpay_response:
-        # Fetch the intent to get order_id and out_trade_no
+    # On success, stamp the order with the KPay transaction reference. Prefer the
+    # KPay transactionNo (needed for downstream refunds) and fall back to out_trade_no.
+    if status == "success":
         intent_result = await session.execute(select(PaymentIntent).where(PaymentIntent.id == intent_id))
         intent = intent_result.scalar_one_or_none()
-        
         if intent:
-            # Update order payment fields
-            if status == "success":
-                order_stmt = update(Order).where(Order.id == intent.order_id).values(
-                    payment_method="card",
-                    payment_reference=intent.out_trade_no,
-                )
-                await session.execute(order_stmt)
-                log.info(f"Updated order {intent.order_id} with card payment {intent.out_trade_no}")
-    
+            reference = intent.out_trade_no
+            if kpay_response and kpay_response.get("transaction_no"):
+                reference = kpay_response["transaction_no"]
+            order_stmt = update(Order).where(Order.id == intent.order_id).values(
+                payment_method="card",
+                payment_reference=reference,
+            )
+            await session.execute(order_stmt)
+            log.info(f"Updated order {intent.order_id} with card payment ref {reference}")
+
     await session.commit()
     log.info(f"Payment intent {intent_id} status → {status}")
 
@@ -120,150 +140,96 @@ async def update_payment_intent_status(
 # KPay Terminal Communication
 # ============================================================================
 
-async def start_sale_on_terminal(intent: PaymentIntent) -> dict:
-    """Send start_sale command to daemon for this payment intent.
-    
-    Returns daemon response dict with 'success' and 'result' fields.
-    Raises RuntimeError if daemon not connected or timeout.
-    """
-    # Format amount for KPay (12-digit zero-padded string)
-    amount_cents = int(intent.amount * 100)
-    amount_str = f"{amount_cents:012d}"
-    
-    params = {
-        "outTradeNo": intent.out_trade_no,
-        "amount": amount_str,
-        "paymentType": 1,
+# KPay payment type for a unified card sale. TODO(kpay): confirm enum vs docs.
+_DEFAULT_PAYMENT_TYPE = 1
+
+
+def _normalize_sale_result(event: dict) -> dict:
+    """Pull the fields we persist from a daemon sale_result/query_result event."""
+    return {
+        "out_trade_no": event.get("out_trade_no"),
+        "transaction_no": event.get("transaction_no"),
+        "ref_no": event.get("ref_no"),
+        "pay_method": event.get("pay_method"),
+        "pay_result": event.get("pay_result"),
     }
-    
-    log.info(f"Sending start_sale to daemon: {intent.outlet_id}, amount={amount_str}")
-    
-    # Send to daemon with 60s timeout (KPay spec says response within 60s)
-    response = await send_to_daemon(intent.outlet_id, "start_sale", params, timeout=60.0)
-    return response
 
 
-async def query_terminal(intent: PaymentIntent) -> dict:
-    """Send query command to daemon to check payment status.
-    
-    Returns daemon response dict with 'success' and 'result' fields.
-    Raises RuntimeError if daemon not connected or timeout.
-    """
-    time_ref = ""
-    if intent.kpay_response and "timeRef" in intent.kpay_response:
-        time_ref = intent.kpay_response["timeRef"]
-    
-    params = {
-        "outTradeNo": intent.out_trade_no,
-        "timeRef": time_ref,
-    }
-    
-    log.debug(f"Querying terminal for {intent.out_trade_no}")
-    
-    # Send to daemon with 10s timeout
-    response = await send_to_daemon(intent.outlet_id, "query", params, timeout=10.0)
-    return response
-
-
-# ============================================================================
-# Background Polling Loop
-# ============================================================================
-
-async def process_single_intent(session: AsyncSession, intent: PaymentIntent) -> None:
-    """Poll terminal for a single processing payment intent.
-    
-    Updates status to success/failed/timeout based on terminal response.
-    """
+def _is_approved(event: dict) -> bool:
+    """Interpret the daemon's KPay payResult against the configured success code."""
+    raw = event.get("pay_result")
     try:
-        # Check timeout
-        created_at = intent.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        age_seconds = (datetime.now(timezone.utc) - created_at).total_seconds()
-        if age_seconds > 90:
-            log.warning(f"Payment intent {intent.id} timed out after {age_seconds:.1f}s")
-            await update_payment_intent_status(
-                session,
-                intent.id,
-                status="timeout",
-                error_message="Payment timed out (no response in 90s)",
-            )
-            return
-        
-        # Query terminal
-        response = await query_terminal(intent)
-        
-        if not response.get("success"):
-            log.warning(f"Query failed for {intent.id}: {response.get('error')}")
-            return  # Will retry next cycle
-        
-        # Extract terminal state from response
-        result = response.get("result", {})
-        terminal_status = result.get("status", "").upper()
-        
-        # KPay terminal states: SUCCESS, FAILED, TIMEOUT
-        if terminal_status == "SUCCESS":
-            await update_payment_intent_status(
-                session,
-                intent.id,
-                status="success",
-                kpay_response=result,
-            )
-            log.info(f"Payment {intent.id} succeeded")
-        
-        elif terminal_status in ("FAILED", "ERROR"):
-            error_msg = result.get("message", "Payment failed")
-            await update_payment_intent_status(
-                session,
-                intent.id,
-                status="failed",
-                kpay_response=result,
-                error_message=error_msg,
-            )
-            log.warning(f"Payment {intent.id} failed: {error_msg}")
-        
-        # If pending/partial, do nothing — will retry next cycle
-    
-    except RuntimeError as e:
-        log.error(f"Error polling terminal for {intent.id}: {e}")
-        # Will retry next cycle
-    
-    except Exception as e:
-        log.error(f"Unexpected error polling {intent.id}: {e}", exc_info=True)
+        return int(raw) == settings.kpay_payresult_success
+    except (TypeError, ValueError):
+        return False
 
 
-async def polling_loop() -> None:
-    """Background task that polls processing payment intents every 2s.
-    
-    Runs indefinitely until the app shuts down. Queries all intents with
-    status='processing' and sends query command to daemon. Updates status
-    when terminal state is reached.
+async def start_sale_on_terminal(intent: PaymentIntent, payment_type: int = _DEFAULT_PAYMENT_TYPE) -> dict:
+    """Run a card sale on the terminal and wait for the final result.
+
+    The Go daemon performs the blocking KPay /sales call then queries the result,
+    returning a single sale_result (or error) event. Raises RuntimeError if the
+    daemon is not connected or times out.
     """
-    log.info("Payment intent polling loop started")
-    
-    while True:
-        try:
-            async with AsyncSessionLocal() as session:
-                # Fetch all processing intents
-                result = await session.execute(
-                    select(PaymentIntent).where(PaymentIntent.status == "processing")
-                )
-                intents = result.scalars().all()
-                
-                if intents:
-                    log.debug(f"Polling {len(intents)} processing payment intent(s)")
-            
-            # Process each intent in its own session so one failure cannot block the batch.
-            for intent in intents:
-                async with AsyncSessionLocal() as intent_session:
-                    await process_single_intent(intent_session, intent)
-        
-        except asyncio.CancelledError:
-            log.info("Payment intent polling loop cancelled")
-            break
-        
-        except Exception as e:
-            log.error(f"Error in polling loop: {e}", exc_info=True)
-        
-        # Sleep 2s between cycles
-        await asyncio.sleep(2)
+    params = {
+        "out_trade_no": intent.out_trade_no,
+        "amount_cents": _to_cents(intent.amount),
+        "payment_type": payment_type,
+    }
+    log.info(f"start_sale → daemon outlet={intent.outlet_id} no={intent.out_trade_no} cents={params['amount_cents']}")
+    return await send_to_daemon(
+        intent.outlet_id, "start_sale", params, timeout=settings.kpay_sale_timeout_seconds
+    )
+
+
+async def finalize_sale(session: AsyncSession, intent: PaymentIntent, event: dict) -> str:
+    """Interpret a terminal sale event, persist the outcome, and return the status."""
+    if event.get("type") == "error":
+        message = event.get("message") or "Terminal error"
+        await update_payment_intent_status(
+            session, intent.id, status="failed",
+            kpay_response=_normalize_sale_result(event), error_message=message,
+        )
+        return "failed"
+
+    result = _normalize_sale_result(event)
+    if _is_approved(event):
+        await update_payment_intent_status(session, intent.id, status="success", kpay_response=result)
+        return "success"
+
+    message = f"Card payment not approved (payResult={event.get('pay_result')})"
+    await update_payment_intent_status(
+        session, intent.id, status="failed", kpay_response=result, error_message=message,
+    )
+    return "failed"
+
+
+async def cancel_on_terminal(outlet_id: str, out_trade_no: str, origin_out_trade_no: str) -> dict:
+    """Void/cancel a same-day KPay sale via the daemon (manager password injected daemon-side)."""
+    params = {"out_trade_no": out_trade_no, "origin_out_trade_no": origin_out_trade_no}
+    log.info(f"cancel → daemon outlet={outlet_id} origin={origin_out_trade_no}")
+    return await send_to_daemon(outlet_id, "cancel", params, timeout=settings.kpay_sale_timeout_seconds)
+
+
+async def refund_on_terminal(
+    outlet_id: str,
+    out_trade_no: str,
+    origin_out_trade_no: str,
+    refund_amount_cents: int,
+    ref_no: str = "",
+    transaction_no: str = "",
+    refund_type: int = 1,
+    commit_time: int = 0,
+) -> dict:
+    """Refund a settled KPay sale via the daemon (manager password injected daemon-side)."""
+    params = {
+        "out_trade_no": out_trade_no,
+        "origin_out_trade_no": origin_out_trade_no,
+        "refund_type": refund_type,
+        "refund_amount_cents": refund_amount_cents,
+        "ref_no": ref_no,
+        "transaction_no": transaction_no,
+        "commit_time": commit_time,
+    }
+    log.info(f"refund → daemon outlet={outlet_id} origin={origin_out_trade_no} cents={refund_amount_cents}")
+    return await send_to_daemon(outlet_id, "refund", params, timeout=settings.kpay_sale_timeout_seconds)

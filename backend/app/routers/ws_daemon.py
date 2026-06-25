@@ -33,67 +33,73 @@ _active_connections: dict[str, WebSocket] = {}
 _pending_responses: dict[tuple[str, str], asyncio.Future] = {}
 
 
+# Event types from the daemon that complete a request. Intermediate events
+# (e.g. "sale_started") are informational and must NOT resolve the request.
+_TERMINAL_EVENT_TYPES = frozenset(
+    {"sale_result", "query_result", "cancel_result", "refund_result", "error"}
+)
+
+
 def get_daemon_connection(outlet_id: str) -> Optional[WebSocket]:
     """Get active daemon WebSocket for an outlet, or None if not connected."""
     return _active_connections.get(outlet_id)
 
 
 async def send_to_daemon(outlet_id: str, command: str, params: dict, timeout: float = 30.0) -> dict:
-    """Send command to daemon and wait for response.
-    
+    """Send a command to the daemon and wait for its terminal event.
+
+    The Go daemon expects a flat message: {"type": <command>, "request_id": <id>,
+    ...<snake_case fields>} and replies with one or more events tagged with the
+    same request_id. We resolve on the terminal event for the request.
+
     Args:
         outlet_id: Which outlet's daemon to send to
-        command: Command name (e.g., "start_sale", "query")
-        params: Command parameters
-        timeout: Seconds to wait for response (default 30s)
-    
+        command: Daemon command type (e.g. "start_sale", "query", "cancel", "refund")
+        params: Flat command fields (merged into the message, snake_case)
+        timeout: Seconds to wait for the terminal event
+
     Returns:
-        Daemon response dict with 'success' and 'result'/'error' fields
-    
+        The terminal event dict from the daemon (includes "type" and fields).
+
     Raises:
         RuntimeError: If daemon not connected or timeout
     """
     ws = get_daemon_connection(outlet_id)
     if not ws:
         raise RuntimeError(f"Daemon not connected for outlet {outlet_id}")
-    
-    # Generate unique request ID
+
     request_id = str(uuid.uuid4())
-    
-    # Create future for response
+
     future = asyncio.get_running_loop().create_future()
     _pending_responses[(outlet_id, request_id)] = future
-    
+
     try:
-        # Send command
-        message = {"id": request_id, "command": command, "params": params}
+        message = {"type": command, "request_id": request_id, **params}
         await ws.send_json(message)
-        log.info(f"Sent to daemon {outlet_id}: {command} (id={request_id})")
-        
-        # Wait for response with timeout
+        log.info(f"Sent to daemon {outlet_id}: {command} (request_id={request_id})")
+
         response = await asyncio.wait_for(future, timeout=timeout)
         return response
-    
+
     except asyncio.TimeoutError:
         log.error(f"Timeout waiting for daemon {outlet_id} response to {command}")
         raise RuntimeError(f"Daemon timeout for {command}")
-    
+
     except Exception as e:
         log.error(f"Error sending to daemon {outlet_id}: {e}")
         raise
-    
+
     finally:
-        # Clean up pending response
         _pending_responses.pop((outlet_id, request_id), None)
 
 
 def resolve_daemon_response(outlet_id: str, request_id: str, response: dict):
-    """Resolve a pending response future when daemon replies."""
+    """Resolve a pending future when the daemon sends a terminal event."""
     key = (outlet_id, request_id)
     future = _pending_responses.get(key)
     if future and not future.done():
         future.set_result(response)
-        log.debug(f"Resolved daemon response for {key}")
+        log.debug(f"Resolved daemon response for {key}: {response.get('type')}")
 
 
 @router.websocket("/ws/daemon")
@@ -131,18 +137,22 @@ async def websocket_daemon(websocket: WebSocket, token: str, outlet_id: str):
         while True:
             message = await websocket.receive_json()
             
+            msg_type = message.get("type")
+
             # Handle heartbeats
-            if message.get("type") == "ping":
+            if msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
                 continue
-            
-            # Handle daemon responses to our commands
-            if "id" in message:
-                request_id = message["id"]
-                resolve_daemon_response(outlet_id, request_id, message)
-            
-            # Note: daemon may also send unsolicited messages (e.g., async status updates)
-            # Future: handle those here if needed
+
+            # The daemon tags every reply with the originating request_id and emits
+            # one or more events. Only terminal events resolve the pending request;
+            # intermediate events (e.g. "sale_started") are logged and ignored.
+            request_id = message.get("request_id")
+            if request_id:
+                if msg_type in _TERMINAL_EVENT_TYPES:
+                    resolve_daemon_response(outlet_id, request_id, message)
+                else:
+                    log.debug(f"Daemon {outlet_id} interim event {msg_type} (request_id={request_id})")
     
     except WebSocketDisconnect:
         log.info(f"Daemon disconnected: outlet {outlet_id}")

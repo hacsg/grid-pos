@@ -22,3 +22,23 @@ export async function getPaymentStatus(intentId: string): Promise<PaymentIntent>
 export async function getTerminalConnection(): Promise<{ connected: boolean }> {
   return request<{ connected: boolean }>('/api/kpay/connection');
 }
+
+export interface KPayReversalResult {
+  result: 'ok' | 'failed';
+  out_trade_no: string;
+  message?: string | null;
+}
+
+export async function voidCardPayment(orderId: string): Promise<KPayReversalResult> {
+  return request<KPayReversalResult>('/api/kpay/void', {
+    method: 'POST',
+    body: JSON.stringify({ order_id: orderId }),
+  });
+}
+
+export async function refundCardPayment(orderId: string, amount?: number): Promise<KPayReversalResult> {
+  return request<KPayReversalResult>('/api/kpay/refund', {
+    method: 'POST',
+    body: JSON.stringify({ order_id: orderId, amount }),
+  });
+}

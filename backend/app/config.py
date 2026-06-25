@@ -27,6 +27,20 @@ class Settings(BaseSettings):
         alias="KPAY_DAEMON_TOKEN",
         description="Shared token for Go daemon WebSocket authentication",
     )
+    # KPay terminal query returns an integer payResult. The value that means a
+    # successful/approved transaction must be confirmed against the KPay docs and
+    # the live terminal — keep it env-overridable so testers can adjust without a
+    # daemon/backend rebuild. TODO(kpay): confirm against docs-posserver spec.
+    kpay_payresult_success: int = Field(
+        default=1,
+        alias="KPAY_PAYRESULT_SUCCESS",
+        description="KPay query payResult value that indicates an approved sale",
+    )
+    kpay_sale_timeout_seconds: float = Field(
+        default=80.0,
+        alias="KPAY_SALE_TIMEOUT_SECONDS",
+        description="How long the backend waits for the daemon's sale_result",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

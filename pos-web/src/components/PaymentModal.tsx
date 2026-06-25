@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Banknote, CheckCircle2, CreditCard, Loader2, Printer, QrCode, Receipt, Split, X } from 'lucide-react';
+import { Banknote, CheckCircle2, CreditCard, Loader2, Printer, QrCode, Receipt, Split, Undo2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   applyVouchersToOrder,
@@ -11,7 +11,7 @@ import {
   updateOrderStatus,
   type OrderRead,
 } from '@/api/client';
-import { getPaymentStatus, getTerminalConnection, startCardPayment, type PaymentIntent } from '@/api/kpayClient';
+import { getPaymentStatus, getTerminalConnection, startCardPayment, voidCardPayment, type PaymentIntent } from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { broadcast } from '@/display/channel';
@@ -250,6 +250,7 @@ export default function PaymentModal({
   const [payNowQrUrl, setPayNowQrUrl] = useState<string | null>(null);
   const [payNowQrLoading, setPayNowQrLoading] = useState(false);
   const [payNowQrError, setPayNowQrError] = useState('');
+  const [voidState, setVoidState] = useState<'idle' | 'voiding' | 'voided'>('idle');
 
   useEffect(() => {
     if (!open) {
@@ -266,6 +267,7 @@ export default function PaymentModal({
       setPayNowQrUrl(null);
       setPayNowQrLoading(false);
       setPayNowQrError('');
+      setVoidState('idle');
     }
   }, [open]);
 
@@ -806,6 +808,27 @@ export default function PaymentModal({
     }
   }
 
+  async function handleVoid() {
+    if (!receipt) {
+      return;
+    }
+    tapFeedback();
+    setVoidState('voiding');
+    try {
+      const res = await voidCardPayment(receipt.order.id);
+      if (res.result === 'ok') {
+        setVoidState('voided');
+        toast.success('Payment voided');
+      } else {
+        setVoidState('idle');
+        toast.error(res.message || 'Void failed');
+      }
+    } catch (err: unknown) {
+      setVoidState('idle');
+      toast.error(getErrorMessage(err, 'Void failed'));
+    }
+  }
+
   async function printReceipt() {
     if (!receipt) {
       return;
@@ -1221,12 +1244,23 @@ export default function PaymentModal({
               </section>
 
               <footer className="sheet-actions">
+                {receipt.cardAmount > 0 && voidState !== 'voided' && (
+                  <button
+                    className="secondary-button danger-text"
+                    type="button"
+                    onClick={handleVoid}
+                    disabled={voidState === 'voiding'}
+                  >
+                    <Undo2 size={18} aria-hidden="true" />
+                    {voidState === 'voiding' ? 'Voiding...' : 'Void payment'}
+                  </button>
+                )}
                 <button className="secondary-button" type="button" onClick={printReceipt}>
                   <Printer size={18} aria-hidden="true" />
                   Print receipt
                 </button>
                 <button className="primary-button" type="button" onClick={onClose}>
-                  New sale
+                  {voidState === 'voided' ? 'Close' : 'New sale'}
                 </button>
               </footer>
             </>

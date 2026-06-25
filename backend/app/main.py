@@ -1,6 +1,5 @@
 """FastAPI application entry point."""
 
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
@@ -15,23 +14,14 @@ from app.schemas.health import HealthRead
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Run SQL migrations and start background services before serving requests."""
-    from app.services import payment_intents
-    
+    """Run SQL migrations before serving requests.
+
+    Card payments use a synchronous request/response to the Go daemon
+    (POST /api/kpay/start blocks until the terminal returns a result), so no
+    background polling loop is required.
+    """
     await run_sql_migrations()
-    
-    # Start payment intent polling loop
-    polling_task = asyncio.create_task(payment_intents.polling_loop())
-    
-    try:
-        yield
-    finally:
-        # Graceful shutdown: cancel polling loop
-        polling_task.cancel()
-        try:
-            await polling_task
-        except asyncio.CancelledError:
-            pass
+    yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
