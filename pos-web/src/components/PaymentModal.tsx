@@ -738,8 +738,10 @@ export default function PaymentModal({
 
       if (requiresTerminal && (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0))) {
         const paymentAmount = mode === 'split' ? splitTerminalAmount : totalDue;
+        // KPay paymentType: 1 = card, 13 = PayNow forward scan.
+        const kpayPaymentType = terminalMethod === 'paynow' ? 13 : 1;
         try {
-          const intent = await startCardPayment(pendingOrder.id, paymentAmount);
+          const intent = await startCardPayment(pendingOrder.id, paymentAmount, kpayPaymentType);
           setTerminalConnected(true);
           setCardPayment({
             order: pendingOrder,

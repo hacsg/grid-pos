@@ -1129,6 +1129,44 @@ img {
   box-shadow: 0 0 0 3px rgba(47, 111, 62, 0.16);
 }
 
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-icon svg {
+  position: absolute;
+  left: 12px;
+  color: var(--grid-muted);
+  pointer-events: none;
+}
+
+.input-with-icon input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--grid-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--grid-text);
+  font-size: 18px;
+  outline: 0;
+  padding: 0 12px 0 40px;
+}
+
+.input-with-icon input:focus {
+  border-color: var(--grid-primary);
+  box-shadow: 0 0 0 3px rgba(47, 111, 62, 0.16);
+}
+
+.login-hint {
+  margin: 0;
+  text-align: center;
+  color: var(--grid-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .segmented-control,
 .payment-modes {
   display: grid;

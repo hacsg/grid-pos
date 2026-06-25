@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Delete, LockKeyhole, UserRound } from 'lucide-react';
+import { Delete, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getOutlets, loginWithPassword, loginWithPin } from '@/api/client';
+import { getOutlets, loginWithPin } from '@/api/client';
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 
@@ -10,16 +10,12 @@ interface LoginScreenProps {
   onLogin: (session: StaffSession) => void;
 }
 
-type LoginMode = 'pin' | 'password';
-
 const pinKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [mode, setMode] = useState<LoginMode>('pin');
   const [pin, setPin] = useState('');
   const [selectedOutletId, setSelectedOutletId] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
 
@@ -33,6 +29,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     [outletsQuery.data, selectedOutletId]
   );
 
+  const canSubmit = Boolean(selectedOutlet) && username.trim().length > 0;
+
   useEffect(() => {
     if (!selectedOutletId && outletsQuery.data?.length) {
       setSelectedOutletId(outletsQuery.data[0].id);
@@ -40,14 +38,19 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   }, [outletsQuery.data, selectedOutletId]);
 
   useEffect(() => {
-    if (pin.length === 4 && selectedOutlet) {
+    if (pin.length === 4 && canSubmit) {
       void submitPin(pin);
     }
-  }, [pin, selectedOutlet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, canSubmit]);
 
   async function submitPin(nextPin = pin) {
     if (!selectedOutlet) {
       toast.error('Select an outlet');
+      return;
+    }
+    if (!username.trim()) {
+      toast.error('Enter your username');
       return;
     }
     if (nextPin.length !== 4) {
@@ -56,7 +59,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
     try {
       setLoading(true);
-      const response = await loginWithPin(selectedOutlet.id, nextPin);
+      const response = await loginWithPin(selectedOutlet.id, nextPin, username);
       onLogin({
         token: response.access_token,
         staff: response.staff,
@@ -69,26 +72,6 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     } finally {
       setLoading(false);
       setPin('');
-    }
-  }
-
-  async function submitPassword(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedOutlet) {
-      toast.error('Select an outlet');
-      return;
-    }
-    try {
-      setLoading(true);
-      const response = await loginWithPassword(selectedOutlet.id, username, password);
-      onLogin({
-        token: response.access_token,
-        staff: response.staff,
-        outlet: selectedOutlet,
-        expiresAt: Date.now() + response.expires_in * 1000,
-      });
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -131,76 +114,42 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           </select>
         </label>
 
-        <div className="segmented-control" role="tablist" aria-label="Login mode">
-          <button
-            className={mode === 'pin' ? 'active' : ''}
-            type="button"
-            role="tab"
-            aria-selected={mode === 'pin'}
-            onClick={() => setMode('pin')}
-          >
-            <LockKeyhole size={18} aria-hidden="true" />
-            PIN
-          </button>
-          <button
-            className={mode === 'password' ? 'active' : ''}
-            type="button"
-            role="tab"
-            aria-selected={mode === 'password'}
-            onClick={() => setMode('password')}
-          >
+        <label className="field-label">
+          Username
+          <div className="input-with-icon">
             <UserRound size={18} aria-hidden="true" />
-            Account
-          </button>
-        </div>
-
-        {mode === 'pin' ? (
-          <div className="pin-login">
-            <div className={`pin-display${shake ? ' shake' : ''}`} aria-label="PIN">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <span key={index} className={pin[index] ? 'filled' : ''} />
-              ))}
-            </div>
-            <div className="pin-pad">
-              {pinKeys.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={loading}
-                  aria-label={key === 'backspace' ? 'Backspace' : key === 'clear' ? 'Clear' : key}
-                  onClick={() => pressKey(key)}
-                >
-                  {key === 'backspace' ? <Delete size={22} aria-hidden="true" /> : key === 'clear' ? 'Clear' : key}
-                </button>
-              ))}
-            </div>
+            <input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Your staff name"
+              autoComplete="username"
+              autoCapitalize="none"
+              disabled={loading}
+            />
           </div>
-        ) : (
-          <form className="password-login" onSubmit={submitPassword}>
-            <label className="field-label">
-              Username
-              <input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                disabled={loading}
-              />
-            </label>
-            <label className="field-label">
-              Password
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-                disabled={loading}
-              />
-            </label>
-            <button className="primary-button full-width" type="submit" disabled={loading || !username || !password}>
-              Sign in
-            </button>
-          </form>
-        )}
+        </label>
+
+        <div className="pin-login">
+          <div className={`pin-display${shake ? ' shake' : ''}`} aria-label="PIN">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span key={index} className={pin[index] ? 'filled' : ''} />
+            ))}
+          </div>
+          <div className="pin-pad">
+            {pinKeys.map((key) => (
+              <button
+                key={key}
+                type="button"
+                disabled={loading || (!canSubmit && key !== 'clear' && key !== 'backspace')}
+                aria-label={key === 'backspace' ? 'Backspace' : key === 'clear' ? 'Clear' : key}
+                onClick={() => pressKey(key)}
+              >
+                {key === 'backspace' ? <Delete size={22} aria-hidden="true" /> : key === 'clear' ? 'Clear' : key}
+              </button>
+            ))}
+          </div>
+          {!username.trim() && <p className="login-hint">Enter your username, then your 4-digit PIN</p>}
+        </div>
       </section>
     </main>
   );

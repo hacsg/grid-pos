@@ -8,10 +8,14 @@ export interface PaymentIntent {
   error_message?: string;
 }
 
-export async function startCardPayment(orderId: string, amount: number): Promise<PaymentIntent> {
+export async function startCardPayment(
+  orderId: string,
+  amount: number,
+  paymentType = 1,
+): Promise<PaymentIntent> {
   return request<PaymentIntent>('/api/kpay/start', {
     method: 'POST',
-    body: JSON.stringify({ order_id: orderId, amount }),
+    body: JSON.stringify({ order_id: orderId, amount, payment_type: paymentType }),
   });
 }
 

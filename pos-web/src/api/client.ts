@@ -366,10 +366,11 @@ export async function getPayNowQr(outletId: string): Promise<PayNowQrResponse> {
   return data;
 }
 
-export async function loginWithPin(outletId: string, pin: string): Promise<TokenResponse> {
+export async function loginWithPin(outletId: string, pin: string, name?: string): Promise<TokenResponse> {
   const { data } = await api.post<TokenResponse>('/auth/login', {
     outlet_id: outletId,
     pin,
+    name: name?.trim() || undefined,
   });
   localStorage.setItem('auth_token', data.access_token);
   return data;

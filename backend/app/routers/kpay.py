@@ -58,6 +58,9 @@ class KPayStartRequest(BaseModel):
     """Request body for POST /api/kpay/start"""
     order_id: str = Field(..., description="Order ID to link payment to")
     amount: float = Field(..., gt=0, description="Payment amount (e.g., 100.50)")
+    # KPay paymentType: 1=card, 3=QR reverse scan, 13=PayNow, 14=Alipay,
+    # 15=WeChat Pay, 16=Thai QR (all forward scan). Defaults to card.
+    payment_type: int = Field(default=1, description="KPay paymentType enum")
 
 
 class KPayStartResponse(BaseModel):
@@ -130,7 +133,7 @@ async def start_payment(
         # call then queries the result and returns one terminal event.
         final_status = intent.status
         try:
-            event = await payment_intents.start_sale_on_terminal(intent)
+            event = await payment_intents.start_sale_on_terminal(intent, payment_type=request.payment_type)
             final_status = await payment_intents.finalize_sale(session, intent, event)
             log.info(f"Payment {intent.id} finished → {final_status}")
         except RuntimeError as e:

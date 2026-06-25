@@ -70,10 +70,13 @@ async def login_staff(
     - If outlet_id NOT provided: admin flow — search by name + PIN across all outlets.
     """
     if payload.outlet_id:
-        # POS cashier flow: search by outlet + PIN
+        # POS cashier flow: search by outlet + PIN, disambiguated by staff name
+        # when provided (a bare PIN can collide between staff at the same outlet).
         query = select(Staff).where(
             Staff.outlet_id == payload.outlet_id, Staff.is_active.is_(True)
         )
+        if payload.name:
+            query = query.where(Staff.name.ilike(payload.name.strip()))
     else:
         # Admin flow: search by name + PIN across all outlets
         if not payload.name:
