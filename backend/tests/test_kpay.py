@@ -19,6 +19,12 @@ class TestToCents:
 
 
 class TestIsApproved:
+    def test_success_code_is_two_per_spec(self) -> None:
+        # KPOS LAN spec payResult: 1=pending, 2=successful.
+        assert settings.kpay_payresult_success == 2
+        assert pi._is_approved({"pay_result": 2}) is True
+        assert pi._is_approved({"pay_result": 1}) is False  # pending, not success
+
     def test_matches_configured_success_code(self) -> None:
         assert pi._is_approved({"pay_result": settings.kpay_payresult_success}) is True
 

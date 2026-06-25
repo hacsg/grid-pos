@@ -155,13 +155,28 @@ def _normalize_sale_result(event: dict) -> dict:
     }
 
 
+# KPay query payResult enum (KPOS LAN spec).
+_PAYRESULT_LABELS = {
+    -1: "timed out",
+    1: "still pending",
+    2: "successful",
+    3: "declined",
+    4: "returned",
+    5: "canceled",
+    6: "transaction canceled",
+}
+
+
+def _pay_result(event: dict) -> Optional[int]:
+    try:
+        return int(event.get("pay_result"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _is_approved(event: dict) -> bool:
     """Interpret the daemon's KPay payResult against the configured success code."""
-    raw = event.get("pay_result")
-    try:
-        return int(raw) == settings.kpay_payresult_success
-    except (TypeError, ValueError):
-        return False
+    return _pay_result(event) == settings.kpay_payresult_success
 
 
 async def start_sale_on_terminal(intent: PaymentIntent, payment_type: int = _DEFAULT_PAYMENT_TYPE) -> dict:
@@ -197,11 +212,15 @@ async def finalize_sale(session: AsyncSession, intent: PaymentIntent, event: dic
         await update_payment_intent_status(session, intent.id, status="success", kpay_response=result)
         return "success"
 
-    message = f"Card payment not approved (payResult={event.get('pay_result')})"
+    code = _pay_result(event)
+    label = _PAYRESULT_LABELS.get(code, f"payResult={event.get('pay_result')}")
+    # payResult 1 = pending: the terminal hasn't reached a final state yet.
+    status_value = "timeout" if code in (-1, 1) else "failed"
+    message = f"Card payment {label}"
     await update_payment_intent_status(
-        session, intent.id, status="failed", kpay_response=result, error_message=message,
+        session, intent.id, status=status_value, kpay_response=result, error_message=message,
     )
-    return "failed"
+    return status_value
 
 
 async def cancel_on_terminal(outlet_id: str, out_trade_no: str, origin_out_trade_no: str) -> dict:
