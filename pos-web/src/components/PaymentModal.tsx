@@ -522,16 +522,16 @@ export default function PaymentModal({
 
   const terminalStatusText =
     manualPayNowActive
-      ? 'Terminal offline - Manual PayNow'
+      ? 'Terminal offline – Manual PayNow'
       : terminalConnected === null
-      ? 'Checking terminal...'
+      ? 'Checking terminal…'
       : terminalConnected
-        ? 'Terminal connected ✓'
+        ? 'Terminal connected'
         : 'Terminal offline';
   const paymentActionLabel = submitting
     ? step === 'processing'
-      ? 'Processing payment...'
-      : 'Processing...'
+      ? 'Processing payment…'
+      : 'Processing…'
     : manualPayNowActive
       ? 'Payment received'
     : requiresTerminal && error && terminalConnected !== false
@@ -638,7 +638,7 @@ export default function PaymentModal({
       <div className="manual-paynow-panel">
         <div className="manual-paynow-banner">
           <QrCode size={18} aria-hidden="true" />
-          <span>Terminal offline - Manual PayNow</span>
+          <span>Terminal offline – Manual PayNow</span>
         </div>
         <strong>{formatCurrency(amount)}</strong>
         <div className="manual-paynow-qr">
@@ -856,7 +856,7 @@ export default function PaymentModal({
 
         {step === 'payment' ? (
           <>
-            <div className="payment-modes" role="tablist" aria-label="Payment mode">
+            <div className="payment-modes" role="radiogroup" aria-label="Payment mode">
               {[
                 { value: 'cash' as const, label: 'Cash', Icon: Banknote },
                 { value: 'card' as const, label: 'Card', Icon: CreditCard },
@@ -867,8 +867,8 @@ export default function PaymentModal({
                   key={value}
                   className={mode === value ? 'active' : ''}
                   type="button"
-                  role="tab"
-                  aria-selected={mode === value}
+                  role="radio"
+                  aria-checked={mode === value}
                   disabled={submitting}
                   onPointerDown={() => tapFeedback()}
                   onClick={() => setMode(value)}
@@ -883,6 +883,7 @@ export default function PaymentModal({
               className={`terminal-status ${terminalConnected === true ? 'connected' : terminalConnected === false ? 'offline' : ''}`}
               role="status"
             >
+              {terminalConnected === true && !manualPayNowActive && <CheckCircle2 size={14} aria-hidden="true" />}
               {terminalStatusText}
             </div>
 
@@ -1068,7 +1069,7 @@ export default function PaymentModal({
                   <Loader2 className="spin-icon" size={38} aria-hidden="true" />
                 )}
                 <div>
-                  <strong>{error ? 'Payment needs attention' : 'Processing payment...'}</strong>
+                  <strong>{error ? 'Payment needs attention' : 'Processing payment…'}</strong>
                   <span>{error ? 'Do not retry terminal payment until this order is checked.' : 'Waiting for terminal approval'}</span>
                 </div>
               </div>
@@ -1111,7 +1112,7 @@ export default function PaymentModal({
                 Cancel
               </button>
               <button className="primary-button" type="button" disabled>
-                Processing payment...
+                Processing payment…
               </button>
             </footer>
           </>
@@ -1134,7 +1135,7 @@ export default function PaymentModal({
                 <div className="receipt-lines">
                   {receipt.items.map((item) => (
                     <div className="receipt-line" key={item.lineId}>
-                      <span>{item.quantity} x {item.product.name}</span>
+                      <span>{item.quantity} × {item.product.name}</span>
                       <strong>
                         {formatCurrency(
                           (money(item.product.price) +
@@ -1232,7 +1233,7 @@ export default function PaymentModal({
                     disabled={voidState === 'voiding'}
                   >
                     <Undo2 size={18} aria-hidden="true" />
-                    {voidState === 'voiding' ? 'Voiding...' : 'Void payment'}
+                    {voidState === 'voiding' ? 'Voiding…' : 'Void payment'}
                   </button>
                 )}
                 <button className="secondary-button" type="button" onClick={printReceipt}>

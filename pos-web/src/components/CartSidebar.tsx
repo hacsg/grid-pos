@@ -9,6 +9,7 @@ import {
   PauseCircle,
   Pencil,
   Plus,
+  ScanLine,
   Ticket,
   Trash2,
   UserRound,
@@ -25,6 +26,7 @@ interface CartSidebarProps {
   loyalty: LoyaltySelection | null;
   vouchers: AppliedVoucher[];
   isOpen: boolean;
+  scanConfirmed: boolean;
   parkedCount: number;
   onOpenParked: () => void;
   onToggleOpen: () => void;
@@ -52,6 +54,7 @@ export default function CartSidebar({
   loyalty,
   vouchers,
   isOpen,
+  scanConfirmed,
   parkedCount,
   onOpenParked,
   onToggleOpen,
@@ -87,7 +90,7 @@ export default function CartSidebar({
   }
 
   return (
-    <aside className={`cart-sidebar ${isOpen ? 'open' : ''}`} aria-label="Cart">
+    <aside className={`cart-sidebar ${isOpen ? 'open' : ''} ${scanConfirmed ? 'scan-confirmed' : ''}`} aria-label="Cart">
       <button className="cart-mobile-trigger" type="button" onClick={onToggleOpen}>
         <span>
           Cart <strong>{itemCount}</strong>
@@ -155,7 +158,13 @@ export default function CartSidebar({
       </div>
 
       <div className="cart-items">
-        {items.length === 0 && <div className="cart-empty">No items</div>}
+        {items.length === 0 && (
+          <div className="cart-empty">
+            <ScanLine size={28} aria-hidden="true" />
+            <strong>Scan or tap a product to start</strong>
+            <span>Items will appear here as they are added.</span>
+          </div>
+        )}
 
         {items.map((item) => (
           <article className="cart-line" key={item.lineId}>

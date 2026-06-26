@@ -192,6 +192,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>(() => loadParkedCarts());
   const [parkedOpen, setParkedOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [cartScanConfirmed, setCartScanConfirmed] = useState(false);
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -208,6 +209,14 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     const timer = window.setTimeout(() => setSearch(searchInput), 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!cartScanConfirmed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setCartScanConfirmed(false), 500);
+    return () => window.clearTimeout(timer);
+  }, [cartScanConfirmed]);
 
   const categoriesQuery = useQuery({
     queryKey: ['categories', session?.outlet.id],
@@ -350,6 +359,14 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       ];
     });
     setCartOpen(true);
+  }
+
+  function handleSearchSubmit(nextSearch: string) {
+    setSearch(nextSearch);
+  }
+
+  function handleScanSuccess() {
+    setCartScanConfirmed(true);
   }
 
   function updateQuantity(lineId: string, delta: number) {
@@ -552,6 +569,8 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           editItem={editItem}
           onCategoryChange={setSelectedCategoryId}
           onSearchChange={setSearchInput}
+          onSearchSubmit={handleSearchSubmit}
+          onScanSuccess={handleScanSuccess}
           onAddProduct={addProduct}
           onEditProduct={handleEditProduct}
           onEditDismiss={() => setEditingLineId(null)}
@@ -564,6 +583,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           loyalty={loyalty}
           vouchers={vouchers}
           isOpen={cartOpen}
+          scanConfirmed={cartScanConfirmed}
           parkedCount={parkedCarts.length}
           onOpenParked={() => setParkedOpen(true)}
           onToggleOpen={() => setCartOpen((open) => !open)}

@@ -18,7 +18,7 @@ export default {
         error: '#c2412d',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Inter Variable', 'Inter', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
       },
     },
   },

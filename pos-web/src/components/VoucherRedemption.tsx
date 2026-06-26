@@ -583,7 +583,7 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                   onClick={handleRedeem}
                   disabled={loading}
                 >
-                  {loading ? 'Redeeming...' : 'Redeem Voucher'}
+                  {loading ? 'Redeeming…' : 'Redeem Voucher'}
                 </button>
                 <button
                   type="button"
@@ -651,7 +651,7 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                     className="primary-button manual-validate-btn"
                     disabled={loading || !code.trim() || !!validated}
                   >
-                    {loading ? 'Validating...' : 'Validate'}
+                    {loading ? 'Validating…' : 'Validate'}
                   </button>
                   <button
                     type="button"

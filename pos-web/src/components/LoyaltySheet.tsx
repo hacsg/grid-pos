@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { QrCode, Search, X } from 'lucide-react';
+import { CheckCircle2, QrCode, Search, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api, formatCurrency, lookupLoyalty, type LoyaltyMember } from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
@@ -48,7 +48,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
 
   async function earnFor(memberId: string) {
     setStatus('earning');
-    setMessage('Recording points...');
+    setMessage('Recording points…');
     try {
       const response = await api.post('/loyalty/earn', {
         customer_id: memberId,
@@ -92,7 +92,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
     }
     tapFeedback();
     setStatus('scanning');
-    setMessage('Point camera at the Acre Club QR code...');
+    setMessage('Point camera at the Acre Club QR code…');
 
     const scanner = new Html5Qrcode(QR_READER_ID, { verbose: false });
     scannerRef.current = scanner;
@@ -170,7 +170,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
                   onPointerDown={() => tapFeedback()}
                   disabled={status === 'looking'}
                 >
-                  {status === 'looking' ? 'Looking up...' : 'Look up'}
+                  {status === 'looking' ? 'Looking up…' : 'Look up'}
                 </button>
               </div>
 
@@ -238,7 +238,9 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
 
           {status === 'success' && (
             <>
-              <div className="loyalty-result success">✓</div>
+              <div className="loyalty-result success">
+                <CheckCircle2 size={52} aria-hidden="true" />
+              </div>
               <p className="loyalty-result-msg">{message}</p>
               <button
                 className="primary-button"

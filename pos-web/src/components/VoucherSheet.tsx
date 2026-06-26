@@ -119,7 +119,7 @@ export default function VoucherSheet({
             </div>
           </label>
           <button className="primary-button" type="submit" disabled={loading || !code.trim()}>
-            {loading ? 'Applying...' : 'Apply'}
+            {loading ? 'Applying…' : 'Apply'}
           </button>
         </form>
 

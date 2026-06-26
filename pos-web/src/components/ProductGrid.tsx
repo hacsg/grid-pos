@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, LogOut, Package, Search, X } from 'lucide-react';
 import type { Category, Modifier, ModifierGroup, Product } from '@/api/client';
 import { formatCurrency, money } from '@/api/client';
@@ -22,6 +22,8 @@ interface ProductGridProps {
   editItem: EditItem | null;
   onCategoryChange: (categoryId: string) => void;
   onSearchChange: (search: string) => void;
+  onSearchSubmit: (search: string) => void;
+  onScanSuccess: () => void;
   onAddProduct: (product: Product, modifiers?: CartModifier[]) => void;
   onEditProduct: (lineId: string, modifiers: CartModifier[]) => void;
   onEditDismiss: () => void;
@@ -53,6 +55,15 @@ function modifierPrice(modifier: Modifier): string {
   return `+${formatCurrency(price)}`;
 }
 
+function productScanTokens(product: Product): string[] {
+  const source = product as Product & Record<string, unknown>;
+  return ['sku', 'barcode', 'bar_code', 'product_code', 'code', 'upc', 'ean']
+    .map((key) => source[key])
+    .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
+    .map((value) => String(value).trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function requiredMinimum(group: ModifierGroup): number {
   return group.required ? Math.max(group.min_select, 1) : 0;
 }
@@ -68,6 +79,8 @@ export default function ProductGrid({
   editItem,
   onCategoryChange,
   onSearchChange,
+  onSearchSubmit,
+  onScanSuccess,
   onAddProduct,
   onEditProduct,
   onEditDismiss,
@@ -76,6 +89,8 @@ export default function ProductGrid({
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const [selections, setSelections] = useState<SelectionMap>({});
   const [error, setError] = useState('');
+  const [scanSuccess, setScanSuccess] = useState(false);
+  const scanSuccessTimer = useRef<number | null>(null);
 
   const sortedCategories = useMemo(
     () => [...categories].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
@@ -108,6 +123,14 @@ export default function ProductGrid({
     }
   }, [editItem]);
 
+  useEffect(() => {
+    return () => {
+      if (scanSuccessTimer.current !== null) {
+        window.clearTimeout(scanSuccessTimer.current);
+      }
+    };
+  }, []);
+
   const isEditing = Boolean(editItem && modifierProduct && editItem.product.id === modifierProduct.id);
 
   function closeModifierSheet() {
@@ -117,16 +140,53 @@ export default function ProductGrid({
     }
   }
 
-  function handleProductTap(product: Product) {
+  function handleProductTap(product: Product): boolean {
     tapFeedback();
     if (!product.is_available) {
-      return;
+      return false;
     }
     if (hasModifiers(product)) {
       setModifierProduct(product);
-      return;
+      return false;
     }
     onAddProduct(product);
+    return true;
+  }
+
+  function showScanSuccess() {
+    setScanSuccess(true);
+    if (scanSuccessTimer.current !== null) {
+      window.clearTimeout(scanSuccessTimer.current);
+    }
+    scanSuccessTimer.current = window.setTimeout(() => {
+      setScanSuccess(false);
+      scanSuccessTimer.current = null;
+    }, 900);
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return;
+    }
+    const submitted = search.trim();
+    if (!submitted) {
+      return;
+    }
+    const normalized = submitted.toLowerCase();
+    const exactMatch = availableProducts.find((product) =>
+      productScanTokens(product).includes(normalized)
+    );
+    event.preventDefault();
+    onSearchSubmit(submitted);
+    if (!exactMatch) {
+      return;
+    }
+    const added = handleProductTap(exactMatch);
+    if (added) {
+      onSearchChange('');
+      onScanSuccess();
+      showScanSuccess();
+    }
   }
 
   function toggleModifier(group: ModifierGroup, modifierId: string) {
@@ -197,24 +257,37 @@ export default function ProductGrid({
           <div className="brand-mark" aria-hidden="true">G</div>
           <div>
             <h1>Grid POS</h1>
-            <p>{outletName} - {staffName}</p>
+            <p>{outletName} – {staffName}</p>
           </div>
         </div>
-        <button className="icon-text-button subtle" type="button" onPointerDown={() => tapFeedback()} onClick={onLogout}>
+        <button
+          className="icon-text-button subtle"
+          type="button"
+          aria-label="Sign out"
+          onPointerDown={() => tapFeedback()}
+          onClick={onLogout}
+        >
           <LogOut size={18} aria-hidden="true" />
           Sign out
         </button>
       </header>
 
       <div className="catalog-toolbar">
-        <label className="search-field">
+        <label className={`search-field ${scanSuccess ? 'scan-success' : ''}`}>
           <Search size={20} aria-hidden="true" />
           <input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
             placeholder="Search products"
             type="search"
           />
+          {scanSuccess && (
+            <span className="search-scan-status" aria-live="polite">
+              <Check size={15} aria-hidden="true" />
+              Added
+            </span>
+          )}
         </label>
       </div>
 
@@ -267,6 +340,7 @@ export default function ProductGrid({
                 key={product.id}
                 className="product-card"
                 type="button"
+                aria-label={`Add ${product.name}, ${formatCurrency(product.price)}`}
                 onClick={() => handleProductTap(product)}
               >
                 <div className="product-image">
