@@ -3,13 +3,16 @@
 from datetime import UTC, datetime, date, time, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.order import Order, OrderStatus
+from app.services import idempotency
 from app.schemas.order import (
     OrderAddItem,
     OrderCreate,
@@ -34,9 +37,34 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 @router.post("", response_model=OrderRead, status_code=201)
-async def create_order(payload: OrderCreate, db: AsyncSession = Depends(get_db)) -> Order:
-    """Create an order with calculated totals and line items."""
-    return await create_order_service(db, payload)
+async def create_order(
+    payload: OrderCreate,
+    db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> Order | JSONResponse:
+    """Create an order with calculated totals and line items.
+
+    Pass an ``Idempotency-Key`` header to make retries safe: a duplicate request
+    with the same key replays the original order instead of creating a second one.
+    """
+    scope = "orders.create"
+    if idempotency_key:
+        request_hash = idempotency.fingerprint(payload.model_dump(mode="json"))
+        replay = await idempotency.begin(db, scope, idempotency_key, request_hash)
+        if replay is not None:
+            return JSONResponse(replay.body, status_code=replay.status_code)
+
+    try:
+        order = await create_order_service(db, payload)
+        body = jsonable_encoder(OrderRead.model_validate(order))
+    except Exception:
+        if idempotency_key:
+            await idempotency.release(db, scope, idempotency_key)
+        raise
+
+    if idempotency_key:
+        await idempotency.complete(db, scope, idempotency_key, 201, body)
+    return JSONResponse(body, status_code=201)
 
 
 @router.get("", response_model=list[OrderSummaryRead])
@@ -101,21 +129,46 @@ async def update_order_status(
     order_id: UUID,
     payload: OrderStatusUpdate,
     db: AsyncSession = Depends(get_db),
-) -> Order:
-    """Update an order status and payment metadata."""
-    return await update_order_status_service(
-        db,
-        order_id,
-        payload.status,
-        payment_method=payload.payment_method,
-        payment_reference=payload.payment_reference,
-        cash_tendered=payload.cash_tendered,
-        cash_amount=payload.cash_amount,
-        card_amount=payload.card_amount,
-        voucher_amount=payload.voucher_amount,
-        cdc_amount=payload.cdc_amount,
-        paynow_confirmed_at=payload.paynow_confirmed_at,
-    )
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> Order | JSONResponse:
+    """Update an order status and payment metadata (this is the "pay" action).
+
+    Pass an ``Idempotency-Key`` header so a retried mark-as-paid replays the
+    original result instead of erroring on the already-consumed status transition.
+    """
+    scope = "orders.status"
+    if idempotency_key:
+        # Bind the key to this order so the same key can't be replayed onto another.
+        request_hash = idempotency.fingerprint(
+            {"order_id": str(order_id), **payload.model_dump(mode="json")}
+        )
+        replay = await idempotency.begin(db, scope, idempotency_key, request_hash)
+        if replay is not None:
+            return JSONResponse(replay.body, status_code=replay.status_code)
+
+    try:
+        order = await update_order_status_service(
+            db,
+            order_id,
+            payload.status,
+            payment_method=payload.payment_method,
+            payment_reference=payload.payment_reference,
+            cash_tendered=payload.cash_tendered,
+            cash_amount=payload.cash_amount,
+            card_amount=payload.card_amount,
+            voucher_amount=payload.voucher_amount,
+            cdc_amount=payload.cdc_amount,
+            paynow_confirmed_at=payload.paynow_confirmed_at,
+        )
+        body = jsonable_encoder(OrderRead.model_validate(order))
+    except Exception:
+        if idempotency_key:
+            await idempotency.release(db, scope, idempotency_key)
+        raise
+
+    if idempotency_key:
+        await idempotency.complete(db, scope, idempotency_key, 200, body)
+    return JSONResponse(body, status_code=200)
 
 
 @router.post("/{order_id}/refund", response_model=OrderRead)

@@ -13,14 +13,17 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import AsyncSessionLocal
 from app.models.order import Order, OrderStatus
 from app.models.staff import Staff
 from app.routers.ws_daemon import get_daemon_connection
-from app.services import payment_intents
+from app.services import idempotency, payment_intents
 from app.utils.auth import get_current_staff
 
 # Roles permitted to void/refund. The KPay manager password itself is held and
@@ -107,51 +110,109 @@ async def start_payment(
     request: KPayStartRequest,
     outlet_id: str = Header(..., alias="X-Outlet-Id"),
     current_staff: Staff = Depends(get_current_staff),
-) -> KPayStartResponse:
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> KPayStartResponse | JSONResponse:
     """Initiate a KPay card payment.
-    
-    Creates payment intent, sends start_sale to daemon, returns intent ID for polling.
-    Returns 503 if daemon not connected.
+
+    Creates a payment intent, runs the sale on the terminal, and returns the
+    final status. Returns 503 if the daemon is not connected.
+
+    Two layers guard against double-charging an order:
+
+    * An optional ``Idempotency-Key`` header dedupes retried requests (a network
+      retry of the *same* click replays the original result).
+    * A per-order guard, backed by the ``uq_payment_intents_active_per_order``
+      partial unique index, refuses to start a second sale while one is active
+      and returns the existing success if the order was already paid by card —
+      so even a *fresh* duplicate click cannot trigger a second charge.
     """
     _ensure_staff_can_access_outlet(outlet_id, current_staff)
-    
+
     # Check daemon connection
     ws = get_daemon_connection(outlet_id)
     if not ws:
         raise HTTPException(status_code=503, detail=f"Daemon not connected for outlet {outlet_id}")
-    
+
+    scope = "kpay.start"
+    request_hash = idempotency.fingerprint(request.model_dump(mode="json"))
+
     async with AsyncSessionLocal() as session:
-        # Create payment intent
-        intent = await payment_intents.create_payment_intent(
-            session=session,
-            outlet_id=outlet_id,
-            order_id=request.order_id,
-            amount=Decimal(str(request.amount)),
-        )
+        if idempotency_key:
+            replay = await idempotency.begin(session, scope, idempotency_key, request_hash)
+            if replay is not None:
+                return JSONResponse(replay.body, status_code=replay.status_code)
 
-        # Run the sale synchronously: the daemon performs the blocking KPay /sales
-        # call then queries the result and returns one terminal event.
-        final_status = intent.status
         try:
-            event = await payment_intents.start_sale_on_terminal(intent, payment_type=request.payment_type)
-            final_status = await payment_intents.finalize_sale(session, intent, event)
-            log.info(f"Payment {intent.id} finished → {final_status}")
-        except RuntimeError as e:
-            error_msg = f"Terminal communication error: {str(e)}"
-            await payment_intents.update_payment_intent_status(
-                session=session,
-                intent_id=intent.id,
-                status="failed",
-                error_message=error_msg,
-            )
-            final_status = "failed"
-            log.error(f"Payment {intent.id} failed: {error_msg}")
+            # Domain guard: never start a second sale for an order that already
+            # has an active intent, and return the existing success if already paid.
+            existing = await payment_intents.get_active_intent_for_order(session, request.order_id)
+            if existing is not None:
+                if existing.status == "success":
+                    body = jsonable_encoder(
+                        KPayStartResponse(
+                            id=existing.id, out_trade_no=existing.out_trade_no, status="success"
+                        )
+                    )
+                    if idempotency_key:
+                        await idempotency.complete(session, scope, idempotency_key, 200, body)
+                    return JSONResponse(body, status_code=200)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A card payment is already in progress for this order",
+                )
 
-        return KPayStartResponse(
-            id=intent.id,
-            out_trade_no=intent.out_trade_no,
-            status=final_status,
-        )
+            # Create the intent. The partial unique index is the race-safe
+            # backstop: if a concurrent request created an active intent between
+            # the check above and this insert, the commit raises IntegrityError.
+            try:
+                intent = await payment_intents.create_payment_intent(
+                    session=session,
+                    outlet_id=outlet_id,
+                    order_id=request.order_id,
+                    amount=Decimal(str(request.amount)),
+                )
+            except IntegrityError:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A card payment is already in progress for this order",
+                )
+
+            # Run the sale synchronously: the daemon performs the blocking KPay
+            # /sales call then queries the result and returns one terminal event.
+            final_status = intent.status
+            try:
+                event = await payment_intents.start_sale_on_terminal(
+                    intent, payment_type=request.payment_type
+                )
+                final_status = await payment_intents.finalize_sale(session, intent, event)
+                log.info(f"Payment {intent.id} finished → {final_status}")
+            except RuntimeError as e:
+                error_msg = f"Terminal communication error: {str(e)}"
+                await payment_intents.update_payment_intent_status(
+                    session=session,
+                    intent_id=intent.id,
+                    status="failed",
+                    error_message=error_msg,
+                )
+                final_status = "failed"
+                log.error(f"Payment {intent.id} failed: {error_msg}")
+
+            body = jsonable_encoder(
+                KPayStartResponse(
+                    id=intent.id, out_trade_no=intent.out_trade_no, status=final_status
+                )
+            )
+        except Exception:
+            # Release our claim so a legitimate retry with the same key is not
+            # blocked by a request that never produced a stored result.
+            if idempotency_key:
+                await idempotency.release(session, scope, idempotency_key)
+            raise
+
+        if idempotency_key:
+            await idempotency.complete(session, scope, idempotency_key, 200, body)
+        return JSONResponse(body, status_code=200)
 
 
 @router.get("/status/{id}", response_model=KPayStatusResponse)

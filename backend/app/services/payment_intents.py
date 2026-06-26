@@ -96,6 +96,27 @@ async def get_successful_intent_for_order(
     return result.scalars().first()
 
 
+# Statuses that block a new sale for the same order (mirrors the partial unique
+# index uq_payment_intents_active_per_order). failed/timeout/cancelled are
+# excluded so a genuine retry can start a fresh sale.
+ACTIVE_INTENT_STATUSES = ("pending", "processing", "success")
+
+
+async def get_active_intent_for_order(
+    session: AsyncSession, order_id: str
+) -> Optional[PaymentIntent]:
+    """Return the current pending/processing/successful intent for an order, if any."""
+    result = await session.execute(
+        select(PaymentIntent)
+        .where(
+            PaymentIntent.order_id == order_id,
+            PaymentIntent.status.in_(ACTIVE_INTENT_STATUSES),
+        )
+        .order_by(PaymentIntent.created_at.desc())
+    )
+    return result.scalars().first()
+
+
 async def update_payment_intent_status(
     session: AsyncSession,
     intent_id: str,
