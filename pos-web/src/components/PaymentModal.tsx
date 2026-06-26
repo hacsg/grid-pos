@@ -203,6 +203,20 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [step, setStep] = useState<PaymentStep>('payment');
   const [mode, setMode] = useState<PaymentMode>('cash');
+
+  // Close the modal. If payment never completed (cashier backed out of
+  // checkout), tell the customer display to drop the "Processing payment…"
+  // screen — otherwise it stays stuck there for the next order.
+  function handleClose() {
+    if (step !== 'complete') {
+      try {
+        broadcast({ type: 'PAYMENT_CANCEL' });
+      } catch {
+        // Customer display is optional.
+      }
+    }
+    onClose();
+  }
   const [splitSecondMethod, setSplitSecondMethod] = useState<TerminalPaymentMethod>('card');
   const [cashAmount, setCashAmount] = useState('');
   const [cdcAmount, setCdcAmount] = useState('');
@@ -834,7 +848,7 @@ export default function PaymentModal({
             title="Close"
             disabled={submitting}
             onPointerDown={() => tapFeedback()}
-            onClick={onClose}
+            onClick={handleClose}
           >
             <X size={20} aria-hidden="true" />
           </button>
@@ -1035,7 +1049,7 @@ export default function PaymentModal({
             </div>
 
             <footer className="sheet-actions">
-              <button className="secondary-button" type="button" onClick={onClose} disabled={submitting}>
+              <button className="secondary-button" type="button" onClick={handleClose} disabled={submitting}>
                 Cancel
               </button>
               <button className="primary-button" type="button" disabled={!canComplete} onClick={completePayment}>
@@ -1225,7 +1239,7 @@ export default function PaymentModal({
                   <Printer size={18} aria-hidden="true" />
                   Print receipt
                 </button>
-                <button className="primary-button" type="button" onClick={onClose}>
+                <button className="primary-button" type="button" onClick={handleClose}>
                   {voidState === 'voided' ? 'Close' : 'New sale'}
                 </button>
               </footer>

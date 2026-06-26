@@ -22,6 +22,9 @@ export interface OrderSnapshot {
 export type DisplayMessage =
   | { type: 'ORDER_UPDATE'; payload: OrderSnapshot }
   | { type: 'PAYMENT_START'; payload: { total: number } }
+  // Sent when the cashier exits checkout without completing payment, so the
+  // display drops the "Processing payment…" screen instead of staying stuck.
+  | { type: 'PAYMENT_CANCEL' }
   | { type: 'PAYNOW_QR'; payload: { qrUrl: string; total: number } }
   | { type: 'PAYMENT_COMPLETE'; payload: { total: number; pointsEarned?: number | null } }
   | { type: 'ORDER_COMPLETE' }

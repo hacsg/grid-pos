@@ -28,6 +28,16 @@ export default function CustomerDisplay() {
   });
   const [resetTimer, setResetTimer] = useState<number | null>(null);
 
+  // Paint html/body pure black while the customer display is mounted so no
+  // light POS background (or desktop wallpaper) bleeds through at the edges
+  // when the window is fullscreen on the 2nd screen.
+  useEffect(() => {
+    document.documentElement.classList.add('display-active');
+    return () => {
+      document.documentElement.classList.remove('display-active');
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') {
       return;
@@ -79,6 +89,23 @@ export default function CustomerDisplay() {
           paymentTotal: msg.payload?.total ?? prev.snapshot?.total ?? 0,
           paynowQrUrl: null,
         }));
+      }
+
+      if (msg.type === 'PAYMENT_CANCEL') {
+        if (resetTimer) {
+          window.clearTimeout(resetTimer);
+          setResetTimer(null);
+        }
+        setState((prev) => {
+          const hasItems = Array.isArray(prev.snapshot?.items) && (prev.snapshot?.items.length ?? 0) > 0;
+          return {
+            ...prev,
+            phase: hasItems ? 'order' : 'idle',
+            paymentTotal: null,
+            pointsEarned: null,
+            paynowQrUrl: null,
+          };
+        });
       }
 
       if (msg.type === 'PAYNOW_QR') {

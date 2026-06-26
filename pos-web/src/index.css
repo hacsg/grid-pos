@@ -1951,6 +1951,15 @@ img {
    Dark, large, minimal, premium
    ======================================== */
 
+/* On the customer-display route, force everything behind the display to pure
+   black so no light POS background or desktop wallpaper shows at the edges in
+   fullscreen on the 2nd screen. */
+html.display-active,
+html.display-active body,
+html.display-active #root {
+  background: #000;
+}
+
 .customer-display {
   position: fixed;
   inset: 0;
