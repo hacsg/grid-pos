@@ -627,7 +627,15 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         discount={discount}
         loyalty={loyalty}
         vouchers={vouchers}
-        onClose={() => setPaymentOpen(false)}
+        onClose={() => {
+          setPaymentOpen(false);
+          // The modal broadcasts PAYMENT_CANCEL first, which frees the display
+          // from the "processing"/QR screens; re-send the live cart so it shows
+          // the real order again (the QR screen had cleared its snapshot). On a
+          // completed sale the cart is empty and the display is mid thank-you,
+          // so this no-ops harmlessly.
+          syncDisplay(cartItems, totals, discount, loyalty, vouchers, session.outlet.name, session.outlet.logo_url);
+        }}
         onOrderComplete={handleOrderComplete}
       />
       <ParkedSheet

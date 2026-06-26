@@ -1,18 +1,19 @@
 <#
-  Grid POS - "POS mode" startup launcher (Windows 7+)
+  Grid POS - "POS mode" startup launcher (Windows 7+, PowerShell 2.0+)
 
   Opens two clean, full-screen Chrome windows:
-    * Primary monitor   -> staff POS  (https://<POS_URL>/)
+    * Primary monitor   -> staff POS        (https://<POS_URL>/)
     * Secondary monitor -> customer display (https://<POS_URL>/display)
 
   Each window runs in chromeless "app" mode (no address bar / tabs) with its
-  own profile, positioned on the correct monitor and started full-screen.
-  The second monitor is detected automatically; if only one monitor is found,
-  only the staff POS is opened.
+  own profile, positioned on the correct monitor and started full-screen. The
+  second monitor is detected automatically; if only one monitor is found, only
+  the staff POS is opened.
 
-  Edit the CONFIG block below, then run via start-pos-mode.bat (which sets the
-  PowerShell execution policy for this process only). See README.md for how to
-  launch it automatically at login.
+  Progress and errors are written to:  %LOCALAPPDATA%\GridPos\pos-mode.log
+
+  Edit the CONFIG block below, then run via start-pos-mode.bat. See README.md
+  for how to launch it automatically at login.
 #>
 
 # =================== CONFIG ===================
@@ -22,22 +23,48 @@ $PosUrl = 'https://CHANGE-ME.example.com'
 # Path to chrome.exe. Leave as $null to auto-detect common install locations.
 $ChromePath = $null
 
-# Set $true to use Chrome's locked --kiosk (harder to exit: Ctrl+Alt+Del to get
-# Task Manager). $false uses full-screen app mode (Alt+F4 closes a window).
+# Set $true for Chrome's locked --kiosk mode. NOTE: --kiosk ignores window
+# placement, so it cannot reliably put a window on the *second* monitor. Use
+# kiosk only on a single-monitor till. For dual-monitor, keep $false (the
+# default full-screen app mode, which Alt+F4 can close).
 $UseKiosk = $false
+
+# Swap which monitor gets which screen, without changing Windows display
+# settings. $false: POS on primary, display on secondary (normal).
+$SwapMonitors = $false
+
+# Seconds to wait for the POS host to become reachable before launching, so the
+# till doesn't boot into Chrome's "no internet" page before the network is up.
+# Set to 0 to skip the wait.
+$NetworkWaitSeconds = 60
 # ============================================
 
-$ErrorActionPreference = 'Stop'
+$ProfileRoot = Join-Path $env:LOCALAPPDATA 'GridPos'
+$LogFile = Join-Path $ProfileRoot 'pos-mode.log'
+
+function Write-Log {
+    param([string]$Message)
+    $line = ('{0}  {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message)
+    try { Add-Content -Path $LogFile -Value $line -ErrorAction SilentlyContinue } catch { }
+}
+
+function Show-Error {
+    param([string]$Message)
+    Write-Log "ERROR: $Message"
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+        [System.Windows.Forms.MessageBox]::Show($Message, 'Grid POS - POS mode') | Out-Null
+    } catch { }
+}
 
 function Find-Chrome {
-    if ($script:ChromePath -and (Test-Path $script:ChromePath)) { return $script:ChromePath }
+    if ($ChromePath -and (Test-Path $ChromePath)) { return $ChromePath }
     $candidates = @(
         "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
         "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
         "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
     )
     foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
-    # Fall back to the registry (App Paths).
     try {
         $reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe' -ErrorAction Stop
         if ($reg.'(default)' -and (Test-Path $reg.'(default)')) { return $reg.'(default)' }
@@ -45,28 +72,65 @@ function Find-Chrome {
     return $null
 }
 
+# Test whether host:port accepts a TCP connection (PowerShell 2.0 safe; avoids
+# Invoke-WebRequest, which doesn't exist before PS 3.0).
+function Test-HostUp {
+    param([string]$HostName, [int]$Port, [int]$TimeoutMs)
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+        $ok = $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+        if ($ok -and $client.Connected) { $client.EndConnect($iar); return $true }
+        return $false
+    } catch {
+        return $false
+    } finally {
+        if ($client) { $client.Close() }
+    }
+}
+
+function Wait-ForHost {
+    param([string]$Url, [int]$WaitSeconds)
+    if ($WaitSeconds -le 0) { return }
+    try { $uri = [System.Uri]$Url } catch { Write-Log "Bad POS URL '$Url'; skipping network wait."; return }
+    $port = $uri.Port; if ($port -le 0) { $port = if ($uri.Scheme -eq 'https') { 443 } else { 80 } }
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while (-not (Test-HostUp -HostName $uri.Host -Port $port -TimeoutMs 3000)) {
+        if ((Get-Date) -gt $deadline) {
+            Write-Log "Network wait timed out after ${WaitSeconds}s; launching anyway."
+            return
+        }
+        Write-Log "Waiting for $($uri.Host):$port ..."
+        Start-Sleep -Seconds 2
+    }
+    Write-Log "Host $($uri.Host):$port reachable."
+}
+
 # Clear Chrome's "exited_cleanly" flag so an unclean shutdown (e.g. power loss)
-# doesn't show the "Restore pages?" bar over the kiosk on next boot.
-function Clear-CrashFlag([string]$profileDir) {
-    $prefs = Join-Path $profileDir 'Default\Preferences'
+# doesn't show the "Restore pages?" bar over the kiosk on next boot. Must write
+# UTF-8 *without* a BOM - a BOM makes Chrome treat Preferences as corrupt and
+# reset the profile.
+function Clear-CrashFlag {
+    param([string]$ProfileDir)
+    $prefs = Join-Path $ProfileDir 'Default\Preferences'
     if (-not (Test-Path $prefs)) { return }
     try {
-        $json = Get-Content $prefs -Raw
+        $json = [System.IO.File]::ReadAllText($prefs)
         $json = $json -replace '"exit_type":"[^"]*"', '"exit_type":"Normal"'
         $json = $json -replace '"exited_cleanly":false', '"exited_cleanly":true'
-        Set-Content -Path $prefs -Value $json -Encoding UTF8
-    } catch { }
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($prefs, $json, $utf8NoBom)
+    } catch {
+        Write-Log "Could not clear crash flag in $prefs : $_"
+    }
 }
 
 function Start-PosWindow {
     param(
-        [string]$Chrome,
-        [string]$Url,
-        [string]$ProfileDir,
-        [int]$X, [int]$Y, [int]$W, [int]$H,
-        [bool]$Kiosk
+        [string]$Chrome, [string]$Url, [string]$ProfileDir,
+        [int]$X, [int]$Y, [int]$W, [int]$H, [bool]$Kiosk
     )
-
     New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
     Clear-CrashFlag $ProfileDir
 
@@ -80,7 +144,6 @@ function Start-PosWindow {
         '--disable-session-crashed-bubble',
         '--disable-infobars',
         '--noerrdialogs',
-        '--hide-crash-restore-bubble',
         '--disable-features=TranslateUI,Translate,InfiniteSessionRestore',
         '--disable-pinch',
         '--overscroll-history-navigation=0',
@@ -89,38 +152,67 @@ function Start-PosWindow {
     )
     if ($Kiosk) { $chromeArgs += '--kiosk' } else { $chromeArgs += '--start-fullscreen' }
 
+    Write-Log "Launching $Url at ${X},${Y} ${W}x${H} (kiosk=$Kiosk)"
     Start-Process -FilePath $Chrome -ArgumentList $chromeArgs | Out-Null
 }
 
-# --- locate Chrome ---
-$chrome = Find-Chrome
-if (-not $chrome) {
-    [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null
-    [System.Windows.Forms.MessageBox]::Show(
-        'Google Chrome was not found. Install Chrome or set $ChromePath in start-pos-mode.ps1.',
-        'Grid POS - POS mode') | Out-Null
-    exit 1
+# ===================== MAIN =====================
+try {
+    # Make cmdlet errors terminating so the catch below logs and surfaces them,
+    # instead of the hidden window dying silently.
+    $ErrorActionPreference = 'Stop'
+
+    New-Item -ItemType Directory -Force -Path $ProfileRoot | Out-Null
+    Write-Log '--- POS mode starting ---'
+
+    if ($PosUrl -like '*CHANGE-ME*') {
+        Show-Error 'POS URL is not configured. Edit $PosUrl in start-pos-mode.ps1.'
+        exit 1
+    }
+
+    $chrome = Find-Chrome
+    if (-not $chrome) {
+        Show-Error 'Google Chrome was not found. Install Chrome or set $ChromePath in start-pos-mode.ps1.'
+        exit 1
+    }
+    Write-Log "Chrome: $chrome"
+
+    Add-Type -AssemblyName System.Windows.Forms
+    $primary = [System.Windows.Forms.Screen]::PrimaryScreen
+    $secondary = [System.Windows.Forms.Screen]::AllScreens | Where-Object { -not $_.Primary } | Select-Object -First 1
+    Write-Log ("Monitors: {0} (primary {1}x{2}{3})" -f `
+        ([System.Windows.Forms.Screen]::AllScreens).Count, $primary.Bounds.Width, $primary.Bounds.Height,
+        $(if ($secondary) { ", secondary $($secondary.Bounds.Width)x$($secondary.Bounds.Height)" } else { ', no secondary' }))
+
+    if ($UseKiosk -and $secondary) {
+        Write-Log 'WARNING: --kiosk ignores window placement; the customer display may not land on the second monitor. Consider $UseKiosk=$false for dual-monitor tills.'
+    }
+
+    Wait-ForHost -Url $PosUrl -WaitSeconds $NetworkWaitSeconds
+
+    # Decide which monitor shows which screen.
+    $posScreen = $primary
+    $dispScreen = $secondary
+    if ($SwapMonitors -and $secondary) { $posScreen = $secondary; $dispScreen = $primary }
+
+    $pb = $posScreen.Bounds
+    Start-PosWindow -Chrome $chrome -Url "$PosUrl/" `
+        -ProfileDir (Join-Path $ProfileRoot 'pos') `
+        -X $pb.X -Y $pb.Y -W $pb.Width -H $pb.Height -Kiosk $UseKiosk
+
+    if ($dispScreen) {
+        Start-Sleep -Milliseconds 800   # let the first window claim its monitor first
+        $sb = $dispScreen.Bounds
+        Start-PosWindow -Chrome $chrome -Url "$PosUrl/display" `
+            -ProfileDir (Join-Path $ProfileRoot 'display') `
+            -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height -Kiosk $UseKiosk
+    } else {
+        Write-Log 'Single monitor: customer display not opened.'
+    }
+
+    Write-Log 'POS mode launched.'
 }
-
-# --- enumerate monitors ---
-Add-Type -AssemblyName System.Windows.Forms
-$screens = [System.Windows.Forms.Screen]::AllScreens
-$primary = [System.Windows.Forms.Screen]::PrimaryScreen
-$secondary = $screens | Where-Object { -not $_.Primary } | Select-Object -First 1
-
-$profileRoot = Join-Path $env:LOCALAPPDATA 'GridPos'
-
-# --- staff POS on the primary monitor ---
-$pb = $primary.Bounds
-Start-PosWindow -Chrome $chrome -Url "$PosUrl/" `
-    -ProfileDir (Join-Path $profileRoot 'pos') `
-    -X $pb.X -Y $pb.Y -W $pb.Width -H $pb.Height -Kiosk $UseKiosk
-
-# --- customer display on the secondary monitor (if present) ---
-if ($secondary) {
-    $sb = $secondary.Bounds
-    Start-Sleep -Milliseconds 800   # let the first window claim the primary first
-    Start-PosWindow -Chrome $chrome -Url "$PosUrl/display" `
-        -ProfileDir (Join-Path $profileRoot 'display') `
-        -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height -Kiosk $UseKiosk
+catch {
+    Show-Error ("POS mode failed to start: {0}" -f $_.Exception.Message)
+    exit 1
 }
