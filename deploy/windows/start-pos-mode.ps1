@@ -18,7 +18,7 @@
 
 # =================== CONFIG ===================
 # Base URL where the POS web app is served (no trailing slash).
-$PosUrl = 'https://CHANGE-ME.example.com'
+$PosUrl = 'https://grid-pos-web-production.up.railway.app'
 
 # Path to chrome.exe. Leave as $null to auto-detect common install locations.
 $ChromePath = $null
