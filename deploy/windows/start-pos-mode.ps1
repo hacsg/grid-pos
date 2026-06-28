@@ -185,6 +185,81 @@ function Wait-ForWindow {
     Start-Sleep -Milliseconds 800
 }
 
+# Load the Win32 helpers used to relocate the customer-display window. Because
+# the display is FORWARDED into the POS's Chrome instance (required for sync),
+# Chrome ignores its --window-position flag and opens it on the primary monitor.
+# So we find the new window ourselves and move it onto the secondary monitor.
+# Returns $true if the API compiled (older/locked-down machines may refuse).
+function Initialize-WinPlace {
+    if ('WinPlace' -as [type]) { return $true }
+    try {
+        Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+public class WinPlace {
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] private static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll")] private static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private static bool IsChromeAppWindow(IntPtr h) {
+        if (!IsWindowVisible(h)) return false;
+        if (GetWindowTextLength(h) == 0) return false;
+        StringBuilder sb = new StringBuilder(64);
+        GetClassName(h, sb, sb.Capacity);
+        if (sb.ToString() != "Chrome_WidgetWin_1") return false;
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        try { if (Process.GetProcessById((int)pid).ProcessName.ToLower() != "chrome") return false; }
+        catch { return false; }
+        return true;
+    }
+    public static List<long> ChromeWindows() {
+        List<long> found = new List<long>();
+        EnumWindows(delegate(IntPtr h, IntPtr p) {
+            if (IsChromeAppWindow(h)) found.Add(h.ToInt64());
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+}
+'@
+        return $true
+    } catch {
+        Write-Log "Window placement unavailable (Add-Type failed): $_"
+        return $false
+    }
+}
+
+# Find the Chrome window that appeared since $Before was captured (i.e. the
+# customer display) and move it to fill the given monitor bounds.
+function Move-NewWindowToBounds {
+    param([long[]]$Before, [int]$X, [int]$Y, [int]$W, [int]$H)
+    $new = $null
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 200
+        foreach ($h in [WinPlace]::ChromeWindows()) {
+            if ($Before -notcontains $h) { $new = $h; break }
+        }
+        if ($new) { break }
+    }
+    if (-not $new) { Write-Log 'Could not find the new display window to reposition.'; return }
+
+    $SWP_NOZORDER = 0x0004; $SWP_NOACTIVATE = 0x0010; $SWP_SHOWWINDOW = 0x0040
+    $flags = $SWP_NOZORDER -bor $SWP_NOACTIVATE -bor $SWP_SHOWWINDOW
+    [WinPlace]::SetWindowPos([IntPtr]$new, [IntPtr]::Zero, $X, $Y, $W, $H, $flags) | Out-Null
+    # Some Chrome builds re-assert their position a beat after the window opens;
+    # nudge it once more so it sticks on the secondary monitor.
+    Start-Sleep -Milliseconds 700
+    [WinPlace]::SetWindowPos([IntPtr]$new, [IntPtr]::Zero, $X, $Y, $W, $H, $flags) | Out-Null
+    Write-Log ("Moved display window to {0},{1} {2}x{3}" -f $X, $Y, $W, $H)
+}
+
 # ===================== MAIN =====================
 try {
     # Make cmdlet errors terminating so the catch below logs and surfaces them,
@@ -244,9 +319,22 @@ try {
         # and spawning a second, isolated browser process.
         Wait-ForWindow -Process $posProc -TimeoutSeconds 20
         $sb = $dispScreen.Bounds
+
+        # The forwarded display window ignores --window-position and opens on the
+        # primary monitor, so snapshot existing Chrome windows now, then move the
+        # newly-created one onto the secondary monitor after it launches.
+        $canPlace = Initialize-WinPlace
+        $before = if ($canPlace) { [WinPlace]::ChromeWindows() } else { @() }
+
         Start-PosWindow -Chrome $chrome -Url "$PosUrl/display" `
             -ProfileDir $SharedProfile `
             -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height -Kiosk $UseKiosk | Out-Null
+
+        if ($canPlace) {
+            Move-NewWindowToBounds -Before $before -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height
+        } else {
+            Write-Log 'Could not auto-place the display; it may open on the primary monitor. Workaround: set the customer-facing monitor as Windows primary, or use $SwapMonitors.'
+        }
     } else {
         Write-Log 'Single monitor: customer display not opened.'
     }
