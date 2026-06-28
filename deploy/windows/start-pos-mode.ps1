@@ -153,7 +153,36 @@ function Start-PosWindow {
     if ($Kiosk) { $chromeArgs += '--kiosk' } else { $chromeArgs += '--start-fullscreen' }
 
     Write-Log "Launching $Url at ${X},${Y} ${W}x${H} (kiosk=$Kiosk)"
-    Start-Process -FilePath $Chrome -ArgumentList $chromeArgs | Out-Null
+    # -PassThru so the caller can wait for this window's instance to come up
+    # before launching the next window into the SAME instance (see Wait-ForWindow).
+    return (Start-Process -FilePath $Chrome -ArgumentList $chromeArgs -PassThru)
+}
+
+# Wait until a freshly-launched Chrome window has actually opened. This matters
+# because the POS and the customer display talk only over a same-origin, SAME-
+# INSTANCE BroadcastChannel. The 2nd window (display) is launched with the same
+# --user-data-dir as the 1st (POS) so Chrome FORWARDS it into the running
+# instance instead of starting a separate browser. But forwarding only happens
+# once the 1st instance has claimed the profile's process-singleton -- which is
+# only true after its window is up. Launch the 2nd window too early and Chrome
+# spawns a 2nd, isolated browser process on the same folder, and the two can no
+# longer see each other's BroadcastChannel (the original "display won't sync"
+# bug). So: wait for the 1st window, then launch the 2nd.
+function Wait-ForWindow {
+    param($Process, [int]$TimeoutSeconds)
+    if (-not $Process) { Start-Sleep -Seconds 3; return }
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            if ($Process.HasExited) { break }
+            $Process.Refresh()
+            if ($Process.MainWindowHandle -ne 0) { break }
+        } catch { break }
+        Start-Sleep -Milliseconds 200
+    }
+    # Extra settle so the singleton's hidden message window is fully registered
+    # before the forwarded launch tries to find it.
+    Start-Sleep -Milliseconds 800
 }
 
 # ===================== MAIN =====================
@@ -195,17 +224,29 @@ try {
     $dispScreen = $secondary
     if ($SwapMonitors -and $secondary) { $posScreen = $secondary; $dispScreen = $primary }
 
+    # Both windows MUST share one Chrome profile (--user-data-dir). The POS and
+    # the customer display talk to each other only via a same-origin
+    # BroadcastChannel ('grid-pos-display'), and BroadcastChannel does not cross
+    # profile boundaries: separate --user-data-dir dirs are isolated browser
+    # instances that share nothing. Splitting them into 'pos'/'display' profiles
+    # silently breaks cart->display sync. Chrome still honours each window's own
+    # position/size/fullscreen flags when opened from a shared profile.
+    $SharedProfile = Join-Path $ProfileRoot 'profile'
+
     $pb = $posScreen.Bounds
-    Start-PosWindow -Chrome $chrome -Url "$PosUrl/" `
-        -ProfileDir (Join-Path $ProfileRoot 'pos') `
+    $posProc = Start-PosWindow -Chrome $chrome -Url "$PosUrl/" `
+        -ProfileDir $SharedProfile `
         -X $pb.X -Y $pb.Y -W $pb.Width -H $pb.Height -Kiosk $UseKiosk
 
     if ($dispScreen) {
-        Start-Sleep -Milliseconds 800   # let the first window claim its monitor first
+        # Wait for the POS window to come up so the display launch FORWARDS into
+        # the same Chrome instance (shared BroadcastChannel) instead of racing it
+        # and spawning a second, isolated browser process.
+        Wait-ForWindow -Process $posProc -TimeoutSeconds 20
         $sb = $dispScreen.Bounds
         Start-PosWindow -Chrome $chrome -Url "$PosUrl/display" `
-            -ProfileDir (Join-Path $ProfileRoot 'display') `
-            -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height -Kiosk $UseKiosk
+            -ProfileDir $SharedProfile `
+            -X $sb.X -Y $sb.Y -W $sb.Width -H $sb.Height -Kiosk $UseKiosk | Out-Null
     } else {
         Write-Log 'Single monitor: customer display not opened.'
     }
