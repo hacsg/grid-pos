@@ -15,9 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_discounts_is_active ON discounts(is_active);
 
 -- Seed default discounts
 INSERT INTO discounts (name, kind, amount, is_active, sort_order) VALUES
-    ('10% Staff Discount', 'percent', 10.00, true, 0),
-    ('15% Staff Discount', 'percent', 15.00, true, 1),
-    ('20% Staff Discount', 'percent', 20.00, true, 2),
     ('Birthday Treat', 'percent', 100.00, true, 3),
     ('$2 Off', 'fixed', 2.00, true, 4),
     ('$5 Off', 'fixed', 5.00, true, 5)
