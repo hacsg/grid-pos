@@ -235,6 +235,13 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         status=payload.status,
         payment_method=payload.payment_method,
         payment_reference=payload.payment_reference,
+        # Amounts are settled later (mark-as-paid). Seed them to 0.00 so the
+        # insert never violates the NOT NULL constraint on cdc_amount (the DB
+        # column is NOT NULL even though the model maps it nullable).
+        cash_amount=Decimal("0.00"),
+        card_amount=Decimal("0.00"),
+        voucher_amount=Decimal("0.00"),
+        cdc_amount=Decimal("0.00"),
         loyalty_member_id=payload.loyalty_member_id,
         customer_id=payload.customer_id,
         loyalty_points_redeemed=payload.loyalty_points_redeemed,
