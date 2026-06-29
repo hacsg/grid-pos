@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,10 +11,11 @@ import (
 	"kpay-daemon/config"
 	"kpay-daemon/daemon"
 	"kpay-daemon/kpay"
+	"kpay-daemon/logx"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	log := logx.New(os.Stdout)
 	cfg := config.Load()
 	if err := cfg.Validate(); err != nil {
 		log.Error("config invalid", "error", err)
