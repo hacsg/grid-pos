@@ -536,6 +536,10 @@ export default function PaymentModal({
       ? 'Payment received'
     : requiresTerminal && error && terminalConnected !== false
       ? `Retry ${mode === 'split' ? 'split' : mode === 'paynow' ? 'PayNow' : paymentModeLabel(mode).toLowerCase()} payment`
+      : requiresTerminal
+        ? terminalMethod === 'paynow'
+          ? 'Charge via PayNow'
+          : 'Charge to terminal'
         : 'Complete payment';
 
   async function createPendingOrder(
@@ -914,7 +918,7 @@ export default function PaymentModal({
                         ? 'Terminal offline'
                         : mode === 'paynow'
                           ? 'PayNow QR'
-                          : 'Tap to pay'}
+                          : 'Ready to charge'}
                     </span>
                   </div>
                 )
@@ -1070,7 +1074,7 @@ export default function PaymentModal({
                 )}
                 <div>
                   <strong>{error ? 'Payment needs attention' : 'Processing payment…'}</strong>
-                  <span>{error ? 'Do not retry terminal payment until this order is checked.' : 'Waiting for terminal approval'}</span>
+                  <span>{error ? 'Do not retry terminal payment until this order is checked.' : cardPayment?.terminalPaymentMethod === 'paynow' ? 'Customer scans the PayNow QR on the terminal' : 'Tap or insert the card on the terminal'}</span>
                 </div>
               </div>
               <section className="payment-summary" aria-label="Terminal payment summary">
