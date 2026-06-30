@@ -1,8 +1,33 @@
 # KPay Daemon Windows Setup Guide
 
 ## What You Have
-- `kpay-daemon.exe` - Windows executable (9.8MB)
+- `kpay-daemon.exe` - Windows executable
 - This setup guide
+
+## Windows Compatibility
+
+The daemon supports **Windows 7 / Server 2008 R2 and newer** (64-bit).
+
+To stay compatible with Windows 7 POS machines, the `.exe` is built with the
+**Go 1.20 toolchain** — the last Go release that supports Windows 7/8. Go 1.21
+and later drop Windows 7 support: their runtime calls `ProcessPrng` from
+`bcryptprimitives.dll`, which does not exist on Windows 7, so binaries built
+with newer Go crash immediately at startup with:
+
+```
+Exception 0xc0000005 0x8 0x0 0x0
+internal/runtime/syscall/windows.asmstdcall(...)
+```
+
+If you rebuild the daemon yourself, you **must** use Go 1.20.x:
+
+```bash
+cd services/kpay-daemon
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o kpay-daemon.exe .
+```
+
+(`go.mod` is pinned to `go 1.20`. Do not bump it past 1.20 unless every POS
+machine has been upgraded to Windows 10+.)
 
 ## Step 1: Create Daemon Folder
 
@@ -153,6 +178,14 @@ type C:\KPayDaemon\daemon.log
 - Check `C:\KPayDaemon\daemon-error.log`
 - Run `kpay-daemon.exe` manually to see real-time errors
 - Verify Go runtime is not required (daemon is self-contained)
+
+**`Exception 0xc0000005` immediately on launch (crash in `windows.asmstdcall`):**
+- This means the `.exe` was built with Go 1.21+ and is running on Windows 7/8.
+- Newer Go binaries call a Windows API (`ProcessPrng`) that does not exist on
+  Windows 7, causing an instant access-violation crash before any config loads.
+- Fix: use the Windows 7-compatible build (Go 1.20) — see
+  [Windows Compatibility](#windows-compatibility) above — or upgrade the POS
+  machine to Windows 10+.
 
 ## What Happens Next
 

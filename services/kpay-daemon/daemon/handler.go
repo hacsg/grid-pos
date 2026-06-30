@@ -1,15 +1,16 @@
 package daemon
 
 import (
-	"context"; "encoding/json"; "errors"; "log/slog"; "net/http"; "time"
+	"context"; "encoding/json"; "errors"; "net/http"; "time"
 	"kpay-daemon/kpay"
+	"kpay-daemon/logx"
 )
 
 type Sender interface{ Send(any) error }
-type Handler struct{ client *kpay.Client; log *slog.Logger }
+type Handler struct{ client *kpay.Client; log *logx.Logger }
 type Command struct{ Type string `json:"type"`; RequestID string `json:"request_id"`; OutTradeNo string `json:"out_trade_no"`; OriginOutTradeNo string `json:"origin_out_trade_no"`; AmountCents int64 `json:"amount_cents"`; PaymentType int `json:"payment_type"`; RefundType int `json:"refund_type"`; RefundAmount int64 `json:"refund_amount_cents"`; RefNo string `json:"ref_no"`; TransactionNo string `json:"transaction_no"`; CommitTime int64 `json:"commit_time"` }
 
-func NewHandler(c *kpay.Client, log *slog.Logger) *Handler { return &Handler{client: c, log: log} }
+func NewHandler(c *kpay.Client, log *logx.Logger) *Handler { return &Handler{client: c, log: log} }
 func (h *Handler) HandleWS(ctx context.Context, s Sender, raw []byte) {
 	for _, ev := range h.Events(ctx, raw) { if err := s.Send(ev); err != nil { h.log.Warn("ws send failed", "error", err); return } }
 }

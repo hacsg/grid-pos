@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	"kpay-daemon/config"
+	"kpay-daemon/logx"
 )
 
 type wsConn struct {
@@ -28,7 +28,7 @@ type wsConn struct {
 	mu sync.Mutex
 }
 
-func Run(ctx context.Context, cfg config.Config, h *Handler, log *slog.Logger) error {
+func Run(ctx context.Context, cfg config.Config, h *Handler, log *logx.Logger) error {
 	wsURL, err := cfg.DaemonWSURL()
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func Run(ctx context.Context, cfg config.Config, h *Handler, log *slog.Logger) e
 		if err != nil {
 			log.Warn("ws connect failed", "error", err)
 			sleep(ctx, backoff)
-			backoff = min(backoff*2, 15*time.Second)
+			backoff = capDur(backoff*2, 15*time.Second)
 			continue
 		}
 		backoff = time.Second
@@ -54,7 +54,7 @@ func Run(ctx context.Context, cfg config.Config, h *Handler, log *slog.Logger) e
 		if ctx.Err() == nil {
 			log.Warn("ws disconnected", "error", err)
 			sleep(ctx, backoff)
-			backoff = min(backoff*2, 15*time.Second)
+			backoff = capDur(backoff*2, 15*time.Second)
 		}
 	}
 	return ctx.Err()
@@ -230,6 +230,15 @@ func addrFor(u *url.URL) string {
 		return u.Host + ":443"
 	}
 	return u.Host + ":80"
+}
+
+// capDur returns the smaller of a and b. It replaces the Go 1.21 min builtin
+// so the daemon builds with Go 1.20 (the last Windows 7-compatible release).
+func capDur(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func sleep(ctx context.Context, d time.Duration) {
