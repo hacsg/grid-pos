@@ -1,6 +1,7 @@
 """Order management API routes."""
 
 from datetime import UTC, datetime, date, time, timedelta
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -22,16 +23,21 @@ from app.schemas.order import (
     OrderRefundCreate,
     OrderStatusUpdate,
     OrderSummaryRead,
+    RefundRead,
 )
 from app.schemas.voucher import VoucherApplyRequest
 from app.services.orders import (
     add_item_to_order_service,
     create_order as create_order_service,
+    business_day_bounds,
     load_order_or_404,
+    list_refunds_for_order,
     refund_order_service,
     remove_item_from_order_service,
     update_order_status_service,
 )
+
+SGT_TZ = ZoneInfo("Asia/Singapore")
 from app.services.vouchers import apply_vouchers_to_order, load_applied_vouchers_for_order
 from app.utils.auth import get_current_staff
 
@@ -120,11 +126,11 @@ async def list_orders(
     if status is not None:
         statement = statement.where(Order.status == status)
     if date_from is not None:
-        dt_from = datetime.combine(date_from, time.min, tzinfo=UTC)
+        dt_from = datetime.combine(date_from, time.min, tzinfo=SGT_TZ).astimezone(UTC)
         statement = statement.where(Order.created_at >= dt_from)
     if date_to is not None:
-        dt_to = datetime.combine(date_to, time.max, tzinfo=UTC)
-        statement = statement.where(Order.created_at <= dt_to)
+        dt_to = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=SGT_TZ).astimezone(UTC)
+        statement = statement.where(Order.created_at < dt_to)
     statement = statement.order_by(Order.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(statement)
     return list(result.scalars().all())
@@ -136,10 +142,8 @@ async def list_today_orders(
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> list[Order]:
-    """Get today's orders, optionally filtered by outlet."""
-    today = datetime.now(UTC)
-    day_start = datetime.combine(today.date(), time.min, tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
+    """Get today's orders (Singapore business day), optionally filtered by outlet."""
+    day_start, day_end = business_day_bounds()
 
     statement = select(Order).where(
         Order.created_at >= day_start,
@@ -224,9 +228,25 @@ async def refund_order(
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> Order:
-    """Process a full refund on a paid order."""
+    """Process a full or partial refund on a paid order."""
     _ensure_manager_authorized(current_staff)
-    return await refund_order_service(db, order_id, reason=payload.reason)
+    return await refund_order_service(
+        db,
+        order_id,
+        staff_id=current_staff.id,
+        reason=payload.reason,
+        amount=payload.amount,
+    )
+
+
+@router.get("/{order_id}/refunds", response_model=list[RefundRead])
+async def list_order_refunds(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> list:
+    """List refund audit records for an order."""
+    return await list_refunds_for_order(db, order_id)
 
 
 @router.post("/{order_id}/items", response_model=OrderRead, status_code=201)

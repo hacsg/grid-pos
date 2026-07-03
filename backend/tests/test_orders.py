@@ -12,9 +12,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.order import Order, OrderStatus
+from app.models.refund import Refund
 from app.models.voucher import OrderVoucher
 from app.schemas.order import OrderCreate, OrderItemCreate, SelectedModifier
-from app.services.orders import create_order as create_order_service, quantize_money
+from app.services import orders as orders_service
+from app.services.orders import create_order as create_order_service, next_order_number, quantize_money
 from app.services.vouchers import apply_vouchers_to_order
 
 
@@ -715,6 +717,97 @@ class TestRefundOrder:
         assert resp.status_code == 400
         assert "not paid" in resp.json()["detail"].lower()
 
+    async def test_refund_creates_refund_record(
+        self,
+        client: AsyncClient,
+        db_session,
+        outlet,
+        cashier_staff,
+        product,
+        manager_token,
+        manager_staff,
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+        order_total = Decimal(create_resp.json()["total"])
+
+        await client.put(f"/api/orders/{order_id}/status", json={"status": "paid"})
+
+        resp = await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={"reason": "Customer changed mind"},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert resp.status_code == 200
+
+        result = await db_session.execute(
+            select(Refund).where(Refund.order_id == UUID(order_id))
+        )
+        refund = result.scalar_one()
+        assert refund.reason == "Customer changed mind"
+        assert refund.amount == order_total
+        assert refund.staff_id == manager_staff.id
+        assert refund.kind == "full"
+
+    async def test_partial_refund_keeps_order_paid(
+        self,
+        client: AsyncClient,
+        db_session,
+        outlet,
+        cashier_staff,
+        product,
+        manager_token,
+        manager_staff,
+    ) -> None:
+        product.price = Decimal("10.00")
+        await db_session.commit()
+        await db_session.refresh(product)
+
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        payload["items"][0]["quantity"] = 1
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+        assert create_resp.json()["total"] == "10.00"
+
+        await client.put(f"/api/orders/{order_id}/status", json={"status": "paid"})
+
+        resp = await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={"amount": "5.00", "reason": "Partial refund"},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
+
+        result = await db_session.execute(
+            select(Refund).where(Refund.order_id == UUID(order_id))
+        )
+        refund = result.scalar_one()
+        assert refund.amount == Decimal("5.00")
+        assert refund.kind == "partial"
+        assert refund.staff_id == manager_staff.id
+
+    async def test_list_order_refunds(
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+        await client.put(f"/api/orders/{order_id}/status", json={"status": "paid"})
+        await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={"reason": "Test"},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+
+        resp = await client.get(f"/api/orders/{order_id}/refunds")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["reason"] == "Test"
+        assert data[0]["kind"] == "full"
+
 
 class TestAddItem:
     """POST /api/orders/{id}/items"""
@@ -899,6 +992,61 @@ class TestOrderNumberAutoIncrement:
         order2_resp = await client.post("/api/orders", json=payload)
         assert order2_resp.status_code == 201
         assert order2_resp.json()["order_number"] == "0001"
+
+    async def test_next_order_number_uses_sgt_day_boundary(
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
+    ) -> None:
+        """Order numbers share a Singapore business day across the 8am UTC-midnight seam."""
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        order1_resp = await client.post("/api/orders", json=payload)
+        assert order1_resp.json()["order_number"] == "0001"
+
+        # 7:59 AM SGT on Jan 15 = Jan 14 23:59 UTC
+        sgt_morning = datetime(2026, 1, 14, 23, 59, tzinfo=UTC)
+        result = await db_session.execute(
+            select(Order).where(Order.id == UUID(order1_resp.json()["id"]))
+        )
+        order_obj = result.scalar_one()
+        order_obj.created_at = sgt_morning
+        await db_session.commit()
+
+        # 8:01 AM SGT on Jan 15 = Jan 15 00:01 UTC — same SGT business day
+        eight_am_sgt = datetime(2026, 1, 15, 0, 1, tzinfo=UTC)
+        assert await next_order_number(db_session, outlet.id, now=eight_am_sgt) == "0002"
+
+        # SGT midnight Jan 16 = Jan 15 16:00 UTC — new business day
+        sgt_midnight = datetime(2026, 1, 15, 16, 0, tzinfo=UTC)
+        assert await next_order_number(db_session, outlet.id, now=sgt_midnight) == "0001"
+
+
+class TestSGTTodayOrders:
+    """GET /api/orders/today uses Singapore business-day boundaries."""
+
+    async def test_list_today_orders_uses_sgt(
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product, monkeypatch
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        # Backdate to 7:59 AM SGT (still the same SGT calendar day as 8:01 AM)
+        sgt_morning = datetime(2026, 1, 14, 23, 59, tzinfo=UTC)
+        result = await db_session.execute(select(Order).where(Order.id == UUID(order_id)))
+        order_obj = result.scalar_one()
+        order_obj.created_at = sgt_morning
+        await db_session.commit()
+
+        eight_am_sgt = datetime(2026, 1, 15, 0, 1, tzinfo=UTC)
+        day_start, day_end = orders_service.business_day_bounds(eight_am_sgt)
+        monkeypatch.setattr(
+            "app.routers.orders.business_day_bounds",
+            lambda now=None: (day_start, day_end),
+        )
+
+        resp = await client.get("/api/orders/today")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+        assert resp.json()[0]["id"] == order_id
 
 
 class _MockPlotholdersClient:

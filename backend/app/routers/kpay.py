@@ -26,7 +26,13 @@ from app.models.order import Order, OrderStatus
 from app.models.staff import Staff
 from app.routers.ws_daemon import get_daemon_connection
 from app.services import idempotency, payment_intents
-from app.services.orders import compute_split_card_leg, quantize_money
+from app.services.orders import (
+    _money_or_zero,
+    compute_split_card_leg,
+    quantize_money,
+    record_refund,
+    refunded_amount_for_order,
+)
 from app.utils.auth import get_current_staff
 
 # Roles permitted to void/refund. The KPay manager password itself is held and
@@ -541,7 +547,24 @@ async def void_payment(
         if error:
             return KPayReversalResponse(result="failed", out_trade_no=void_no, message=error)
 
-        await _set_order_status(session, request.order_id, OrderStatus.cancelled)
+        order = await session.get(Order, request.order_id)
+        if order and order.status == OrderStatus.paid:
+            void_amount = quantize_money(intent.amount)
+            is_split = (
+                order.payment_method == "split"
+                or _money_or_zero(order.cash_amount) > 0
+                or _money_or_zero(order.cdc_amount) > 0
+            )
+            await record_refund(
+                session,
+                order,
+                staff_id=current_staff.id,
+                amount=void_amount,
+                reason=None,
+                kind="void",
+            )
+            order.status = OrderStatus.paid if is_split else OrderStatus.cancelled
+            await session.commit()
         log.info(f"Voided order {request.order_id} (origin {intent.out_trade_no})")
         return KPayReversalResponse(result="ok", out_trade_no=void_no)
 
@@ -568,7 +591,12 @@ async def refund_payment(
         if not intent:
             raise HTTPException(status_code=404, detail="No successful card payment found for this order")
 
-        refund_amount = Decimal(str(request.amount)) if request.amount is not None else order.total
+        card_amount = quantize_money(intent.amount)
+        refund_amount = (
+            quantize_money(Decimal(str(request.amount)))
+            if request.amount is not None
+            else card_amount
+        )
         kp = intent.kpay_response or {}
         refund_no = payment_intents.new_out_trade_no("RFND")
         try:
@@ -587,14 +615,19 @@ async def refund_payment(
         if error:
             return KPayReversalResponse(result="failed", out_trade_no=refund_no, message=error)
 
-        await _set_order_status(session, request.order_id, OrderStatus.refunded)
+        if order.status == OrderStatus.paid:
+            remaining = quantize_money(
+                order.total - await refunded_amount_for_order(session, order.id)
+            )
+            kind = "full" if refund_amount >= remaining else "partial"
+            await record_refund(
+                session,
+                order,
+                staff_id=current_staff.id,
+                amount=refund_amount,
+                reason=None,
+                kind=kind,
+            )
+            await session.commit()
         log.info(f"Refunded order {request.order_id} amount {refund_amount} (origin {intent.out_trade_no})")
         return KPayReversalResponse(result="ok", out_trade_no=refund_no)
-
-
-async def _set_order_status(session, order_id: str, new_status: OrderStatus) -> None:
-    """Transition a paid order to cancelled/refunded after a confirmed reversal."""
-    order = await session.get(Order, order_id)
-    if order and order.status == OrderStatus.paid:
-        order.status = new_status
-        await session.commit()

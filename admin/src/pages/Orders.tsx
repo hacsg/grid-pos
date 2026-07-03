@@ -1,36 +1,66 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Filter, RefreshCw, Undo2 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Table from '@/components/ui/Table';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
+import { useOrders, useOrder, useRefundOrder } from '@/hooks/useOrders';
+import { useOutlets } from '@/hooks/useOutlets';
+import { useStaffList } from '@/hooks/useStaff';
 import type { Order, OrderStatus } from '@/types';
 
-const mockOrders: Order[] = [
-  {
-    id: '1', order_number: '1042', outlet_id: '1', outlet_name: 'Main Street',
-    staff_id: '1', staff_name: 'Alice', items: [
-      { id: '1', product_id: '1', product_name: 'Classic Gelato', quantity: 2, unit_price: 6.00, total_price: 12.00, modifiers: [] },
-    ],
-    subtotal: 12.00, tax: 1.20, total: 13.20, status: 'completed', payment_method: 'cash', created_at: '2024-01-15T14:30:00Z', updated_at: '2024-01-15T14:30:00Z',
-  },
-  {
-    id: '2', order_number: '1041', outlet_id: '2', outlet_name: 'Downtown',
-    staff_id: '2', staff_name: 'Bob', items: [],
-    subtotal: 8.00, tax: 0.80, total: 8.80, status: 'pending', payment_method: 'card', created_at: '2024-01-15T14:15:00Z', updated_at: '2024-01-15T14:15:00Z',
-  },
-];
-
 export default function Orders() {
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [outletFilter, setOutletFilter] = useState<string>('');
 
-  const filteredOrders = mockOrders.filter((order) => {
-    if (statusFilter && order.status !== statusFilter) return false;
-    if (outletFilter && order.outlet_id !== outletFilter) return false;
-    return true;
-  });
+  const orderParams = useMemo(
+    () => ({
+      limit: 200,
+      ...(statusFilter ? { status: statusFilter as OrderStatus } : {}),
+      ...(outletFilter ? { outlet_id: outletFilter } : {}),
+    }),
+    [statusFilter, outletFilter],
+  );
+
+  const { data: ordersData, isLoading, refetch, isFetching } = useOrders(orderParams);
+  const { data: outletsData } = useOutlets();
+  const { data: staffData } = useStaffList({ limit: 500 });
+  const { data: selectedOrder } = useOrder(selectedOrderId ?? '');
+  const refundOrder = useRefundOrder();
+
+  const outlets = outletsData?.data ?? [];
+  const staffList = staffData?.data ?? [];
+  const orders = ordersData?.data ?? [];
+
+  const outletNameById = useMemo(
+    () => Object.fromEntries(outlets.map((o) => [o.id, o.name])),
+    [outlets],
+  );
+  const staffNameById = useMemo(
+    () => Object.fromEntries(staffList.map((s) => [s.id, s.name])),
+    [staffList],
+  );
+
+  const enrichedOrders = useMemo(
+    () =>
+      orders.map((order) => ({
+        ...order,
+        outlet_name: outletNameById[order.outlet_id] ?? order.outlet_id,
+        staff_name: staffNameById[order.staff_id] ?? order.staff_id,
+      })),
+    [orders, outletNameById, staffNameById],
+  );
+
+  const handleRefund = (order: Order) => {
+    if (order.status !== 'paid') return;
+    if (!window.confirm(`Refund order #${order.order_number} for $${order.total.toFixed(2)}?`)) {
+      return;
+    }
+    refundOrder.mutate(order.id, {
+      onSuccess: () => setSelectedOrderId(null),
+    });
+  };
 
   const columns = [
     {
@@ -40,16 +70,25 @@ export default function Orders() {
         <span className="font-medium text-text">#{order.order_number}</span>
       ),
     },
-    { key: 'outlet_name', header: 'Outlet' },
+    {
+      key: 'outlet_name',
+      header: 'Outlet',
+      render: (order: Order) => (
+        <span>{order.outlet_name ?? outletNameById[order.outlet_id] ?? '—'}</span>
+      ),
+    },
     {
       key: 'staff_name',
       header: 'Staff',
+      render: (order: Order) => (
+        <span>{order.staff_name ?? staffNameById[order.staff_id] ?? '—'}</span>
+      ),
     },
     {
       key: 'total',
       header: 'Total',
       render: (order: Order) => (
-        <span className="font-medium">${order.total.toFixed(2)}</span>
+        <span className="font-medium">${Number(order.total).toFixed(2)}</span>
       ),
     },
     {
@@ -57,13 +96,15 @@ export default function Orders() {
       header: 'Status',
       render: (order: Order) => {
         const colors: Record<string, string> = {
-          completed: 'bg-success/10 text-success',
+          paid: 'bg-success/10 text-success',
           pending: 'bg-warning/10 text-warning',
           cancelled: 'bg-error/10 text-error',
           refunded: 'bg-surface text-text-muted',
         };
         return (
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${colors[order.status] || 'bg-surface text-text-muted'}`}>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${colors[order.status] || 'bg-surface text-text-muted'}`}
+          >
             {order.status}
           </span>
         );
@@ -73,10 +114,18 @@ export default function Orders() {
       key: 'payment_method',
       header: 'Payment',
       render: (order: Order) => (
-        <span className="capitalize text-text-muted">{order.payment_method}</span>
+        <span className="capitalize text-text-muted">{order.payment_method ?? '—'}</span>
       ),
     },
   ];
+
+  const detailOrder = selectedOrder
+    ? {
+        ...selectedOrder,
+        outlet_name: outletNameById[selectedOrder.outlet_id] ?? selectedOrder.outlet_id,
+        staff_name: staffNameById[selectedOrder.staff_id] ?? selectedOrder.staff_id,
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -85,8 +134,8 @@ export default function Orders() {
           <h1 className="text-2xl font-bold text-text">Orders</h1>
           <p className="mt-1 text-sm text-text-muted">View and manage orders</p>
         </div>
-        <Button variant="secondary">
-          <RefreshCw className="h-4 w-4" />
+        <Button variant="secondary" onClick={() => refetch()} disabled={isFetching}>
+          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
@@ -101,7 +150,7 @@ export default function Orders() {
           >
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
-            <option value="completed">Completed</option>
+            <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
             <option value="refunded">Refunded</option>
           </select>
@@ -111,11 +160,14 @@ export default function Orders() {
           <select
             value={outletFilter}
             onChange={(e) => setOutletFilter(e.target.value)}
-            className="w-40 rounded-lg border border-gray-200 bg-white py-2 px-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-48 rounded-lg border border-gray-200 bg-white py-2 px-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">All Outlets</option>
-            <option value="1">Main Street</option>
-            <option value="2">Downtown</option>
+            {outlets.map((outlet) => (
+              <option key={outlet.id} value={outlet.id}>
+                {outlet.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -123,64 +175,86 @@ export default function Orders() {
       <Card>
         <Table
           columns={columns}
-          data={filteredOrders}
-          onRowClick={setSelectedOrder}
+          data={enrichedOrders}
+          onRowClick={(order) => setSelectedOrderId(order.id)}
           emptyMessage="No orders found"
+          loading={isLoading}
         />
       </Card>
 
       <Modal
-        isOpen={!!selectedOrder}
-        onClose={() => setSelectedOrder(null)}
-        title={`Order #${selectedOrder?.order_number}`}
+        isOpen={!!selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
+        title={`Order #${detailOrder?.order_number ?? ''}`}
         size="lg"
       >
-        {selectedOrder && (
+        {detailOrder && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wider">Outlet</p>
-                <p className="text-sm font-medium text-text">{selectedOrder.outlet_name}</p>
+                <p className="text-sm font-medium text-text">{detailOrder.outlet_name}</p>
               </div>
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wider">Staff</p>
-                <p className="text-sm font-medium text-text">{selectedOrder.staff_name}</p>
+                <p className="text-sm font-medium text-text">{detailOrder.staff_name}</p>
               </div>
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wider">Status</p>
-                <p className="text-sm font-medium text-text capitalize">{selectedOrder.status}</p>
+                <p className="text-sm font-medium text-text capitalize">{detailOrder.status}</p>
               </div>
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wider">Payment</p>
-                <p className="text-sm font-medium text-text capitalize">{selectedOrder.payment_method}</p>
+                <p className="text-sm font-medium text-text capitalize">
+                  {detailOrder.payment_method ?? '—'}
+                </p>
               </div>
             </div>
 
             <div className="border-t border-gray-100 pt-4">
               <p className="text-xs text-text-muted uppercase tracking-wider mb-2">Order Items</p>
               <div className="space-y-2">
-                {selectedOrder.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-lg bg-surface px-3 py-2">
-                    <div>
-                      <p className="text-sm font-medium text-text">{item.product_name}</p>
-                      <p className="text-xs text-text-muted">x{item.quantity} @ ${item.unit_price.toFixed(2)}</p>
+                {(detailOrder.items ?? []).length === 0 ? (
+                  <p className="text-sm text-text-muted">No line items</p>
+                ) : (
+                  detailOrder.items!.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-text">Product {item.product_id.slice(0, 8)}…</p>
+                        <p className="text-xs text-text-muted">
+                          x{item.quantity} @ ${Number(item.unit_price).toFixed(2)}
+                        </p>
+                      </div>
+                      <span className="text-sm font-medium text-text">
+                        ${(Number(item.unit_price) * item.quantity).toFixed(2)}
+                      </span>
                     </div>
-                    <span className="text-sm font-medium text-text">${item.total_price.toFixed(2)}</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
             <div className="flex items-center justify-between border-t border-gray-100 pt-4">
               <div>
-                <p className="text-sm text-text-muted">Subtotal: ${selectedOrder.subtotal.toFixed(2)}</p>
-                <p className="text-sm text-text-muted">Tax: ${selectedOrder.tax.toFixed(2)}</p>
-                <p className="text-lg font-bold text-text">Total: ${selectedOrder.total.toFixed(2)}</p>
+                <p className="text-sm text-text-muted">
+                  Subtotal: ${Number(detailOrder.subtotal).toFixed(2)}
+                </p>
+                <p className="text-lg font-bold text-text">
+                  Total: ${Number(detailOrder.total).toFixed(2)}
+                </p>
               </div>
-              {selectedOrder.status !== 'refunded' && (
-                <Button variant="danger" size="sm">
+              {detailOrder.status === 'paid' && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleRefund(detailOrder)}
+                  disabled={refundOrder.isPending}
+                >
                   <Undo2 className="h-4 w-4" />
-                  Refund
+                  {refundOrder.isPending ? 'Refunding…' : 'Refund'}
                 </Button>
               )}
             </div>

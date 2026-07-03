@@ -104,6 +104,18 @@ class OrderRefundCreate(BaseModel):
     """Payload for refunding an order."""
 
     reason: str | None = Field(default=None, max_length=500)
+    amount: Money | None = Field(default=None, gt=0)
+
+
+class RefundRead(UUIDSchema):
+    """Refund audit record response payload."""
+
+    order_id: UUID
+    staff_id: UUID
+    amount: Money
+    reason: str | None
+    kind: str
+    created_at: datetime
 
 
 class OrderAddItem(OrderItemCreate):

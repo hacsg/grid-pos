@@ -122,30 +122,28 @@ export interface Order {
   id: string;
   order_number: string;
   outlet_id: string;
-  outlet_name: string;
   staff_id: string;
-  staff_name: string;
-  items: OrderItem[];
   subtotal: number;
-  tax: number;
   total: number;
   status: OrderStatus;
-  payment_method: string;
+  payment_method: string | null;
   created_at: string;
   updated_at: string;
+  items?: OrderItem[];
+  outlet_name?: string;
+  staff_name?: string;
 }
 
 export interface OrderItem {
   id: string;
   product_id: string;
-  product_name: string;
   quantity: number;
   unit_price: number;
-  total_price: number;
-  modifiers: string[];
+  modifiers: { modifier_name: string; price_adjustment: number }[];
+  notes?: string | null;
 }
 
-export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'refunded';
+export type OrderStatus = 'pending' | 'paid' | 'cancelled' | 'refunded';
 
 export interface Staff {
   id: string;

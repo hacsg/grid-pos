@@ -262,6 +262,14 @@ export const getOrders = async (params?: {
   date_to?: string;
 }): Promise<PaginatedResponse<Order>> => {
   const { data } = await api.get('/orders', { params });
+  if (Array.isArray(data)) {
+    return {
+      data,
+      total: data.length,
+      page: params?.page ?? 1,
+      limit: params?.limit ?? data.length,
+    };
+  }
   return data;
 };
 

@@ -76,3 +76,4 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="order",
         foreign_keys="Voucher.order_id",
     )
+    refunds = relationship("Refund", back_populates="order", cascade="all, delete-orphan")

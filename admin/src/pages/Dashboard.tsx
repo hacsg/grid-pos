@@ -392,7 +392,7 @@ export default function Dashboard() {
         render: (row: Order) => (
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              row.status === 'completed'
+              row.status === 'paid'
                 ? 'bg-success/10 text-success'
                 : row.status === 'pending'
                   ? 'bg-warning/10 text-warning'

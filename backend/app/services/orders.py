@@ -1,9 +1,10 @@
 """Order creation and order-numbering business logic."""
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import Integer, cast, func, select, text
@@ -12,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.category import Category
 from app.models.order import Order, OrderStatus
+from app.models.refund import Refund
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.product import Product
@@ -22,7 +24,19 @@ from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClie
 from app.services.vouchers import apply_vouchers_to_order
 
 CENT = Decimal("0.01")
+SGT_TZ = ZoneInfo("Asia/Singapore")
 logger = logging.getLogger(__name__)
+
+
+def business_day_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """Return UTC bounds [start, end) for the current Singapore business day."""
+    current_utc = now or datetime.now(UTC)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=UTC)
+    current_sgt = current_utc.astimezone(SGT_TZ)
+    day_start_sgt = datetime.combine(current_sgt.date(), time.min, tzinfo=SGT_TZ)
+    day_end_sgt = day_start_sgt + timedelta(days=1)
+    return day_start_sgt.astimezone(UTC), day_end_sgt.astimezone(UTC)
 
 # Valid status transitions: current -> set of allowed next statuses
 _ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
@@ -36,22 +50,24 @@ def quantize_money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-async def _acquire_order_number_lock(db: AsyncSession, outlet_id: UUID, order_date: datetime) -> None:
+async def _acquire_order_number_lock(db: AsyncSession, outlet_id: UUID, business_date: date) -> None:
     """Acquire a PostgreSQL transaction lock for outlet/day order numbering."""
     bind = db.get_bind()
     if bind.dialect.name != "postgresql":
         return
-    lock_key = f"order-number:{outlet_id}:{order_date.date().isoformat()}"
+    lock_key = f"order-number:{outlet_id}:{business_date.isoformat()}"
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": lock_key})
 
 
 async def next_order_number(db: AsyncSession, outlet_id: UUID, now: datetime | None = None) -> str:
-    """Return the next four-digit order number for an outlet on a calendar day."""
+    """Return the next four-digit order number for an outlet on a Singapore business day."""
     current_time = now or datetime.now(UTC)
-    day_start = datetime.combine(current_time.date(), time.min, tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+    day_start, day_end = business_day_bounds(current_time)
+    business_date = current_time.astimezone(SGT_TZ).date()
 
-    await _acquire_order_number_lock(db, outlet_id, current_time)
+    await _acquire_order_number_lock(db, outlet_id, business_date)
 
     result = await db.execute(
         select(func.max(cast(Order.order_number, Integer))).where(
@@ -430,19 +446,87 @@ async def update_order_status_service(
     return result.scalar_one()
 
 
+async def refunded_amount_for_order(db: AsyncSession, order_id: UUID) -> Decimal:
+    """Return the sum of refund amounts already recorded for an order."""
+    result = await db.execute(
+        select(func.coalesce(func.sum(Refund.amount), 0)).where(Refund.order_id == order_id)
+    )
+    return quantize_money(Decimal(str(result.scalar_one() or 0)))
+
+
+async def record_refund(
+    db: AsyncSession,
+    order: Order,
+    *,
+    staff_id: UUID,
+    amount: Decimal,
+    reason: str | None,
+    kind: str,
+) -> Refund:
+    """Insert a refund row and update order status when fully refunded."""
+    refund_amount = quantize_money(amount)
+    if refund_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refund amount must be positive",
+        )
+
+    already_refunded = await refunded_amount_for_order(db, order.id)
+    remaining = quantize_money(order.total - already_refunded)
+    if remaining <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order is already fully refunded",
+        )
+    if refund_amount > remaining:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refund amount exceeds remaining refundable balance",
+        )
+
+    refund = Refund(
+        order_id=order.id,
+        staff_id=staff_id,
+        amount=refund_amount,
+        reason=reason,
+        kind=kind,
+    )
+    db.add(refund)
+
+    if quantize_money(already_refunded + refund_amount) >= order.total:
+        order.status = OrderStatus.refunded
+
+    return refund
+
+
 async def refund_order_service(
     db: AsyncSession,
     order_id: UUID,
+    *,
+    staff_id: UUID,
     reason: str | None = None,
+    amount: Decimal | None = None,
 ) -> Order:
-    """Process a full refund on a paid order."""
+    """Process a full or partial refund on a paid order."""
     order = await load_order_or_404(db, order_id, for_update=True)
     if order.status != OrderStatus.paid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot refund an order that is not paid",
         )
-    order.status = OrderStatus.refunded
+
+    already_refunded = await refunded_amount_for_order(db, order_id)
+    remaining = quantize_money(order.total - already_refunded)
+    refund_amount = quantize_money(amount) if amount is not None else remaining
+    kind = "full" if refund_amount >= remaining else "partial"
+    await record_refund(
+        db,
+        order,
+        staff_id=staff_id,
+        amount=refund_amount,
+        reason=reason,
+        kind=kind,
+    )
     await db.commit()
 
     result = await db.execute(
@@ -451,6 +535,15 @@ async def refund_order_service(
         .where(Order.id == order.id)
     )
     return result.scalar_one()
+
+
+async def list_refunds_for_order(db: AsyncSession, order_id: UUID) -> list[Refund]:
+    """Return refund audit rows for an order, newest first."""
+    await load_order_or_404(db, order_id)
+    result = await db.execute(
+        select(Refund).where(Refund.order_id == order_id).order_by(Refund.created_at.desc())
+    )
+    return list(result.scalars().all())
 
 
 async def add_item_to_order_service(db: AsyncSession, order_id: UUID, item: OrderItemCreate) -> Order:

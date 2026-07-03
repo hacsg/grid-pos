@@ -24,6 +24,7 @@ from app.models import (  # noqa: F401  — registers models on Base.metadata
     Outlet,
     OrderVoucher,
     PaymentIntent,
+    Refund,
     Product,
     ProductModifierGroup,
     Staff,

@@ -10,6 +10,7 @@ from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.payment_intent import PaymentIntent
 from app.models.product import Product
+from app.models.refund import Refund
 from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
 from app.models.discount import Discount
@@ -32,6 +33,7 @@ __all__ = [
     "PaymentIntent",
     "Product",
     "ProductModifierGroup",
+    "Refund",
     "Shift",
     "Staff",
     "StaffRole",
