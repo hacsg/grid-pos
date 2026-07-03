@@ -14,16 +14,24 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.models.payment_intent import PaymentIntent
 from app.routers.ws_daemon import send_to_daemon
 
 log = logging.getLogger(__name__)
+
+
+def _ensure_uuid(val: str | UUID) -> UUID:
+    """Coerce str UUID or UUID to UUID instance (required for sqlite Uuid type binding in tests)."""
+    if isinstance(val, str):
+        return UUID(val)
+    return val
 
 
 def _to_cents(amount: Decimal) -> int:
@@ -58,6 +66,10 @@ async def create_payment_intent(
     Returns:
         Created PaymentIntent with generated out_trade_no
     """
+    # Coerce to UUID instances (postgres accepts str, sqlite Uuid type in tests requires UUID obj)
+    outlet_id = _ensure_uuid(outlet_id)
+    order_id = _ensure_uuid(order_id)
+
     # Generate unique transaction reference for KPay
     out_trade_no = new_out_trade_no()
 
@@ -80,7 +92,8 @@ async def create_payment_intent(
 
 async def get_payment_intent(session: AsyncSession, intent_id: str) -> Optional[PaymentIntent]:
     """Fetch payment intent by ID."""
-    result = await session.execute(select(PaymentIntent).where(PaymentIntent.id == intent_id))
+    intent_uuid = _ensure_uuid(intent_id)
+    result = await session.execute(select(PaymentIntent).where(PaymentIntent.id == intent_uuid))
     return result.scalar_one_or_none()
 
 
@@ -88,9 +101,10 @@ async def get_successful_intent_for_order(
     session: AsyncSession, order_id: str
 ) -> Optional[PaymentIntent]:
     """Return the most recent successful card payment intent for an order."""
+    order_uuid = _ensure_uuid(order_id)
     result = await session.execute(
         select(PaymentIntent)
-        .where(PaymentIntent.order_id == order_id, PaymentIntent.status == "success")
+        .where(PaymentIntent.order_id == order_uuid, PaymentIntent.status == "success")
         .order_by(PaymentIntent.created_at.desc())
     )
     return result.scalars().first()
@@ -106,10 +120,11 @@ async def get_active_intent_for_order(
     session: AsyncSession, order_id: str
 ) -> Optional[PaymentIntent]:
     """Return the current pending/processing/successful intent for an order, if any."""
+    order_uuid = _ensure_uuid(order_id)
     result = await session.execute(
         select(PaymentIntent)
         .where(
-            PaymentIntent.order_id == order_id,
+            PaymentIntent.order_id == order_uuid,
             PaymentIntent.status.in_(ACTIVE_INTENT_STATUSES),
         )
         .order_by(PaymentIntent.created_at.desc())
@@ -128,8 +143,9 @@ async def update_payment_intent_status(
     
     If status is success/failed, also update the linked order's payment fields.
     """
+    intent_uuid = _ensure_uuid(intent_id)
     # Update the intent
-    stmt = update(PaymentIntent).where(PaymentIntent.id == intent_id).values(
+    stmt = update(PaymentIntent).where(PaymentIntent.id == intent_uuid).values(
         status=status,
         kpay_response=kpay_response,
         error_message=error_message,
@@ -140,16 +156,26 @@ async def update_payment_intent_status(
     # On success, stamp the order with the KPay transaction reference. Prefer the
     # KPay transactionNo (needed for downstream refunds) and fall back to out_trade_no.
     if status == "success":
-        intent_result = await session.execute(select(PaymentIntent).where(PaymentIntent.id == intent_id))
+        intent_result = await session.execute(select(PaymentIntent).where(PaymentIntent.id == intent_uuid))
         intent = intent_result.scalar_one_or_none()
         if intent:
             reference = intent.out_trade_no
             if kpay_response and kpay_response.get("transaction_no"):
                 reference = kpay_response["transaction_no"]
-            order_stmt = update(Order).where(Order.id == intent.order_id).values(
-                payment_method="card",
-                payment_reference=reference,
+            # Load order to guard: only auto-mark *full-card* (intent covers entire total) as paid.
+            # Split payments (card leg < total) stay pending; frontend still calls PUT /status
+            # to supply split breakdown + finalize.
+            order_result = await session.execute(
+                select(Order).where(Order.id == intent.order_id)
             )
+            order = order_result.scalar_one_or_none()
+            update_values = {
+                "payment_method": "card",
+                "payment_reference": reference,
+            }
+            if order is not None and intent.amount == order.total:
+                update_values["status"] = OrderStatus.paid
+            order_stmt = update(Order).where(Order.id == intent.order_id).values(**update_values)
             await session.execute(order_stmt)
             log.info(f"Updated order {intent.order_id} with card payment ref {reference}")
 

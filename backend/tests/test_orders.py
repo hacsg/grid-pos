@@ -137,6 +137,36 @@ class TestCreateOrder:
         assert str(recorded["amount"]) == "9.99"
         assert recorded["outlet"] == outlet.name
 
+    async def test_create_order_ignores_client_status(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """Client-supplied status must be ignored; orders are always born pending (1.2a)."""
+        payload = {
+            "outlet_id": str(outlet.id),
+            "staff_id": str(cashier_staff.id),
+            "status": "paid",  # malicious client attempt
+            "items": [{"product_id": str(product.id), "quantity": 1}],
+        }
+        resp = await client.post("/api/orders", json=payload)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "pending"
+        assert str(data["total"]) == "9.99"
+
+    async def test_create_order_rejects_discount_exceeding_subtotal(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """loyalty_discount > subtotal is rejected with 400 (1.2b)."""
+        payload = {
+            "outlet_id": str(outlet.id),
+            "staff_id": str(cashier_staff.id),
+            "loyalty_discount": "9999.00",
+            "items": [{"product_id": str(product.id), "quantity": 1}],
+        }
+        resp = await client.post("/api/orders", json=payload)
+        assert resp.status_code == 400
+        assert "Discount cannot exceed subtotal" in resp.json().get("detail", "")
+
 
 class TestListOrders:
     """GET /api/orders"""
@@ -510,6 +540,30 @@ class TestUpdateOrderStatus:
         )
         assert resp.status_code == 400
         assert "Cannot transition" in resp.json()["detail"]
+
+    async def test_update_status_paid_on_already_paid_is_idempotent(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """PUT /status to paid on already-paid order returns 200 (2.3 idempotency path)."""
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        # First mark paid (via normal path)
+        resp1 = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "cash"},
+        )
+        assert resp1.status_code == 200
+        assert resp1.json()["status"] == "paid"
+
+        # Re-call should be no-op success
+        resp2 = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "cash"},
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["status"] == "paid"
 
 
 class TestRefundOrder:

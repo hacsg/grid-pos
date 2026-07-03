@@ -47,7 +47,6 @@ class OrderCreate(BaseModel):
     outlet_id: UUID
     staff_id: UUID
     items: list[OrderItemCreate] = Field(min_length=1)
-    status: OrderStatus = OrderStatus.pending
     payment_method: str | None = Field(default=None, max_length=40)
     payment_reference: str | None = Field(default=None, max_length=255)
     loyalty_member_id: UUID | None = None

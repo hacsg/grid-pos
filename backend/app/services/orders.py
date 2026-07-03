@@ -151,6 +151,10 @@ def _validate_order_not_paid(order: Order) -> None:
 
 def _validate_status_transition(order: Order, new_status: OrderStatus) -> None:
     """Raise 400 if the requested status transition is not allowed."""
+    if order.status == new_status:
+        # Idempotent: already in target state (e.g. backend auto-marked paid via terminal
+        # success; frontend may still call PUT /status for cash or to "confirm").
+        return
     allowed = _ALLOWED_TRANSITIONS.get(order.status)
     if allowed is None or new_status not in allowed:
         raise HTTPException(
@@ -232,7 +236,7 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         staff_id=payload.staff_id,
         subtotal=Decimal("0.00"),
         total=Decimal("0.00"),
-        status=payload.status,
+        status=OrderStatus.pending,
         payment_method=payload.payment_method,
         payment_reference=payload.payment_reference,
         # Amounts are settled later (mark-as-paid). Seed them to 0.00 so the
@@ -256,7 +260,12 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
 
     order.subtotal = quantize_money(subtotal)
     discount = payload.loyalty_discount or Decimal("0.00")
-    order.total = quantize_money(subtotal - discount)
+    if discount > subtotal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discount cannot exceed subtotal",
+        )
+    order.total = max(Decimal("0.00"), quantize_money(subtotal - discount))
     db.add(order)
     await db.commit()
 

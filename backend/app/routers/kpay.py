@@ -11,6 +11,7 @@ Flow:
 import logging
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -161,7 +162,29 @@ async def start_payment(
                     detail="A card payment is already in progress for this order",
                 )
 
-            # Create the intent. The partial unique index is the race-safe
+            # Load the order and enforce server-side authority on amount, status, and outlet.
+            # Client cannot dictate the charged amount or pay a non-pending / foreign order.
+            order = await session.get(Order, UUID(request.order_id))
+            if order is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+            if order.status != OrderStatus.pending:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Order is not pending"
+                )
+            if order.outlet_id != current_staff.outlet_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Order belongs to a different outlet",
+                )
+            server_total = order.total
+            if Decimal(str(request.amount)) != server_total:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Payment amount does not match order total",
+                )
+
+            # Create the intent using the *server* total (never the client-supplied amount).
+            # The partial unique index is the race-safe
             # backstop: if a concurrent request created an active intent between
             # the check above and this insert, the commit raises IntegrityError.
             try:
@@ -169,7 +192,7 @@ async def start_payment(
                     session=session,
                     outlet_id=outlet_id,
                     order_id=request.order_id,
-                    amount=Decimal(str(request.amount)),
+                    amount=server_total,
                 )
             except IntegrityError:
                 await session.rollback()
