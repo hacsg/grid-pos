@@ -92,7 +92,10 @@ class OrderVoucher(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """Junction table recording which vouchers were applied to an order and for how much."""
 
     __tablename__ = "order_vouchers"
-    __table_args__ = (UniqueConstraint("order_id", "voucher_id", name="uq_order_voucher"),)
+    __table_args__ = (
+        UniqueConstraint("order_id", "voucher_id", name="uq_order_voucher"),
+        UniqueConstraint("voucher_id", name="uq_order_vouchers_single_redemption"),
+    )
 
     order_id: Mapped[UUID] = mapped_column(
         Uuid,

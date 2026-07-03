@@ -187,6 +187,10 @@ async def update_order_status(
         if replay is not None:
             return JSONResponse(replay.body, status_code=replay.status_code)
 
+    initial_status: OrderStatus | None = None
+    if payload.status == OrderStatus.paid:
+        initial_status = (await load_order_or_404(db, order_id)).status
+
     try:
         order = await update_order_status_service(
             db,
@@ -200,6 +204,7 @@ async def update_order_status(
             voucher_amount=payload.voucher_amount,
             cdc_amount=payload.cdc_amount,
             paynow_confirmed_at=payload.paynow_confirmed_at,
+            initial_status=initial_status,
         )
         body = jsonable_encoder(OrderRead.model_validate(order))
     except Exception:

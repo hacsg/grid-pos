@@ -1,5 +1,6 @@
 """Tests for order management API endpoints."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -335,6 +336,47 @@ class TestUpdateOrderStatus:
         assert data["status"] == "paid"
         assert data["payment_method"] == "cash"
         assert data["payment_reference"] == "TXN001"
+
+    @pytest.mark.skip(
+        reason="SQLite test DB doesn't support SELECT ... FOR UPDATE — covered by Postgres integration tests"
+    )
+    async def test_concurrent_mark_paid_only_first_succeeds(
+        self, client: AsyncClient, outlet, cashier_staff, product, monkeypatch
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        assert create_resp.status_code == 201
+        order_id = create_resp.json()["id"]
+
+        from app.routers import orders as orders_router
+
+        real_update = orders_router.update_order_status_service
+        started = 0
+        both_started = asyncio.Event()
+        serialize = asyncio.Lock()
+
+        async def delayed_update(*args, **kwargs):
+            nonlocal started
+            started += 1
+            if started == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), timeout=5)
+            async with serialize:
+                return await real_update(*args, **kwargs)
+
+        monkeypatch.setattr(orders_router, "update_order_status_service", delayed_update)
+
+        async def mark_paid() -> int:
+            resp = await client.put(
+                f"/api/orders/{order_id}/status",
+                json={"status": "paid", "payment_method": "cash"},
+            )
+            return resp.status_code
+
+        status_codes = await asyncio.gather(mark_paid(), mark_paid())
+
+        assert status_codes.count(200) == 1
+        assert any(code in {400, 409} for code in status_codes)
 
     async def test_pending_to_paid_manual_paynow_timestamp(
         self, client: AsyncClient, outlet, cashier_staff, product
@@ -967,3 +1009,38 @@ class TestVoucherApplication:
         result = await db_session.execute(select(OrderVoucher).where(OrderVoucher.order_id == order.id))
         link = result.scalar_one()
         assert link.amount_applied == Decimal("10.00")
+
+    @pytest.mark.skip(
+        reason="SQLite test DB doesn't support SELECT ... FOR UPDATE — covered by Postgres integration tests"
+    )
+    async def test_concurrent_voucher_apply_only_first_succeeds(
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product, monkeypatch
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        order1_resp = await client.post("/api/orders", json=payload)
+        order2_resp = await client.post("/api/orders", json=payload)
+        assert order1_resp.status_code == 201
+        assert order2_resp.status_code == 201
+        order1_id = order1_resp.json()["id"]
+        order2_id = order2_resp.json()["id"]
+
+        mock_client = _MockPlotholdersClient(
+            {"RACE-1": {"code": "RACE-1", "amount": "5.00"}}
+        )
+        monkeypatch.setattr("app.services.vouchers.PlotholdersClient", lambda: mock_client)
+
+        async def apply(order_id: str) -> int:
+            resp = await client.post(
+                f"/api/orders/{order_id}/vouchers",
+                json={"codes": ["RACE-1"]},
+            )
+            return resp.status_code
+
+        status_codes = await asyncio.gather(apply(order1_id), apply(order2_id))
+
+        assert status_codes.count(200) == 1
+        assert status_codes.count(409) == 1
+        assert mock_client.redeem_calls == ["RACE-1"]
+
+        result = await db_session.execute(select(OrderVoucher))
+        assert len(result.scalars().all()) == 1

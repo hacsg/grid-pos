@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.models.order import Order, OrderStatus
@@ -24,8 +25,17 @@ def quantize_money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-async def get_voucher_by_code(db: AsyncSession, code: str) -> Voucher | None:
-    result = await db.execute(select(Voucher).where(Voucher.code == code.strip()))
+async def get_voucher_by_code(
+    db: AsyncSession,
+    code: str,
+    *,
+    for_update: bool = False,
+) -> Voucher | None:
+    statement = select(Voucher).where(Voucher.code == code.strip())
+    if for_update:
+        statement = statement.with_for_update()
+
+    result = await db.execute(statement)
     return result.scalar_one_or_none()
 
 
@@ -178,14 +188,21 @@ async def apply_vouchers_to_order(
         if amount <= 0:
             continue
 
-        voucher = await get_voucher_by_code(db, normalized)
+        voucher = await get_voucher_by_code(db, normalized, for_update=True)
         if voucher is None:
             vtype = VoucherType.acre_group
             if external.get("type") == "cdc":
                 vtype = VoucherType.cdc
             voucher = Voucher(code=normalized, type=vtype, amount=amount)
             db.add(voucher)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError as exc:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Voucher already applied to another order",
+                ) from exc
 
         if voucher.redeemed_at is not None or voucher.order_id is not None:
             raise HTTPException(
@@ -225,7 +242,14 @@ async def apply_vouchers_to_order(
         new_total = Decimal("0.00")
     order.total = new_total
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voucher already applied to another order",
+        ) from exc
 
     # Phase 3: external redeem only after local commit succeeds.
     staff_id = str(staff.id) if staff else ""

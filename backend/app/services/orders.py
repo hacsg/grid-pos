@@ -311,13 +311,22 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
     return result.scalar_one()
 
 
-async def load_order_or_404(db: AsyncSession, order_id: UUID) -> Order:
+async def load_order_or_404(
+    db: AsyncSession,
+    order_id: UUID,
+    *,
+    for_update: bool = False,
+) -> Order:
     """Load an order with items (and voucher links) or raise a 404 response."""
-    result = await db.execute(
+    statement = (
         select(Order)
         .options(selectinload(Order.items), selectinload(Order.order_voucher_links))
         .where(Order.id == order_id)
     )
+    if for_update:
+        statement = statement.with_for_update()
+
+    result = await db.execute(statement)
     order = result.scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
@@ -336,9 +345,15 @@ async def update_order_status_service(
     voucher_amount: Decimal | None = None,
     cdc_amount: Decimal | None = None,
     paynow_confirmed_at: datetime | None = None,
+    initial_status: OrderStatus | None = None,
 ) -> Order:
     """Update order status with transition validation."""
-    order = await load_order_or_404(db, order_id)
+    order = await load_order_or_404(db, order_id, for_update=True)
+    if initial_status is not None and initial_status != new_status and order.status == new_status:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Order status changed to '{new_status.value}' while request was in flight",
+        )
     _validate_status_transition(order, new_status)
     order.status = new_status
     effective_payment_method = payment_method if payment_method is not None else order.payment_method
@@ -421,7 +436,7 @@ async def refund_order_service(
     reason: str | None = None,
 ) -> Order:
     """Process a full refund on a paid order."""
-    order = await load_order_or_404(db, order_id)
+    order = await load_order_or_404(db, order_id, for_update=True)
     if order.status != OrderStatus.paid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
