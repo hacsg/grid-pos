@@ -5,12 +5,18 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 
 from sqlalchemy import select
 
 from app.models.order import Order, OrderStatus
 from app.schemas.order import OrderItemCreate, SelectedModifier
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
+    client.headers["Authorization"] = f"Bearer {cashier_token}"
 
 
 async def _create_order_payload(outlet_id: UUID, staff_id: UUID, product_id: UUID) -> dict:
@@ -31,6 +37,16 @@ async def _create_order_payload(outlet_id: UUID, staff_id: UUID, product_id: UUI
 
 class TestCreateOrder:
     """POST /api/orders"""
+
+    async def test_create_order_requires_auth(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        client.headers.pop("Authorization", None)
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+
+        resp = await client.post("/api/orders", json=payload)
+
+        assert resp.status_code == 401
 
     async def test_create_with_multiple_items_and_modifiers(
         self, client: AsyncClient, outlet, cashier_staff, product
@@ -415,7 +431,9 @@ class TestUpdateOrderStatus:
         assert resp.status_code == 400
         assert "must equal the payable total" in resp.json()["detail"]
 
-    async def test_pending_to_cancelled(self, client: AsyncClient, outlet, cashier_staff, product) -> None:
+    async def test_pending_to_cancelled(
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+    ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
@@ -423,11 +441,14 @@ class TestUpdateOrderStatus:
         resp = await client.put(
             f"/api/orders/{order_id}/status",
             json={"status": "cancelled"},
+            headers={"Authorization": f"Bearer {manager_token}"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "cancelled"
 
-    async def test_paid_to_refunded(self, client: AsyncClient, outlet, cashier_staff, product) -> None:
+    async def test_paid_to_refunded(
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+    ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
@@ -442,6 +463,7 @@ class TestUpdateOrderStatus:
         resp = await client.put(
             f"/api/orders/{order_id}/status",
             json={"status": "cancelled"},
+            headers={"Authorization": f"Bearer {manager_token}"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "cancelled"
@@ -461,7 +483,7 @@ class TestUpdateOrderStatus:
         assert "Cannot transition" in resp.json()["detail"]
 
     async def test_already_refunded_cannot_transition(
-        self, client: AsyncClient, outlet, cashier_staff, product
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
     ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
@@ -474,12 +496,17 @@ class TestUpdateOrderStatus:
         )
 
         # Refund via the refund endpoint
-        await client.post(f"/api/orders/{order_id}/refund", json={})
+        await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
 
         # Try to change status again
         resp = await client.put(
             f"/api/orders/{order_id}/status",
             json={"status": "cancelled"},
+            headers={"Authorization": f"Bearer {manager_token}"},
         )
         assert resp.status_code == 400
         assert "Cannot transition" in resp.json()["detail"]
@@ -488,7 +515,9 @@ class TestUpdateOrderStatus:
 class TestRefundOrder:
     """POST /api/orders/{id}/refund"""
 
-    async def test_refund_paid_order(self, client: AsyncClient, outlet, cashier_staff, product) -> None:
+    async def test_refund_paid_order(
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+    ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
@@ -500,19 +529,43 @@ class TestRefundOrder:
         )
 
         # Refund
-        resp = await client.post(f"/api/orders/{order_id}/refund", json={"reason": "Customer changed mind"})
+        resp = await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={"reason": "Customer changed mind"},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "refunded"
 
-    async def test_refund_non_paid_order_returns_400(
+    async def test_refund_requires_manager(
         self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
 
+        await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid"},
+        )
+
         resp = await client.post(f"/api/orders/{order_id}/refund", json={})
+
+        assert resp.status_code == 403
+
+    async def test_refund_non_paid_order_returns_400(
+        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/orders/{order_id}/refund",
+            json={},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
         assert resp.status_code == 400
         assert "not paid" in resp.json()["detail"].lower()
 

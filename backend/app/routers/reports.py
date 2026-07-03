@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.staff import Staff
 from app.schemas.report import (
     DailyReportResponse,
     MonthlyReportResponse,
@@ -27,12 +28,16 @@ from app.services.reports import (
     get_staff_report,
     get_weekly_report,
 )
+from app.utils.auth import get_current_staff
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/sales-summary", response_model=SalesSummaryResponse)
-async def sales_summary(db: AsyncSession = Depends(get_db)) -> SalesSummaryResponse:
+async def sales_summary(
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> SalesSummaryResponse:
     """Return today's total sales, order count, and average order value."""
     today = datetime.now(UTC).date()
     return await get_sales_summary(db, today)
@@ -42,6 +47,7 @@ async def sales_summary(db: AsyncSession = Depends(get_db)) -> SalesSummaryRespo
 async def cash_reconciliation(
     shift_id: UUID = Query(..., description="Shift ID"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ShiftCashReconciliation:
     """Return expected vs actual cash for a shift."""
     return await get_shift_cash_reconciliation(db, shift_id)
@@ -52,6 +58,7 @@ async def daily_report(
     date: date | None = Query(None, description="Report date (default: today)"),
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> DailyReportResponse:
     """Return daily sales report with hourly breakdown and change vs last week."""
     report_date = date or datetime.now(UTC).date()
@@ -65,6 +72,7 @@ async def weekly_report(
     ),
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> WeeklyReportResponse:
     """Return weekly sales report aggregated for the ISO week."""
     if week is None:
@@ -81,6 +89,7 @@ async def monthly_report(
     ),
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> MonthlyReportResponse:
     """Return monthly sales report with change vs previous month."""
     if month is None:
@@ -95,6 +104,7 @@ async def product_report(
     date_to: date = Query(..., description="End date (inclusive)"),
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ProductReportResponse:
     """Return product performance and category breakdown for a date range."""
     return await get_product_report(db, date_from, date_to, outlet_id)
@@ -106,6 +116,7 @@ async def staff_report(
     date_to: date = Query(..., description="End date (inclusive)"),
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> StaffReportResponse:
     """Return staff performance metrics for a date range."""
     return await get_staff_report(db, date_from, date_to, outlet_id)
@@ -116,6 +127,7 @@ async def outlet_report(
     date_from: date = Query(..., description="Start date (inclusive)"),
     date_to: date = Query(..., description="End date (inclusive)"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> OutletReportResponse:
     """Return outlet comparison report for a date range."""
     return await get_outlet_report(db, date_from, date_to)

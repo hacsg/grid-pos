@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import pytest_asyncio
 from httpx import AsyncClient
 
 from app.main import app
@@ -41,6 +42,11 @@ class FakePlotholdersClient:
 
 def _override_plotholders_client() -> FakePlotholdersClient:
     return FakePlotholdersClient()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
+    client.headers["Authorization"] = f"Bearer {cashier_token}"
 
 
 async def test_get_lookup_by_phone_proxies_to_plotholders(client: AsyncClient) -> None:

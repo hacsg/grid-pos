@@ -4,7 +4,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.models.staff import Staff
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
+from app.utils.auth import get_current_staff
 from app.utils.phone import normalize_sg_phone, validate_sg_phone_or_raise
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
@@ -31,6 +33,7 @@ async def lookup_plotholders_customer(
     phone: str | None = Query(default=None, min_length=1),
     referral_code: str | None = Query(default=None, min_length=1),
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Proxy Plotholders customer lookup by phone or referral code.
 
@@ -71,6 +74,7 @@ async def lookup_plotholders_customer(
 async def lookup_member(
     payload: dict[str, Any],
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Look up a loyalty member by phone number (proxied to Plotholders).
 
@@ -118,6 +122,7 @@ async def lookup_member(
 async def earn_points(
     payload: dict[str, Any],
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Record a purchase moment via Plotholders (replaces local points earn)."""
     customer_id = None
@@ -140,6 +145,7 @@ async def earn_points(
 @router.post("/redeem")
 async def redeem_points(
     payload: dict[str, Any],
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Stub for points redeem (Plotholders uses moments; discount already applied client-side).
     Returns a compatible response so POS terminal flow is not broken.
@@ -160,6 +166,7 @@ async def redeem_points(
 async def signup_member(
     payload: dict[str, Any],
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Create a new loyalty program member (proxied to Plotholders).
 
@@ -196,6 +203,7 @@ async def signup_member(
 async def redeem_voucher(
     voucher_id: str,
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Proxy Plotholders voucher redemption."""
     try:
@@ -208,6 +216,7 @@ async def redeem_voucher(
 async def redeem_reward(
     reward_id: str,
     plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> dict[str, Any]:
     """Proxy Plotholders reward redemption."""
     try:

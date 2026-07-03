@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.outlet import Outlet
+from app.models.staff import Staff
 from app.schemas.outlet import OutletCreate, OutletLogoRead, OutletRead, OutletUpdate, PayNowQrRead
+from app.utils.auth import get_current_staff
 
 router = APIRouter(prefix="/outlets", tags=["outlets"])
 
@@ -40,7 +42,11 @@ async def load_outlet_or_404(db: AsyncSession, outlet_id: UUID) -> Outlet:
 
 
 @router.post("", response_model=OutletRead, status_code=status.HTTP_201_CREATED)
-async def create_outlet(payload: OutletCreate, db: AsyncSession = Depends(get_db)) -> Outlet:
+async def create_outlet(
+    payload: OutletCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Outlet:
     """Create a new outlet."""
     outlet = Outlet(**payload.model_dump())
     db.add(outlet)
@@ -81,6 +87,7 @@ async def upload_paynow_qr(
     outlet_id: UUID,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> PayNowQrRead:
     """Upload or replace the manual PayNow QR code for an outlet."""
     outlet = await load_outlet_or_404(db, outlet_id)
@@ -109,7 +116,11 @@ async def upload_paynow_qr(
 
 
 @router.delete("/{outlet_id}/paynow-qr", response_model=PayNowQrRead)
-async def delete_paynow_qr(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> PayNowQrRead:
+async def delete_paynow_qr(
+    outlet_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> PayNowQrRead:
     """Remove the manual PayNow QR code for an outlet."""
     outlet = await load_outlet_or_404(db, outlet_id)
     outlet.paynow_qr_url = None
@@ -130,6 +141,7 @@ async def upload_logo(
     outlet_id: UUID,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> OutletLogoRead:
     """Upload or replace the shop logo shown on the customer display."""
     outlet = await load_outlet_or_404(db, outlet_id)
@@ -158,7 +170,11 @@ async def upload_logo(
 
 
 @router.delete("/{outlet_id}/logo", response_model=OutletLogoRead)
-async def delete_logo(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> OutletLogoRead:
+async def delete_logo(
+    outlet_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> OutletLogoRead:
     """Remove the shop logo for an outlet."""
     outlet = await load_outlet_or_404(db, outlet_id)
     outlet.logo_url = None
@@ -172,6 +188,7 @@ async def update_outlet(
     outlet_id: UUID,
     payload: OutletUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Outlet:
     """Update an outlet."""
     outlet = await load_outlet_or_404(db, outlet_id)
@@ -190,7 +207,11 @@ async def update_outlet(
 
 
 @router.delete("/{outlet_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_outlet(outlet_id: UUID, db: AsyncSession = Depends(get_db)) -> Response:
+async def delete_outlet(
+    outlet_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
     """Delete an outlet."""
     outlet = await load_outlet_or_404(db, outlet_id)
     await db.delete(outlet)

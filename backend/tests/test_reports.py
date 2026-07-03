@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 
 from app.models.order import Order, OrderStatus
@@ -25,6 +26,11 @@ from app.schemas.report import (
 # ---------------------------------------------------------------------------
 
 _ANY_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
+    client.headers["Authorization"] = f"Bearer {cashier_token}"
 
 
 async def _seed_order(

@@ -83,6 +83,6 @@ func (c Config) TerminalBaseURL() string {
 func (c Config) DaemonWSURL() (string, error) {
 	u, err := url.Parse(c.RailwayWSURL); if err != nil { return "", err }
 	if u.Path == "" || u.Path == "/" { u.Path = "/ws/daemon" }
-	q := u.Query(); if q.Get("outlet_id") == "" { q.Set("outlet_id", c.OutletID) }; if q.Get("token") == "" { q.Set("token", c.DaemonToken) }
+	q := u.Query(); if q.Get("outlet_id") == "" { q.Set("outlet_id", c.OutletID) }; q.Del("token")
 	u.RawQuery = q.Encode(); return u.String(), nil
 }

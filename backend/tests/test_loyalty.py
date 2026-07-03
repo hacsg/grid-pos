@@ -11,6 +11,11 @@ from app.services.loyalty import POINTS_PER_DOLLAR
 from app.utils.phone import normalize_sg_phone, validate_sg_phone
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
+    client.headers["Authorization"] = f"Bearer {cashier_token}"
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

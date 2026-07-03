@@ -35,7 +35,7 @@ func Run(ctx context.Context, cfg config.Config, h *Handler, log *logx.Logger) e
 	}
 	backoff := time.Second
 	for ctx.Err() == nil {
-		conn, err := dialWS(ctx, wsURL)
+		conn, err := dialWS(ctx, wsURL, cfg.DaemonToken)
 		if err != nil {
 			log.Warn("ws connect failed", "error", err)
 			sleep(ctx, backoff)
@@ -87,7 +87,7 @@ func heartbeat(ctx context.Context, c *wsConn, errc chan<- error) {
 	}
 }
 
-func dialWS(ctx context.Context, rawurl string) (*wsConn, error) {
+func dialWS(ctx context.Context, rawurl string, token string) (*wsConn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,8 @@ func dialWS(ctx context.Context, rawurl string) (*wsConn, error) {
 	if path == "" {
 		path = "/"
 	}
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", path, host, key)
+	authToken := strings.NewReplacer("\r", "", "\n", "").Replace(strings.TrimSpace(token))
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer %s\r\n\r\n", path, host, key, authToken)
 	if _, err := io.WriteString(conn, req); err != nil {
 		_ = conn.Close()
 		return nil, err

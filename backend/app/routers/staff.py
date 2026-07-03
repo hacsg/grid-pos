@@ -6,10 +6,13 @@ Two routers are provided:
 * ``router``        (prefix ``/staff``) — staff CRUD with role-based access.
 """
 
+from collections import deque
 from datetime import timedelta
+from threading import Lock
+from time import monotonic
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +32,16 @@ from app.schemas.staff import (
 )
 from app.utils.auth import create_access_token, get_current_staff, require_role
 from app.utils.hashing import hash_pin, verify_pin
+
+# PIN login failures are kept in-process because Railway is currently deployed
+# as a single worker. Move this to Redis before scaling beyond one worker.
+_LOGIN_FAILURE_LIMIT = 5
+_LOGIN_FAILURE_WINDOW_SECONDS = 5 * 60
+_LOGIN_BLOCK_SECONDS = 10 * 60
+_login_lock = Lock()
+_login_failures: dict[str, deque[float]] = {}
+_login_blocked_until: dict[str, float] = {}
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -51,6 +64,68 @@ async def _ensure_outlet_exists(db: AsyncSession, outlet_id: UUID) -> None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Outlet not found"
         )
+
+
+def _login_rate_limit_key(request: Request, outlet_id: UUID | None) -> str:
+    """Build an IP/outlet scoped key for PIN brute-force protection."""
+    source_ip = request.client.host if request.client else "unknown"
+    outlet_scope = str(outlet_id) if outlet_id is not None else "admin"
+    return f"{outlet_scope}:{source_ip}"
+
+
+def _prune_login_failures(attempts: deque[float], now: float) -> None:
+    """Discard failures outside the rolling rate-limit window."""
+    cutoff = now - _LOGIN_FAILURE_WINDOW_SECONDS
+    while attempts and attempts[0] < cutoff:
+        attempts.popleft()
+
+
+def _enforce_login_rate_limit(key: str) -> None:
+    """Raise 429 when the source is temporarily blocked."""
+    now = monotonic()
+    with _login_lock:
+        blocked_until = _login_blocked_until.get(key)
+        if blocked_until is not None:
+            if blocked_until > now:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed login attempts. Try again later.",
+                )
+            _login_blocked_until.pop(key, None)
+
+        attempts = _login_failures.get(key)
+        if attempts is not None:
+            _prune_login_failures(attempts, now)
+            if not attempts:
+                _login_failures.pop(key, None)
+
+
+def _record_failed_login(key: str) -> None:
+    """Record a failed login attempt and start a cooldown after the limit."""
+    now = monotonic()
+    with _login_lock:
+        attempts = _login_failures.setdefault(key, deque())
+        _prune_login_failures(attempts, now)
+        attempts.append(now)
+        if len(attempts) >= _LOGIN_FAILURE_LIMIT:
+            _login_blocked_until[key] = now + _LOGIN_BLOCK_SECONDS
+
+
+def _clear_failed_logins(key: str) -> None:
+    """Clear failed login state after a successful login."""
+    with _login_lock:
+        _login_failures.pop(key, None)
+        _login_blocked_until.pop(key, None)
+
+
+def _invalid_credentials(key: str) -> HTTPException:
+    """Record a failed login and return the standard auth failure."""
+    _record_failed_login(key)
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +159,7 @@ async def staff_roster(
 @auth_router.post("/login", response_model=TokenResponse)
 async def login_staff(
     payload: StaffLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Authenticate a staff member.
@@ -91,6 +167,9 @@ async def login_staff(
     - If outlet_id provided: POS cashier flow — search by outlet + PIN.
     - If outlet_id NOT provided: admin flow — search by name + PIN across all outlets.
     """
+    rate_limit_key = _login_rate_limit_key(request, payload.outlet_id)
+    _enforce_login_rate_limit(rate_limit_key)
+
     if payload.outlet_id:
         # POS cashier flow: search by outlet + PIN, disambiguated by staff name
         # when provided (a bare PIN can collide between staff at the same outlet).
@@ -102,11 +181,7 @@ async def login_staff(
     else:
         # Admin flow: search by name + PIN across all outlets
         if not payload.name:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            raise _invalid_credentials(rate_limit_key)
         query = select(Staff).where(
             Staff.name.ilike(f"%{payload.name}%"), Staff.is_active.is_(True)
         )
@@ -121,11 +196,9 @@ async def login_staff(
             break
 
     if matched is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _invalid_credentials(rate_limit_key)
+
+    _clear_failed_logins(rate_limit_key)
 
     token = create_access_token(
         subject=matched.id,

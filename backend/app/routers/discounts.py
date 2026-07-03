@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.discount import Discount
 from app.models.outlet import Outlet
+from app.models.staff import Staff
 from app.schemas.discount import DiscountCreate, DiscountRead, DiscountUpdate
+from app.utils.auth import get_current_staff
 
 router = APIRouter(prefix="/discounts", tags=["discounts"])
 
@@ -32,7 +34,11 @@ async def _ensure_outlet_exists(db: AsyncSession, outlet_id: UUID | None) -> Non
 
 
 @router.post("", response_model=DiscountRead, status_code=status.HTTP_201_CREATED)
-async def create_discount(payload: DiscountCreate, db: AsyncSession = Depends(get_db)) -> Discount:
+async def create_discount(
+    payload: DiscountCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Discount:
     """Create a new discount."""
     await _ensure_outlet_exists(db, payload.outlet_id)
     discount = Discount(**payload.model_dump())
@@ -46,6 +52,7 @@ async def create_discount(payload: DiscountCreate, db: AsyncSession = Depends(ge
 async def list_discounts(
     is_active: bool | None = Query(default=None, description="Filter by active status"),
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> list[Discount]:
     """List all discounts. Optionally filter by is_active=true/false."""
     statement = select(Discount)
@@ -57,7 +64,11 @@ async def list_discounts(
 
 
 @router.get("/{discount_id}", response_model=DiscountRead)
-async def get_discount(discount_id: UUID, db: AsyncSession = Depends(get_db)) -> Discount:
+async def get_discount(
+    discount_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Discount:
     """Return one discount by id."""
     return await _load_discount_or_404(db, discount_id)
 
@@ -67,6 +78,7 @@ async def update_discount(
     discount_id: UUID,
     payload: DiscountUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Discount:
     """Update a discount. Only supplied fields are updated."""
     discount = await _load_discount_or_404(db, discount_id)
@@ -80,7 +92,11 @@ async def update_discount(
 
 
 @router.delete("/{discount_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_discount(discount_id: UUID, db: AsyncSession = Depends(get_db)) -> Response:
+async def delete_discount(
+    discount_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
     """Delete a discount."""
     discount = await _load_discount_or_404(db, discount_id)
     await db.delete(discount)
@@ -89,7 +105,11 @@ async def delete_discount(discount_id: UUID, db: AsyncSession = Depends(get_db))
 
 
 @router.patch("/reorder", response_model=list[DiscountRead])
-async def reorder_discounts(payload: dict[str, Any], db: AsyncSession = Depends(get_db)) -> list[Discount]:
+async def reorder_discounts(
+    payload: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> list[Discount]:
     """Batch update sort_order for discounts.
 
     Accepts { "ids": ["uuid", ...] } and assigns sequential sort_order starting at 0.
@@ -127,6 +147,7 @@ async def reorder_discounts(payload: dict[str, Any], db: AsyncSession = Depends(
 async def toggle_discount_active(
     discount_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Discount:
     """Toggle the is_active flag for a discount."""
     discount = await _load_discount_or_404(db, discount_id)

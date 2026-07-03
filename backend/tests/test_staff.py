@@ -49,6 +49,19 @@ class TestLogin:
         assert resp.status_code == 401
         assert "Invalid credentials" in resp.json()["detail"]
 
+    async def test_login_rate_limit(self, client: AsyncClient, cashier_staff) -> None:
+        """Six failed PIN attempts from one IP/outlet returns 429 on the sixth."""
+        payload = {"pin": "0000", "outlet_id": str(cashier_staff.outlet_id)}
+
+        for _ in range(5):
+            resp = await client.post("/api/auth/login", json=payload)
+            assert resp.status_code == 401
+
+        resp = await client.post("/api/auth/login", json=payload)
+
+        assert resp.status_code == 429
+        assert "Too many failed login attempts" in resp.json()["detail"]
+
     async def test_login_with_inactive_staff(self, client: AsyncClient, inactive_staff) -> None:
         """Login with inactive staff returns 401."""
         payload = {"pin": "9999", "outlet_id": str(inactive_staff.outlet_id)}

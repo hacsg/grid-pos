@@ -1,6 +1,20 @@
 """Tests for outlet management API endpoints."""
 
+import pytest_asyncio
 from httpx import AsyncClient
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
+    client.headers["Authorization"] = f"Bearer {cashier_token}"
+
+
+async def test_logoutlet_public(client: AsyncClient) -> None:
+    client.headers.pop("Authorization", None)
+
+    resp = await client.get("/api/outlets")
+
+    assert resp.status_code == 200
 
 
 class TestPayNowQr:

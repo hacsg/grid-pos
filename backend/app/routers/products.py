@@ -12,6 +12,7 @@ from app.models.category import Category
 from app.models.modifier import ModifierGroup, ModifierOption, ProductModifierGroup
 from app.models.outlet import Outlet
 from app.models.product import Product
+from app.models.staff import Staff
 from app.schemas.category import (
     CategoryCreate,
     CategoryRead,
@@ -36,6 +37,7 @@ from app.schemas.product import (
     ProductDetailRead,
     ProductUpdate,
 )
+from app.utils.auth import get_current_staff
 
 router = APIRouter(tags=["catalog"])
 
@@ -144,7 +146,11 @@ def _build_assignment_read(assignment: ProductModifierGroup) -> ProductModifierA
 
 
 @router.post("/categories", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
-async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db)) -> Category:
+async def create_category(
+    payload: CategoryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Category:
     """Create a product category.
 
     Returns the newly created category with a 201 status.
@@ -193,6 +199,7 @@ async def update_category(
     category_id: UUID,
     payload: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Category:
     """Update a product category.
 
@@ -209,7 +216,11 @@ async def update_category(
 
 
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_category(category_id: UUID, db: AsyncSession = Depends(get_db)) -> Response:
+async def delete_category(
+    category_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
     """Delete a category.
 
     Raises 409 if the category still has products assigned to it.
@@ -234,6 +245,7 @@ async def delete_category(category_id: UUID, db: AsyncSession = Depends(get_db))
 async def reorder_categories(
     payload: CategoryReorder,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> list[Category]:
     """Update the sort_order for multiple categories at once.
 
@@ -258,7 +270,11 @@ async def reorder_categories(
 
 
 @router.post("/products", response_model=ProductDetailRead, status_code=status.HTTP_201_CREATED)
-async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)) -> Product:
+async def create_product(
+    payload: ProductCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Product:
     """Create a product.
 
     Returns the newly created product with category and modifier data.
@@ -332,6 +348,7 @@ async def update_product(
     product_id: UUID,
     payload: ProductUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Product:
     """Update a product.
 
@@ -355,7 +372,11 @@ async def update_product(
 
 
 @router.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(product_id: UUID, db: AsyncSession = Depends(get_db)) -> Response:
+async def delete_product(
+    product_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
     """Soft-delete a product by setting is_available to false.
 
     The product record and its modifier groups are kept in the database.
@@ -372,6 +393,7 @@ async def toggle_product_availability(
     product_id: UUID,
     payload: ProductAvailabilityUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Product:
     """Toggle a product's availability status.
 
@@ -411,7 +433,9 @@ async def list_modifier_groups(db: AsyncSession = Depends(get_db)) -> list[Modif
     status_code=status.HTTP_201_CREATED,
 )
 async def create_modifier_group(
-    payload: ModifierGroupCreate, db: AsyncSession = Depends(get_db)
+    payload: ModifierGroupCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ModifierGroup:
     """Create a new modifier group."""
     group = ModifierGroup(**payload.model_dump())
@@ -422,7 +446,10 @@ async def create_modifier_group(
 
 @router.put("/modifier-groups/{group_id}", response_model=ModifierGroupRead)
 async def update_modifier_group(
-    group_id: UUID, payload: ModifierGroupUpdate, db: AsyncSession = Depends(get_db)
+    group_id: UUID,
+    payload: ModifierGroupUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ModifierGroup:
     """Update a modifier group (name/description)."""
     group = await _load_modifier_group_or_404(db, group_id)
@@ -434,7 +461,9 @@ async def update_modifier_group(
 
 @router.delete("/modifier-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_modifier_group(
-    group_id: UUID, db: AsyncSession = Depends(get_db)
+    group_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Response:
     """Delete a modifier group (cascades to its options and product assignments)."""
     group = await _load_modifier_group_or_404(db, group_id)
@@ -454,7 +483,10 @@ async def delete_modifier_group(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_modifier_option(
-    group_id: UUID, payload: ModifierOptionCreate, db: AsyncSession = Depends(get_db)
+    group_id: UUID,
+    payload: ModifierOptionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ModifierOption:
     """Add an option to a modifier group."""
     await _load_modifier_group_or_404(db, group_id)
@@ -467,7 +499,10 @@ async def create_modifier_option(
 
 @router.put("/modifier-options/{option_id}", response_model=ModifierOptionRead)
 async def update_modifier_option(
-    option_id: UUID, payload: ModifierOptionUpdate, db: AsyncSession = Depends(get_db)
+    option_id: UUID,
+    payload: ModifierOptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ModifierOption:
     """Update a modifier option."""
     option = await _load_modifier_option_or_404(db, option_id)
@@ -480,7 +515,9 @@ async def update_modifier_option(
 
 @router.delete("/modifier-options/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_modifier_option(
-    option_id: UUID, db: AsyncSession = Depends(get_db)
+    option_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Response:
     """Delete a modifier option."""
     option = await _load_modifier_option_or_404(db, option_id)
@@ -520,6 +557,7 @@ async def assign_modifier_group_to_product(
     product_id: UUID,
     payload: ProductModifierAssignmentCreate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ProductModifierAssignmentRead:
     """Assign a modifier group to a product.
 
@@ -566,6 +604,7 @@ async def update_product_modifier_assignment(
     assignment_id: UUID,
     payload: ProductModifierAssignmentUpdate,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> ProductModifierAssignmentRead:
     """Update assignment settings (min/max/required/display_order)."""
     # Verify product exists (also ensures 404 for bad product)
@@ -595,7 +634,10 @@ async def update_product_modifier_assignment(
 
 @router.delete("/products/{product_id}/modifier-groups/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def unassign_modifier_group_from_product(
-    product_id: UUID, assignment_id: UUID, db: AsyncSession = Depends(get_db)
+    product_id: UUID,
+    assignment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> Response:
     """Remove a modifier group assignment from a product."""
     await _load_product_or_404(db, product_id)
@@ -617,6 +659,7 @@ async def reorder_product_modifier_groups(
     product_id: UUID,
     payload: ModifierGroupReorder,
     db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
 ) -> list[ProductModifierAssignmentRead]:
     """Update the display_order for multiple modifier group assignments at once.
 

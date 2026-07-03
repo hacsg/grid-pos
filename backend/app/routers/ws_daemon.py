@@ -1,7 +1,7 @@
 """WebSocket server for Go daemon connections.
 
 Protocol:
-- Daemon connects to /ws/daemon?token=SHARED_TOKEN&outlet_id=UUID
+- Daemon connects to /ws/daemon?outlet_id=UUID with Authorization: Bearer SHARED_TOKEN
 - Server validates token against KPAY_DAEMON_TOKEN env var
 - Server validates outlet_id exists in DB
 - Daemon sends JSON commands with 'id' field for request tracking
@@ -103,14 +103,21 @@ def resolve_daemon_response(outlet_id: str, request_id: str, response: dict):
 
 
 @router.websocket("/ws/daemon")
-async def websocket_daemon(websocket: WebSocket, token: str, outlet_id: str):
+async def websocket_daemon(websocket: WebSocket, outlet_id: str, token: str | None = None):
     """WebSocket endpoint for Go daemon connections.
     
     Validates token and outlet_id on connect, then enters message loop.
     Tracks connection state and routes responses to pending requests.
     """
+    authorization = websocket.headers.get("authorization", "")
+    scheme, _, credential = authorization.partition(" ")
+    header_token = credential.strip() if scheme.lower() == "bearer" else ""
+    # FIXME: query-string daemon auth is deprecated; remove after deployed
+    # terminals have upgraded to the Authorization header handshake.
+    daemon_token = header_token or token or ""
+
     # Validate token
-    if not secrets.compare_digest(token, settings.kpay_daemon_token):
+    if not secrets.compare_digest(daemon_token, settings.kpay_daemon_token):
         log.warning(f"Daemon connection rejected: invalid token for outlet {outlet_id}")
         await websocket.close(code=4001, reason="Invalid token")
         return
