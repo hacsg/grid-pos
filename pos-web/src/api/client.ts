@@ -440,8 +440,14 @@ export async function getProducts(params?: {
   return products.filter((product) => product.name.toLowerCase().includes(query));
 }
 
-export async function createOrder(payload: OrderCreate): Promise<OrderRead> {
-  const { data } = await api.post<OrderRead>('/orders', payload);
+export async function createOrder(
+  payload: OrderCreate,
+  options?: { idempotencyKey?: string }
+): Promise<OrderRead> {
+  const headers = options?.idempotencyKey
+    ? { 'Idempotency-Key': options.idempotencyKey }
+    : undefined;
+  const { data } = await api.post<OrderRead>('/orders', payload, { headers });
   return data;
 }
 
@@ -457,9 +463,13 @@ export async function updateOrderStatus(
     voucher_amount?: number;
     cdc_amount?: number;
     paynow_confirmed_at?: string;
-  }
+  },
+  options?: { idempotencyKey?: string }
 ): Promise<OrderRead> {
-  const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload);
+  const headers = options?.idempotencyKey
+    ? { 'Idempotency-Key': options.idempotencyKey }
+    : undefined;
+  const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload, { headers });
   return data;
 }
 

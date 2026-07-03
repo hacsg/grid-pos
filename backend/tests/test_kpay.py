@@ -12,6 +12,32 @@ from app.routers import ws_daemon
 from app.schemas.order import OrderCreate, OrderItemCreate
 from app.services import payment_intents as pi
 from app.services.orders import create_order as create_order_service
+class _SharedSessionCtx:
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _SharedSessionMaker:
+    def __init__(self, session):
+        self._session = session
+
+    def __call__(self):
+        return _SharedSessionCtx(self._session)
+
+
+@pytest.fixture
+def kpay_test_db(db_session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route kpay router DB access through the test fixture session."""
+    monkeypatch.setattr(
+        "app.routers.kpay.AsyncSessionLocal",
+        _SharedSessionMaker(db_session),
+    )
 
 
 class TestToCents:
@@ -81,7 +107,14 @@ class TestNewOutTradeNo:
 
 @pytest.mark.asyncio
 async def test_kpay_start_rejects_amount_mismatch(
-    client: AsyncClient, db_session, outlet, cashier_staff, product, cashier_token, monkeypatch
+    client: AsyncClient,
+    db_session,
+    outlet,
+    cashier_staff,
+    product,
+    cashier_token,
+    monkeypatch,
+    kpay_test_db,
 ) -> None:
     """KPay start must reject when client amount != server order.total (1.2c)."""
     headers = {"Authorization": f"Bearer {cashier_token}"}
@@ -161,3 +194,196 @@ async def test_terminal_success_marks_order_paid(db_session, outlet, cashier_sta
     assert reloaded.status == OrderStatus.paid
     assert reloaded.payment_method == "card"
     assert reloaded.payment_reference == "TX-SIM-001"
+
+
+@pytest.mark.asyncio
+async def test_kpay_query_success_marks_paid(
+    client: AsyncClient,
+    db_session,
+    outlet,
+    cashier_staff,
+    product,
+    cashier_token,
+    monkeypatch,
+    kpay_test_db,
+) -> None:
+    """POST /kpay/{id}/query with terminal success marks the order paid (2.2)."""
+    order_payload = OrderCreate(
+        outlet_id=outlet.id,
+        staff_id=cashier_staff.id,
+        items=[OrderItemCreate(product_id=product.id, quantity=1)],
+    )
+    order = await create_order_service(db_session, order_payload)
+    intent = await pi.create_payment_intent(
+        session=db_session,
+        outlet_id=outlet.id,
+        order_id=order.id,
+        amount=order.total,
+    )
+    await pi.update_payment_intent_status(
+        session=db_session,
+        intent_id=str(intent.id),
+        status="timeout",
+        kpay_response={"pay_result": 1},
+        error_message="Card payment still pending",
+    )
+
+    ws_daemon._active_connections[str(outlet.id)] = object()
+
+    async def fake_query(*_a, **_k):
+        return {
+            "type": "query_result",
+            "pay_result": 2,
+            "transaction_no": "TX-QUERY-OK",
+            "out_trade_no": intent.out_trade_no,
+        }
+
+    monkeypatch.setattr(pi, "query_on_terminal", fake_query)
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {cashier_token}",
+            "X-Outlet-Id": str(outlet.id),
+        }
+        resp = await client.post(f"/api/kpay/{intent.id}/query", headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "success"
+        assert body["terminal_status"] == "success"
+
+        reloaded = await db_session.get(Order, order.id)
+        assert reloaded is not None
+        assert reloaded.status == OrderStatus.paid
+        assert reloaded.payment_reference == "TX-QUERY-OK"
+    finally:
+        ws_daemon._active_connections.pop(str(outlet.id), None)
+
+
+@pytest.mark.asyncio
+async def test_kpay_start_requires_query_after_timeout(
+    client: AsyncClient,
+    db_session,
+    outlet,
+    cashier_staff,
+    product,
+    cashier_token,
+    monkeypatch,
+    kpay_test_db,
+) -> None:
+    """POST /kpay/start is blocked until the prior timeout intent is queried (2.2)."""
+    order_payload = OrderCreate(
+        outlet_id=outlet.id,
+        staff_id=cashier_staff.id,
+        items=[OrderItemCreate(product_id=product.id, quantity=1)],
+    )
+    order = await create_order_service(db_session, order_payload)
+    stale = await pi.create_payment_intent(
+        session=db_session,
+        outlet_id=outlet.id,
+        order_id=order.id,
+        amount=order.total,
+    )
+    await pi.update_payment_intent_status(
+        session=db_session,
+        intent_id=str(stale.id),
+        status="timeout",
+        kpay_response={"pay_result": 1},
+        error_message="Card payment still pending",
+    )
+
+    ws_daemon._active_connections[str(outlet.id)] = object()
+
+    async def fake_start_sale(*_a, **_k):
+        return {"type": "sale_result", "pay_result": 3, "reason": "Declined"}
+
+    monkeypatch.setattr(pi, "start_sale_on_terminal", fake_start_sale)
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {cashier_token}",
+            "X-Outlet-Id": str(outlet.id),
+        }
+        resp = await client.post(
+            "/api/kpay/start",
+            json={"order_id": str(order.id), "amount": float(order.total)},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert "Must query previous intent before retrying" in resp.json().get("detail", "")
+    finally:
+        ws_daemon._active_connections.pop(str(outlet.id), None)
+
+
+@pytest.mark.asyncio
+async def test_kpay_start_allowed_after_query(
+    client: AsyncClient,
+    db_session,
+    outlet,
+    cashier_staff,
+    product,
+    cashier_token,
+    monkeypatch,
+    kpay_test_db,
+) -> None:
+    """After querying a timeout intent, POST /kpay/start may create a new intent (2.2)."""
+    order_payload = OrderCreate(
+        outlet_id=outlet.id,
+        staff_id=cashier_staff.id,
+        items=[OrderItemCreate(product_id=product.id, quantity=1)],
+    )
+    order = await create_order_service(db_session, order_payload)
+    stale = await pi.create_payment_intent(
+        session=db_session,
+        outlet_id=outlet.id,
+        order_id=order.id,
+        amount=order.total,
+    )
+    await pi.update_payment_intent_status(
+        session=db_session,
+        intent_id=str(stale.id),
+        status="timeout",
+        kpay_response={"pay_result": 1},
+        error_message="Card payment still pending",
+    )
+
+    ws_daemon._active_connections[str(outlet.id)] = object()
+
+    async def fake_query(*_a, **_k):
+        return {
+            "type": "query_result",
+            "pay_result": 3,
+            "reason": "Declined",
+            "out_trade_no": stale.out_trade_no,
+        }
+
+    async def fake_start_sale(intent, **_k):
+        await pi.update_payment_intent_status(
+            session=db_session,
+            intent_id=str(intent.id),
+            status="failed",
+            error_message="Declined on retry",
+        )
+        return {"type": "sale_result", "pay_result": 3, "reason": "Declined"}
+
+    monkeypatch.setattr(pi, "query_on_terminal", fake_query)
+    monkeypatch.setattr(pi, "start_sale_on_terminal", fake_start_sale)
+
+    headers = {
+        "Authorization": f"Bearer {cashier_token}",
+        "X-Outlet-Id": str(outlet.id),
+    }
+
+    try:
+        query_resp = await client.post(f"/api/kpay/{stale.id}/query", headers=headers)
+        assert query_resp.status_code == 200
+        assert query_resp.json()["terminal_status"] == "failed"
+
+        start_resp = await client.post(
+            "/api/kpay/start",
+            json={"order_id": str(order.id), "amount": float(order.total)},
+            headers=headers,
+        )
+        assert start_resp.status_code == 200
+        assert "id" in start_resp.json()
+    finally:
+        ws_daemon._active_connections.pop(str(outlet.id), None)

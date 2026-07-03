@@ -86,3 +86,23 @@ func (c Config) DaemonWSURL() (string, error) {
 	q := u.Query(); if q.Get("outlet_id") == "" { q.Set("outlet_id", c.OutletID) }; q.Del("token")
 	u.RawQuery = q.Encode(); return u.String(), nil
 }
+
+// BackendAPIURL derives the REST API base from the daemon WebSocket URL.
+func (c Config) BackendAPIURL() (string, error) {
+	u, err := url.Parse(c.RailwayWSURL)
+	if err != nil {
+		return "", err
+	}
+	switch u.Scheme {
+	case "wss":
+		u.Scheme = "https"
+	case "ws":
+		u.Scheme = "http"
+	default:
+		return "", fmt.Errorf("unsupported websocket scheme: %s", u.Scheme)
+	}
+	u.Path = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/"), nil
+}

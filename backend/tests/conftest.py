@@ -23,6 +23,7 @@ from app.models import (  # noqa: F401  — registers models on Base.metadata
     ModifierOption,
     Outlet,
     OrderVoucher,
+    PaymentIntent,
     Product,
     ProductModifierGroup,
     Staff,

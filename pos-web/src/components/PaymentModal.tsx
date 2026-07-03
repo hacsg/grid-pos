@@ -11,9 +11,17 @@ import {
   updateOrderStatus,
   type OrderRead,
 } from '@/api/client';
-import { getPaymentStatus, getTerminalConnection, startCardPayment, voidCardPayment, type PaymentIntent } from '@/api/kpayClient';
+import {
+  getPaymentStatus,
+  getTerminalConnection,
+  queryPaymentIntent,
+  startCardPayment,
+  voidCardPayment,
+  type PaymentIntent,
+} from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { newIdempotencyKey } from '@/utils/idempotency';
 import { printReceipt as printReceiptUsb } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
 
@@ -35,6 +43,8 @@ type PaymentStep = 'payment' | 'processing' | 'complete';
 
 const CARD_POLL_INTERVAL_MS = 2000;
 const CARD_POLL_TIMEOUT_MS = 95000;
+const QUERY_POLL_INTERVAL_MS = 5000;
+const QUERY_POLL_MAX_MS = 30000;
 
 interface ReceiptSnapshot {
   order: OrderRead;
@@ -64,6 +74,22 @@ interface CardPaymentSession {
   cdcAmount: number;
   cashTendered?: number;
   startedAt: number;
+}
+
+interface FinalizationPending {
+  order: OrderRead;
+  statusPayload: Parameters<typeof updateOrderStatus>[1];
+  paymentMode: PaymentMode;
+  paymentDetails?: {
+    terminalPaymentMethod?: TerminalPaymentMethod;
+    cashAmount?: number;
+    cardAmount?: number;
+    voucherAmount?: number;
+    cdcAmount?: number;
+    changeDue?: number;
+    manualPayNow?: boolean;
+    paynowConfirmedAt?: string | null;
+  };
 }
 
 function roundMoney(value: number): number {
@@ -140,12 +166,15 @@ function getErrorMessage(err: unknown, fallback = 'Payment failed'): string {
 
 function cardFailureMessage(status: PaymentIntent['status'], errorMessage?: string): string {
   if (status === 'timeout') {
-    return 'Payment timed out. Try again or choose another payment method.';
+    return 'Payment is still settling on the terminal. Checking status…';
   }
   if (status === 'cancelled') {
-    return 'Payment cancelled. Try again or choose another payment method.';
+    return 'Payment cancelled.';
   }
-  return errorMessage || 'Payment failed. Try again or choose another payment method.';
+  if (status === 'terminal_failed' || status === 'failed') {
+    return errorMessage || 'Payment failed. You may retry once the terminal confirms no charge.';
+  }
+  return errorMessage || 'Payment failed.';
 }
 
 function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): string {
@@ -229,6 +258,11 @@ export default function PaymentModal({
   const [payNowQrLoading, setPayNowQrLoading] = useState(false);
   const [payNowQrError, setPayNowQrError] = useState('');
   const [voidState, setVoidState] = useState<'idle' | 'voiding' | 'voided'>('idle');
+  const [pendingOrder, setPendingOrder] = useState<OrderRead | null>(null);
+  const [checkoutIdempotencyKey, setCheckoutIdempotencyKey] = useState(() => newIdempotencyKey());
+  const [markPaidIdempotencyKey, setMarkPaidIdempotencyKey] = useState(() => newIdempotencyKey());
+  const [kpayAttemptNumber, setKpayAttemptNumber] = useState(0);
+  const [finalizationPending, setFinalizationPending] = useState<FinalizationPending | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -246,6 +280,11 @@ export default function PaymentModal({
       setPayNowQrLoading(false);
       setPayNowQrError('');
       setVoidState('idle');
+      setPendingOrder(null);
+      setCheckoutIdempotencyKey(newIdempotencyKey());
+      setMarkPaidIdempotencyKey(newIdempotencyKey());
+      setKpayAttemptNumber(0);
+      setFinalizationPending(null);
     }
   }, [open]);
 
@@ -399,189 +438,60 @@ export default function PaymentModal({
     }
   }, [manualPayNowActive, manualPayNowAmount, open, payNowQrUrl, step]);
 
-  useEffect(() => {
-    if (!open || step !== 'processing' || !cardPayment) {
-      return;
+  async function redeemPostPayment(orderId: string, voucherCodes: string[] | null): Promise<void> {
+    if (loyalty?.reward) {
+      await redeemLoyalty(loyalty.customer.member_id, orderId, loyalty.reward.points);
     }
-
-    let cancelled = false;
-    let inFlight = false;
-    let intervalId: number | undefined;
-
-    const clearPolling = () => {
-      if (intervalId !== undefined) {
-        window.clearInterval(intervalId);
-      }
-    };
-
-    const stopPolling = () => {
-      cancelled = true;
-      clearPolling();
-    };
-
-    const failCardPayment = (message: string) => {
-      if (cancelled) {
-        return;
-      }
-      stopPolling();
-      setError(message);
-      setCardPayment(null);
-      setStep('payment');
-      setSubmitting(false);
-    };
-
-    const poll = async () => {
-      if (cancelled || inFlight) {
-        return;
-      }
-
-      if (Date.now() - cardPayment.startedAt > CARD_POLL_TIMEOUT_MS) {
-        toast.error('Payment timed out');
-        failCardPayment('Payment timed out. Try again or choose another payment method.');
-        return;
-      }
-
-      inFlight = true;
+    if (voucherCodes && voucherCodes.length > 0) {
       try {
-        const latest = await getPaymentStatus(cardPayment.intentId);
-        if (cancelled) {
-          return;
-        }
-
-        if (latest.status === 'success') {
-          clearPolling();
-          try {
-            const statusPayload =
-              cardPayment.paymentMode === 'split'
-                ? {
-                    status: 'paid' as const,
-                    payment_method: 'split',
-                    payment_reference: cardPayment.paymentReference,
-                    cash_tendered: cardPayment.cashTendered,
-                    cash_amount: cardPayment.cashAmount,
-                    card_amount: cardPayment.cardAmount,
-                    voucher_amount: cardPayment.voucherAmount,
-                    cdc_amount: cardPayment.cdcAmount,
-                  }
-                : {
-                    status: 'paid' as const,
-                    payment_method: cardPayment.paymentMode,
-                    payment_reference: cardPayment.paymentReference,
-                  };
-            const paidOrder = await updateOrderStatus(cardPayment.order.id, {
-              ...statusPayload,
-            });
-            if (cancelled) {
-              return;
-            }
-            completePaidOrder(paidOrder, cardPayment.paymentMode, {
-              terminalPaymentMethod: cardPayment.terminalPaymentMethod,
-              cashAmount: cardPayment.cashAmount,
-              cardAmount: cardPayment.cardAmount,
-              voucherAmount: cardPayment.voucherAmount,
-              cdcAmount: cardPayment.cdcAmount,
-              changeDue: 0,
-            });
-            toast.success(`${terminalMethodLabel(cardPayment.terminalPaymentMethod)} payment successful`);
-          } catch (err: unknown) {
-            if (!cancelled) {
-              setError(`Payment approved, but order finalization failed: ${getErrorMessage(err, 'Order finalization failed')}`);
-              setCardPayment(null);
-              setSubmitting(false);
-              toast.error('Payment approved, but order finalization failed');
-            }
-          }
-          return;
-        }
-
-        if (latest.status === 'failed' || latest.status === 'timeout' || latest.status === 'cancelled') {
-          toast.error(latest.status === 'timeout' ? 'Payment timed out' : 'Payment failed');
-          failCardPayment(cardFailureMessage(latest.status, latest.error_message));
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          toast.error('Payment status check failed');
-          failCardPayment(getErrorMessage(err, 'Payment status check failed. Try again.'));
-        }
-      } finally {
-        inFlight = false;
+        await applyVouchersToOrder(orderId, voucherCodes);
+      } catch {
+        // Vouchers were likely applied at order creation on the first attempt.
       }
-    };
-
-    void poll();
-    intervalId = window.setInterval(() => {
-      void poll();
-    }, CARD_POLL_INTERVAL_MS);
-
-    return stopPolling;
-  }, [cardPayment, open, step]);
-
-  if (!open) {
-    return null;
+    }
   }
-
-  const terminalStatusText =
-    manualPayNowActive
-      ? 'Terminal offline – Manual PayNow'
-      : terminalConnected === null
-      ? 'Checking terminal…'
-      : terminalConnected
-        ? 'Terminal connected'
-        : 'Terminal offline';
-  const paymentActionLabel = submitting
-    ? step === 'processing'
-      ? 'Processing payment…'
-      : 'Processing…'
-    : manualPayNowActive
-      ? 'Payment received'
-    : requiresTerminal && error && terminalConnected !== false
-      ? `Retry ${mode === 'split' ? 'split' : mode === 'paynow' ? 'PayNow' : paymentModeLabel(mode).toLowerCase()} payment`
-      : requiresTerminal
-        ? terminalMethod === 'paynow'
-          ? 'Charge via PayNow'
-          : 'Charge to terminal'
-        : 'Complete payment';
 
   async function createPendingOrder(
     paymentReference: string,
     voucherCodes: string[] | null,
     paymentMethod: PaymentMode
   ): Promise<OrderRead> {
-    const pendingOrder = await createOrder({
-      outlet_id: session.outlet.id,
-      staff_id: session.staff.id,
-      status: 'pending',
-      payment_method: paymentMethod,
-      payment_reference: paymentReference,
-      loyalty_member_id: loyalty?.customer.member_id ?? null,
-      loyalty_points_redeemed: loyalty?.reward?.points ?? null,
-      loyalty_discount: totals.discount + totals.loyaltyDiscount > 0 ? totals.discount + totals.loyaltyDiscount : null,
-      customer_id: loyalty?.customer.customer_id ?? null,
-      voucher_codes: voucherCodes,
-      items: items.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-        modifiers: item.modifiers.map((modifier) => ({
-          modifier_name: modifier.modifier_name,
-          price_adjustment: modifier.price_adjustment,
+    return createOrder(
+      {
+        outlet_id: session.outlet.id,
+        staff_id: session.staff.id,
+        status: 'pending',
+        payment_method: paymentMethod,
+        payment_reference: paymentReference,
+        loyalty_member_id: loyalty?.customer.member_id ?? null,
+        loyalty_points_redeemed: loyalty?.reward?.points ?? null,
+        loyalty_discount: totals.discount + totals.loyaltyDiscount > 0 ? totals.discount + totals.loyaltyDiscount : null,
+        customer_id: loyalty?.customer.customer_id ?? null,
+        voucher_codes: voucherCodes,
+        items: items.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          modifiers: item.modifiers.map((modifier) => ({
+            modifier_name: modifier.modifier_name,
+            price_adjustment: modifier.price_adjustment,
+          })),
         })),
-      })),
-    });
+      },
+      { idempotencyKey: checkoutIdempotencyKey }
+    );
+  }
 
-    if (loyalty?.reward) {
-      await redeemLoyalty(loyalty.customer.member_id, pendingOrder.id, loyalty.reward.points);
+  async function ensurePendingOrder(
+    paymentReference: string,
+    voucherCodes: string[] | null,
+    paymentMethod: PaymentMode
+  ): Promise<OrderRead> {
+    if (pendingOrder) {
+      return pendingOrder;
     }
-
-    // If backend didn't apply via create (older path), ensure applied. Safe no-op if already applied.
-    if (voucherCodes && voucherCodes.length > 0 && (!pendingOrder.applied_vouchers || pendingOrder.applied_vouchers.length === 0)) {
-      try {
-        await applyVouchersToOrder(pendingOrder.id, voucherCodes);
-      } catch {
-        // ignore - creation path should have handled it
-      }
-    }
-
-    return pendingOrder;
+    const order = await createPendingOrder(paymentReference, voucherCodes, paymentMethod);
+    setPendingOrder(order);
+    return order;
   }
 
   function completePaidOrder(
@@ -619,8 +529,12 @@ export default function PaymentModal({
     setStep('complete');
     setCardPayment(null);
     setSubmitting(false);
+    setPendingOrder(null);
+    setCheckoutIdempotencyKey(newIdempotencyKey());
+    setMarkPaidIdempotencyKey(newIdempotencyKey());
+    setKpayAttemptNumber(0);
+    setFinalizationPending(null);
 
-    // Notify customer display (non-blocking)
     try {
       broadcast({
         type: 'PAYMENT_COMPLETE',
@@ -631,11 +545,208 @@ export default function PaymentModal({
       });
       broadcast({ type: 'ORDER_COMPLETE' });
     } catch {
-      // ignore - display is optional
+      // Customer display is optional.
     }
 
     onOrderComplete();
   }
+
+  function buildCardStatusPayload(cardSession: CardPaymentSession): Parameters<typeof updateOrderStatus>[1] {
+    if (cardSession.paymentMode === 'split') {
+      return {
+        status: 'paid',
+        payment_method: 'split',
+        payment_reference: cardSession.paymentReference,
+        cash_tendered: cardSession.cashTendered,
+        cash_amount: cardSession.cashAmount,
+        card_amount: cardSession.cardAmount,
+        voucher_amount: cardSession.voucherAmount,
+        cdc_amount: cardSession.cdcAmount,
+      };
+    }
+    return {
+      status: 'paid',
+      payment_method: cardSession.paymentMode,
+      payment_reference: cardSession.paymentReference,
+    };
+  }
+
+  async function finalizeCardPayment(
+    cardSession: CardPaymentSession,
+    voucherCodes: string[] | null
+  ): Promise<void> {
+    const statusPayload = buildCardStatusPayload(cardSession);
+    const paymentDetails = {
+      terminalPaymentMethod: cardSession.terminalPaymentMethod,
+      cashAmount: cardSession.cashAmount,
+      cardAmount: cardSession.cardAmount,
+      voucherAmount: cardSession.voucherAmount,
+      cdcAmount: cardSession.cdcAmount,
+      changeDue: 0,
+    };
+    try {
+      await redeemPostPayment(cardSession.order.id, voucherCodes);
+      const paidOrder = await updateOrderStatus(cardSession.order.id, statusPayload, {
+        idempotencyKey: markPaidIdempotencyKey,
+      });
+      completePaidOrder(paidOrder, cardSession.paymentMode, paymentDetails);
+      toast.success(`${terminalMethodLabel(cardSession.terminalPaymentMethod)} payment successful`);
+    } catch (err: unknown) {
+      setFinalizationPending({
+        order: cardSession.order,
+        statusPayload,
+        paymentMode: cardSession.paymentMode,
+        paymentDetails,
+      });
+      setError(`Payment approved, but order finalization failed: ${getErrorMessage(err, 'Order finalization failed')}`);
+      setCardPayment(null);
+      setStep('payment');
+      setSubmitting(false);
+      toast.error('Payment approved, but order finalization failed');
+    }
+  }
+
+  async function reconcileTimedOutPayment(
+    cardSession: CardPaymentSession,
+    voucherCodes: string[] | null,
+    onFail: (message: string) => void
+  ): Promise<boolean> {
+    const queryStartedAt = Date.now();
+    while (Date.now() - queryStartedAt <= QUERY_POLL_MAX_MS) {
+      try {
+        const result = await queryPaymentIntent(cardSession.intentId);
+        if (result.terminal_status === 'success') {
+          await finalizeCardPayment(cardSession, voucherCodes);
+          return true;
+        }
+        if (result.terminal_status === 'failed') {
+          onFail(cardFailureMessage(result.status, result.error_message));
+          return true;
+        }
+        setError('Still processing on the terminal. Please wait…');
+      } catch (err: unknown) {
+        onFail(getErrorMessage(err, 'Payment status check failed.'));
+        return true;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, QUERY_POLL_INTERVAL_MS));
+    }
+    onFail('Payment is still processing on the terminal. Wait a moment, then retry.');
+    return true;
+  }
+
+  useEffect(() => {
+    if (!open || step !== 'processing' || !cardPayment) {
+      return;
+    }
+
+    const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
+    let cancelled = false;
+    let inFlight = false;
+    let intervalId: number | undefined;
+
+    const clearPolling = () => {
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+      }
+    };
+
+    const stopPolling = () => {
+      cancelled = true;
+      clearPolling();
+    };
+
+    const failCardPayment = (message: string) => {
+      if (cancelled) {
+        return;
+      }
+      stopPolling();
+      setError(message);
+      setCardPayment(null);
+      setStep('payment');
+      setSubmitting(false);
+    };
+
+    const poll = async () => {
+      if (cancelled || inFlight) {
+        return;
+      }
+
+      if (Date.now() - cardPayment.startedAt > CARD_POLL_TIMEOUT_MS) {
+        inFlight = true;
+        try {
+          await reconcileTimedOutPayment(cardPayment, voucherCodes, failCardPayment);
+        } finally {
+          inFlight = false;
+        }
+        return;
+      }
+
+      inFlight = true;
+      try {
+        const latest = await getPaymentStatus(cardPayment.intentId);
+        if (cancelled) {
+          return;
+        }
+
+        if (latest.status === 'success') {
+          stopPolling();
+          await finalizeCardPayment(cardPayment, voucherCodes);
+          return;
+        }
+
+        if (latest.status === 'timeout') {
+          stopPolling();
+          await reconcileTimedOutPayment(cardPayment, voucherCodes, failCardPayment);
+          return;
+        }
+
+        if (latest.status === 'failed' || latest.status === 'terminal_failed' || latest.status === 'cancelled') {
+          toast.error('Payment failed');
+          failCardPayment(cardFailureMessage(latest.status, latest.error_message));
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          toast.error('Payment status check failed');
+          failCardPayment(getErrorMessage(err, 'Payment status check failed.'));
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void poll();
+    intervalId = window.setInterval(() => {
+      void poll();
+    }, CARD_POLL_INTERVAL_MS);
+
+    return stopPolling;
+  }, [cardPayment, open, step, vouchers, markPaidIdempotencyKey]);
+
+  if (!open) {
+    return null;
+  }
+
+  const terminalStatusText =
+    manualPayNowActive
+      ? 'Terminal offline – Manual PayNow'
+      : terminalConnected === null
+      ? 'Checking terminal…'
+      : terminalConnected
+        ? 'Terminal connected'
+        : 'Terminal offline';
+  const paymentActionLabel = submitting
+    ? step === 'processing'
+      ? 'Processing payment…'
+      : 'Processing…'
+    : manualPayNowActive
+      ? 'Payment received'
+    : requiresTerminal && error && terminalConnected !== false
+      ? `Retry ${mode === 'split' ? 'split' : mode === 'paynow' ? 'PayNow' : paymentModeLabel(mode).toLowerCase()} payment`
+      : requiresTerminal
+        ? terminalMethod === 'paynow'
+          ? 'Charge via PayNow'
+          : 'Charge to terminal'
+        : 'Complete payment';
 
   function renderManualPayNowPanel(amount: number) {
     return (
@@ -659,6 +770,33 @@ export default function PaymentModal({
     );
   }
 
+  async function handleRetryFinalization() {
+    if (!finalizationPending) {
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
+      await redeemPostPayment(finalizationPending.order.id, voucherCodes);
+      const paidOrder = await updateOrderStatus(
+        finalizationPending.order.id,
+        finalizationPending.statusPayload,
+        { idempotencyKey: markPaidIdempotencyKey }
+      );
+      completePaidOrder(
+        paidOrder,
+        finalizationPending.paymentMode,
+        finalizationPending.paymentDetails
+      );
+      toast.success('Order finalized');
+    } catch (err: unknown) {
+      setError(`Order finalization failed: ${getErrorMessage(err, 'Order finalization failed')}`);
+      setSubmitting(false);
+      toast.error('Order finalization failed');
+    }
+  }
+
   async function completePayment() {
     if (!canComplete) {
       return;
@@ -675,34 +813,44 @@ export default function PaymentModal({
 
     setSubmitting(true);
     setError('');
+    setFinalizationPending(null);
 
     try {
-      const paymentReference = manualPayNowActive ? 'MANUAL' : `POS-${Date.now()}`;
+      const paymentReference = manualPayNowActive ? 'MANUAL' : `POS-${checkoutIdempotencyKey.slice(0, 8)}`;
       const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
 
-      const pendingOrder = await createPendingOrder(paymentReference, voucherCodes, mode);
+      const order = await ensurePendingOrder(paymentReference, voucherCodes, mode);
 
       if (manualPayNowActive) {
         const confirmedAt = new Date().toISOString();
+        await redeemPostPayment(order.id, voucherCodes);
         const paidOrder =
           mode === 'split'
-            ? await updateOrderStatus(pendingOrder.id, {
-                status: 'paid',
-                payment_method: 'split',
-                payment_reference: paymentReference,
-                cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
-                cash_amount: splitCashAmount,
-                card_amount: splitTerminalAmount,
-                voucher_amount: voucherAmount,
-                cdc_amount: splitCdcAmount,
-                paynow_confirmed_at: confirmedAt,
-              })
-            : await updateOrderStatus(pendingOrder.id, {
-                status: 'paid',
-                payment_method: 'paynow',
-                payment_reference: paymentReference,
-                paynow_confirmed_at: confirmedAt,
-              });
+            ? await updateOrderStatus(
+                order.id,
+                {
+                  status: 'paid',
+                  payment_method: 'split',
+                  payment_reference: paymentReference,
+                  cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
+                  cash_amount: splitCashAmount,
+                  card_amount: splitTerminalAmount,
+                  voucher_amount: voucherAmount,
+                  cdc_amount: splitCdcAmount,
+                  paynow_confirmed_at: confirmedAt,
+                },
+                { idempotencyKey: markPaidIdempotencyKey }
+              )
+            : await updateOrderStatus(
+                order.id,
+                {
+                  status: 'paid',
+                  payment_method: 'paynow',
+                  payment_reference: paymentReference,
+                  paynow_confirmed_at: confirmedAt,
+                },
+                { idempotencyKey: markPaidIdempotencyKey }
+              );
 
         completePaidOrder(paidOrder, mode, {
           terminalPaymentMethod: 'paynow',
@@ -720,13 +868,16 @@ export default function PaymentModal({
 
       if (requiresTerminal && (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0))) {
         const paymentAmount = mode === 'split' ? splitTerminalAmount : totalDue;
-        // KPay paymentType: 1 = card, 13 = PayNow forward scan.
         const kpayPaymentType = terminalMethod === 'paynow' ? 13 : 1;
+        const nextAttempt = kpayAttemptNumber + 1;
         try {
-          const intent = await startCardPayment(pendingOrder.id, paymentAmount, kpayPaymentType);
+          const intent = await startCardPayment(order.id, paymentAmount, kpayPaymentType, {
+            idempotencyKey: `${order.id}-kpay-${nextAttempt}`,
+          });
+          setKpayAttemptNumber(nextAttempt);
           setTerminalConnected(true);
           setCardPayment({
-            order: pendingOrder,
+            order,
             intentId: intent.id,
             paymentReference,
             paymentMode: mode === 'split' ? 'split' : mode,
@@ -752,24 +903,33 @@ export default function PaymentModal({
         return;
       }
 
+      await redeemPostPayment(order.id, voucherCodes);
       const paidOrder =
         mode === 'split'
-          ? await updateOrderStatus(pendingOrder.id, {
-              status: 'paid',
-              payment_method: 'split',
-              payment_reference: paymentReference,
-              cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
-              cash_amount: splitCashAmount,
-              card_amount: 0,
-              voucher_amount: voucherAmount,
-              cdc_amount: splitCdcAmount,
-            })
-          : await updateOrderStatus(pendingOrder.id, {
-              status: 'paid',
-              payment_method: mode,
-              payment_reference: paymentReference,
-              cash_tendered: mode === 'cash' ? cashTendered : undefined,
-            });
+          ? await updateOrderStatus(
+              order.id,
+              {
+                status: 'paid',
+                payment_method: 'split',
+                payment_reference: paymentReference,
+                cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
+                cash_amount: splitCashAmount,
+                card_amount: 0,
+                voucher_amount: voucherAmount,
+                cdc_amount: splitCdcAmount,
+              },
+              { idempotencyKey: markPaidIdempotencyKey }
+            )
+          : await updateOrderStatus(
+              order.id,
+              {
+                status: 'paid',
+                payment_method: mode,
+                payment_reference: paymentReference,
+                cash_tendered: mode === 'cash' ? cashTendered : undefined,
+              },
+              { idempotencyKey: markPaidIdempotencyKey }
+            );
 
       completePaidOrder(
         paidOrder,
@@ -1057,9 +1217,20 @@ export default function PaymentModal({
               <button className="secondary-button" type="button" onClick={handleClose} disabled={submitting}>
                 Cancel
               </button>
-              <button className="primary-button" type="button" disabled={!canComplete} onClick={completePayment}>
-                {paymentActionLabel}
-              </button>
+              {finalizationPending ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleRetryFinalization}
+                >
+                  {submitting ? 'Finalizing…' : 'Retry finalization'}
+                </button>
+              ) : (
+                <button className="primary-button" type="button" disabled={!canComplete} onClick={completePayment}>
+                  {paymentActionLabel}
+                </button>
+              )}
             </footer>
           </>
         ) : step === 'processing' ? (

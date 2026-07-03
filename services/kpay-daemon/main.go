@@ -42,6 +42,7 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 		return
 	}
+	go daemon.RunReconciliationLoop(ctx, cfg, client, log)
 	if err := daemon.Run(ctx, cfg, handler, log); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("daemon stopped", "error", err)
 		os.Exit(1)

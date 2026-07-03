@@ -67,3 +67,8 @@ class PaymentIntent(Base):
     
     # Error message if payment failed
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # When the terminal was last queried to reconcile a timeout/failed intent.
+    last_queried_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

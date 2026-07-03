@@ -11,7 +11,7 @@ State machine: pending → processing → success | failed | timeout | cancelled
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 from uuid import UUID
@@ -115,6 +115,12 @@ async def get_successful_intent_for_order(
 # excluded so a genuine retry can start a fresh sale.
 ACTIVE_INTENT_STATUSES = ("pending", "processing", "success")
 
+# Intents in these states must be queried before POST /kpay/start is allowed.
+RETRY_GATE_STATUSES = ("timeout", "failed")
+
+# Final failure state after terminal reconciliation confirms no charge landed.
+TERMINAL_FAILED_STATUS = "terminal_failed"
+
 
 async def get_active_intent_for_order(
     session: AsyncSession, order_id: str
@@ -130,6 +136,62 @@ async def get_active_intent_for_order(
         .order_by(PaymentIntent.created_at.desc())
     )
     return result.scalars().first()
+
+
+async def get_unresolved_intent_for_order(
+    session: AsyncSession, order_id: str
+) -> Optional[PaymentIntent]:
+    """Return the most recent timeout/failed intent that blocks a retry."""
+    order_uuid = _ensure_uuid(order_id)
+    result = await session.execute(
+        select(PaymentIntent)
+        .where(
+            PaymentIntent.order_id == order_uuid,
+            PaymentIntent.status.in_(RETRY_GATE_STATUSES),
+        )
+        .order_by(PaymentIntent.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def get_stale_intents_for_reconciliation(
+    session: AsyncSession,
+    outlet_id: str,
+    *,
+    within_minutes: int = 5,
+) -> list[PaymentIntent]:
+    """Return timeout/failed intents created recently that may still settle."""
+    outlet_uuid = _ensure_uuid(outlet_id)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
+    result = await session.execute(
+        select(PaymentIntent)
+        .where(
+            PaymentIntent.outlet_id == outlet_uuid,
+            PaymentIntent.status.in_(RETRY_GATE_STATUSES),
+            PaymentIntent.created_at >= cutoff,
+        )
+        .order_by(PaymentIntent.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+def query_recently_performed(intent: PaymentIntent, *, within_seconds: int = 60) -> bool:
+    """True when the intent was queried within the retry gate window."""
+    if intent.last_queried_at is None:
+        return False
+    age = datetime.now(timezone.utc) - intent.last_queried_at
+    return age.total_seconds() <= within_seconds
+
+
+async def touch_queried(session: AsyncSession, intent_id: str) -> None:
+    """Stamp last_queried_at for retry-gate enforcement."""
+    intent_uuid = _ensure_uuid(intent_id)
+    await session.execute(
+        update(PaymentIntent)
+        .where(PaymentIntent.id == intent_uuid)
+        .values(last_queried_at=datetime.now(timezone.utc))
+    )
+    await session.commit()
 
 
 async def update_payment_intent_status(
@@ -243,6 +305,81 @@ async def start_sale_on_terminal(intent: PaymentIntent, payment_type: int = _DEF
     return await send_to_daemon(
         intent.outlet_id, "start_sale", params, timeout=settings.kpay_sale_timeout_seconds
     )
+
+
+def _terminal_status_from_event(event: dict) -> str:
+    """Map a daemon query/sale event to a coarse terminal status for clients."""
+    if event.get("type") == "error":
+        return "failed"
+    code = _pay_result(event)
+    if code == settings.kpay_payresult_success:
+        return "success"
+    if code in (-1, 1):
+        return "in-flight"
+    return "failed"
+
+
+async def query_on_terminal(outlet_id: str, out_trade_no: str) -> dict:
+    """Query the terminal for the current state of a prior sale."""
+    params = {"out_trade_no": out_trade_no}
+    log.info(f"query → daemon outlet={outlet_id} no={out_trade_no}")
+    return await send_to_daemon(
+        outlet_id, "query", params, timeout=settings.kpay_sale_timeout_seconds
+    )
+
+
+async def finalize_query(
+    session: AsyncSession,
+    intent: PaymentIntent,
+    event: dict,
+    *,
+    mark_terminal_failed_on_decline: bool = False,
+) -> str:
+    """Interpret a terminal query event and persist the reconciled outcome."""
+    await touch_queried(session, str(intent.id))
+
+    if event.get("type") == "error":
+        message = event.get("message") or "Terminal error"
+        await update_payment_intent_status(
+            session,
+            intent.id,
+            status="failed",
+            kpay_response=_normalize_sale_result(event),
+            error_message=message,
+        )
+        return "failed"
+
+    result = _normalize_sale_result(event)
+    if _is_approved(event):
+        await update_payment_intent_status(session, intent.id, status="success", kpay_response=result)
+        return "success"
+
+    code = _pay_result(event)
+    if code in (-1, 1):
+        # Still pending on the terminal — keep timeout so the caller can poll.
+        label = _PAYRESULT_LABELS.get(code, f"payResult={event.get('pay_result')}")
+        message = f"Card payment {label}"
+        await update_payment_intent_status(
+            session,
+            intent.id,
+            status="timeout",
+            kpay_response=result,
+            error_message=message,
+        )
+        return "timeout"
+
+    label = _PAYRESULT_LABELS.get(code, f"payResult={event.get('pay_result')}")
+    reason = (event.get("reason") or "").strip()
+    message = f"Card payment {label}" + (f": {reason}" if reason else "")
+    final_status = TERMINAL_FAILED_STATUS if mark_terminal_failed_on_decline else "failed"
+    await update_payment_intent_status(
+        session,
+        intent.id,
+        status=final_status,
+        kpay_response=result,
+        error_message=message,
+    )
+    return final_status
 
 
 async def finalize_sale(session: AsyncSession, intent: PaymentIntent, event: dict) -> str:

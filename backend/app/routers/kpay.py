@@ -9,6 +9,7 @@ Flow:
 """
 
 import logging
+import secrets
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -88,6 +89,52 @@ class KPayConnectionResponse(BaseModel):
     connected: bool = Field(..., description="Whether daemon is connected for this outlet")
 
 
+class KPayQueryResponse(BaseModel):
+    """Response for POST /api/kpay/{intent_id}/query"""
+    id: str
+    status: str = Field(
+        ...,
+        description="Intent status after query: success | failed | timeout | terminal_failed",
+    )
+    terminal_status: str = Field(
+        ...,
+        description="Coarse terminal outcome: success | failed | in-flight",
+    )
+    out_trade_no: Optional[str] = None
+    kpay_response: Optional[dict] = None
+    error_message: Optional[str] = None
+
+
+class KPayReconcileRequest(BaseModel):
+    """Daemon-posted terminal query result for background reconciliation."""
+    pay_result: Optional[int] = None
+    transaction_no: Optional[str] = None
+    ref_no: Optional[str] = None
+    pay_method: Optional[int] = None
+    reason: Optional[str] = None
+    out_trade_no: Optional[str] = None
+
+
+class KPayReconcileResponse(BaseModel):
+    id: str
+    status: str
+    terminal_status: str
+
+
+class KPayReconciliationCandidate(BaseModel):
+    id: str
+    out_trade_no: str
+    order_id: str
+    status: str
+
+
+def _ensure_daemon_token(x_daemon_token: str | None) -> None:
+    if not x_daemon_token or not secrets.compare_digest(
+        x_daemon_token, settings.kpay_daemon_token
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid daemon token")
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -151,7 +198,9 @@ async def start_payment(
                 if existing.status == "success":
                     body = jsonable_encoder(
                         KPayStartResponse(
-                            id=existing.id, out_trade_no=existing.out_trade_no, status="success"
+                            id=str(existing.id),
+                            out_trade_no=existing.out_trade_no,
+                            status="success",
                         )
                     )
                     if idempotency_key:
@@ -176,6 +225,19 @@ async def start_payment(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Order belongs to a different outlet",
                 )
+
+            # A prior timeout/failed intent must be queried before a new sale.
+            unresolved = await payment_intents.get_unresolved_intent_for_order(
+                session, request.order_id
+            )
+            if unresolved is not None and not payment_intents.query_recently_performed(
+                unresolved
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Must query previous intent before retrying",
+                )
+
             server_total = order.total
             if Decimal(str(request.amount)) != server_total:
                 raise HTTPException(
@@ -223,7 +285,9 @@ async def start_payment(
 
             body = jsonable_encoder(
                 KPayStartResponse(
-                    id=intent.id, out_trade_no=intent.out_trade_no, status=final_status
+                    id=str(intent.id),
+                    out_trade_no=intent.out_trade_no,
+                    status=final_status,
                 )
             )
         except Exception:
@@ -236,6 +300,133 @@ async def start_payment(
         if idempotency_key:
             await idempotency.complete(session, scope, idempotency_key, 200, body)
         return JSONResponse(body, status_code=200)
+
+
+@router.post("/{intent_id}/query", response_model=KPayQueryResponse)
+async def query_payment_intent(
+    intent_id: str,
+    outlet_id: str = Header(..., alias="X-Outlet-Id"),
+    current_staff: Staff = Depends(get_current_staff),
+) -> KPayQueryResponse:
+    """Query the terminal for the true state of a timeout/failed intent."""
+    _ensure_staff_can_access_outlet(outlet_id, current_staff)
+
+    if not get_daemon_connection(outlet_id):
+        raise HTTPException(status_code=503, detail=f"Daemon not connected for outlet {outlet_id}")
+
+    async with AsyncSessionLocal() as session:
+        intent = await payment_intents.get_payment_intent(session, intent_id)
+        if not intent:
+            raise HTTPException(status_code=404, detail=f"Payment intent {intent_id} not found")
+        if str(intent.outlet_id) != outlet_id:
+            raise HTTPException(status_code=404, detail=f"Payment intent {intent_id} not found")
+        if intent.status not in payment_intents.RETRY_GATE_STATUSES:
+            return KPayQueryResponse(
+                id=str(intent.id),
+                status=intent.status,
+                terminal_status=payment_intents._terminal_status_from_event(
+                    intent.kpay_response or {}
+                )
+                if intent.kpay_response
+                else ("success" if intent.status == "success" else "failed"),
+                out_trade_no=intent.out_trade_no,
+                kpay_response=intent.kpay_response,
+                error_message=intent.error_message,
+            )
+
+        try:
+            event = await payment_intents.query_on_terminal(outlet_id, intent.out_trade_no)
+        except RuntimeError as e:
+            raise HTTPException(
+                status_code=502, detail=f"Terminal communication error: {e}"
+            ) from e
+
+        final_status = await payment_intents.finalize_query(session, intent, event)
+        refreshed = await payment_intents.get_payment_intent(session, intent_id)
+        assert refreshed is not None
+        terminal_status = payment_intents._terminal_status_from_event(event)
+        return KPayQueryResponse(
+            id=str(refreshed.id),
+            status=final_status,
+            terminal_status=terminal_status,
+            out_trade_no=refreshed.out_trade_no,
+            kpay_response=refreshed.kpay_response,
+            error_message=refreshed.error_message,
+        )
+
+
+@router.get("/reconciliation-candidates", response_model=list[KPayReconciliationCandidate])
+async def list_reconciliation_candidates(
+    outlet_id: str = Header(..., alias="X-Outlet-Id"),
+    x_daemon_token: str | None = Header(default=None, alias="X-Daemon-Token"),
+) -> list[KPayReconciliationCandidate]:
+    """Return recent timeout/failed intents for daemon background reconciliation."""
+    _ensure_daemon_token(x_daemon_token)
+
+    async with AsyncSessionLocal() as session:
+        intents = await payment_intents.get_stale_intents_for_reconciliation(
+            session, outlet_id
+        )
+        return [
+            KPayReconciliationCandidate(
+                id=str(i.id),
+                out_trade_no=i.out_trade_no,
+                order_id=str(i.order_id),
+                status=i.status,
+            )
+            for i in intents
+        ]
+
+
+@router.post("/{intent_id}/reconcile", response_model=KPayReconcileResponse)
+async def reconcile_payment_intent(
+    intent_id: str,
+    body: KPayReconcileRequest,
+    outlet_id: str = Header(..., alias="X-Outlet-Id"),
+    x_daemon_token: str | None = Header(default=None, alias="X-Daemon-Token"),
+) -> KPayReconcileResponse:
+    """Apply a daemon-side terminal query result to a stale intent."""
+    _ensure_daemon_token(x_daemon_token)
+
+    async with AsyncSessionLocal() as session:
+        intent = await payment_intents.get_payment_intent(session, intent_id)
+        if not intent:
+            raise HTTPException(status_code=404, detail=f"Payment intent {intent_id} not found")
+        if str(intent.outlet_id) != outlet_id:
+            raise HTTPException(status_code=404, detail=f"Payment intent {intent_id} not found")
+        if intent.status not in payment_intents.RETRY_GATE_STATUSES:
+            terminal_status = (
+                "success"
+                if intent.status == "success"
+                else "failed"
+            )
+            return KPayReconcileResponse(
+                id=str(intent.id),
+                status=intent.status,
+                terminal_status=terminal_status,
+            )
+
+        event = {
+            "type": "query_result",
+            "out_trade_no": body.out_trade_no or intent.out_trade_no,
+            "pay_result": body.pay_result,
+            "transaction_no": body.transaction_no,
+            "ref_no": body.ref_no,
+            "pay_method": body.pay_method,
+            "reason": body.reason,
+        }
+        final_status = await payment_intents.finalize_query(
+            session,
+            intent,
+            event,
+            mark_terminal_failed_on_decline=True,
+        )
+        terminal_status = payment_intents._terminal_status_from_event(event)
+        return KPayReconcileResponse(
+            id=str(intent.id),
+            status=final_status,
+            terminal_status=terminal_status,
+        )
 
 
 @router.get("/status/{id}", response_model=KPayStatusResponse)
