@@ -11,7 +11,10 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.order import Order, OrderStatus
-from app.schemas.order import OrderItemCreate, SelectedModifier
+from app.models.voucher import OrderVoucher
+from app.schemas.order import OrderCreate, OrderItemCreate, SelectedModifier
+from app.services.orders import create_order as create_order_service, quantize_money
+from app.services.vouchers import apply_vouchers_to_order
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -452,14 +455,61 @@ class TestUpdateOrderStatus:
             json={
                 "status": "paid",
                 "payment_method": "split",
-                "cash_amount": "10.00",
-                "card_amount": "1.00",
+                "cash_amount": "15.00",
+                "cdc_amount": "10.00",
+                "card_amount": "0.00",
                 "voucher_amount": "0.00",
             },
         )
 
         assert resp.status_code == 400
-        assert "must equal the payable total" in resp.json()["detail"]
+        assert "exceed the total" in resp.json()["detail"]
+
+    async def test_split_order_no_false_400_on_rounding_boundary(
+        self, client: AsyncClient, db_session, outlet, cashier_staff, category
+    ) -> None:
+        """Client float rounding must not 400 after terminal charge; server derives card leg."""
+        from app.models.product import Product
+
+        product = Product(name="Rounding Product", price=10.05, category_id=category.id, is_available=True)
+        db_session.add(product)
+        await db_session.commit()
+        await db_session.refresh(product)
+
+        payload = {
+            "outlet_id": str(outlet.id),
+            "staff_id": str(cashier_staff.id),
+            "loyalty_discount": "3.32",
+            "items": [{"product_id": str(product.id), "quantity": 1, "modifiers": []}],
+        }
+        create_resp = await client.post("/api/orders", json=payload)
+        assert create_resp.status_code == 201
+        order_id = create_resp.json()["id"]
+        assert str(create_resp.json()["total"]) == "6.73"
+
+        cash_amount = Decimal("2.00")
+        cdc_amount = Decimal("1.50")
+        expected_card = quantize_money(Decimal("6.73") - cash_amount - cdc_amount)
+        assert expected_card == Decimal("3.23")
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "payment_reference": "TXN-ROUND",
+                "cash_amount": "2.00",
+                "cdc_amount": "1.50",
+                "card_amount": "3.24",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert str(data["card_amount"]) == "3.23"
+        assert str(data["cash_amount"]) == "2.00"
+        assert str(data["cdc_amount"]) == "1.50"
 
     async def test_pending_to_cancelled(
         self, client: AsyncClient, outlet, cashier_staff, product, manager_token
@@ -807,3 +857,113 @@ class TestOrderNumberAutoIncrement:
         order2_resp = await client.post("/api/orders", json=payload)
         assert order2_resp.status_code == 201
         assert order2_resp.json()["order_number"] == "0001"
+
+
+class _MockPlotholdersClient:
+    """Minimal Plotholders stub for voucher application tests."""
+
+    def __init__(self, vouchers_by_code: dict[str, dict]) -> None:
+        self.vouchers_by_code = vouchers_by_code
+        self.redeem_calls: list[str] = []
+
+    async def get_voucher(self, code: str) -> dict | None:
+        return self.vouchers_by_code.get(code)
+
+    async def redeem_voucher_by_code(self, code: str, staff_id: str, outlet: str) -> dict:
+        self.redeem_calls.append(code)
+        return {"status": "redeemed"}
+
+
+class TestVoucherApplication:
+    """Voucher apply atomicity and amount handling."""
+
+    async def _create_pending_order(
+        self, db_session, outlet, cashier_staff, product, *, price: Decimal | None = None
+    ) -> Order:
+        from app.models.product import Product
+
+        if price is not None:
+            product.price = price
+            await db_session.commit()
+            await db_session.refresh(product)
+
+        payload = OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        )
+        return await create_order_service(db_session, payload)
+
+    async def test_voucher_application_atomic_on_second_code_failure(
+        self, db_session, outlet, cashier_staff, product
+    ) -> None:
+        order = await self._create_pending_order(db_session, outlet, cashier_staff, product)
+        mock_client = _MockPlotholdersClient(
+            {
+                "GOOD-1": {"code": "GOOD-1", "amount": "5.00"},
+                "BAD-2": {"code": "BAD-2", "amount": "5.00", "redeemed": True},
+            }
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await apply_vouchers_to_order(
+                db_session,
+                order_id=order.id,
+                codes=["GOOD-1", "BAD-2"],
+                staff=cashier_staff,
+                plotholders=mock_client,
+            )
+
+        assert exc_info.value.status_code == 409
+        assert mock_client.redeem_calls == []
+
+        result = await db_session.execute(select(OrderVoucher).where(OrderVoucher.order_id == order.id))
+        assert result.scalars().all() == []
+
+    async def test_voucher_unparseable_amount_raises_422(
+        self, db_session, outlet, cashier_staff, product
+    ) -> None:
+        order = await self._create_pending_order(db_session, outlet, cashier_staff, product)
+        mock_client = _MockPlotholdersClient(
+            {"BAD-AMT": {"code": "BAD-AMT", "amount": "not-a-number"}}
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await apply_vouchers_to_order(
+                db_session,
+                order_id=order.id,
+                codes=["BAD-AMT"],
+                staff=cashier_staff,
+                plotholders=mock_client,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert "Voucher amount could not be determined" in exc_info.value.detail
+        assert mock_client.redeem_calls == []
+
+    async def test_voucher_amount_capped_at_remaining_total(
+        self, db_session, outlet, cashier_staff, product
+    ) -> None:
+        order = await self._create_pending_order(
+            db_session, outlet, cashier_staff, product, price=Decimal("10.00")
+        )
+        assert order.total == Decimal("10.00")
+
+        mock_client = _MockPlotholdersClient(
+            {"BIG-50": {"code": "BIG-50", "amount": "50.00"}}
+        )
+        await apply_vouchers_to_order(
+            db_session,
+            order_id=order.id,
+            codes=["BIG-50"],
+            staff=cashier_staff,
+            plotholders=mock_client,
+        )
+
+        await db_session.refresh(order)
+        assert order.total == Decimal("0.00")
+        assert mock_client.redeem_calls == ["BIG-50"]
+
+        result = await db_session.execute(select(OrderVoucher).where(OrderVoucher.order_id == order.id))
+        link = result.scalar_one()
+        assert link.amount_applied == Decimal("10.00")

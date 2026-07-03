@@ -175,6 +175,18 @@ def _applied_voucher_total(order: Order) -> Decimal:
     )
 
 
+def compute_split_card_leg(
+    order: Order,
+    *,
+    cash_amount: Decimal,
+    cdc_amount: Decimal,
+) -> Decimal:
+    """Compute the card/PayNow leg for a split payment (server authority)."""
+    return quantize_money(
+        order.total - _money_or_zero(cash_amount) - _money_or_zero(cdc_amount)
+    )
+
+
 def _validate_split_payment_amounts(
     order: Order,
     *,
@@ -183,8 +195,8 @@ def _validate_split_payment_amounts(
     voucher_amount: Decimal,
     cdc_amount: Decimal,
     cash_tendered: Decimal | None,
-) -> tuple[Decimal | None, Decimal | None]:
-    """Validate split payment coverage and return cash tender/change values."""
+) -> tuple[Decimal | None, Decimal | None, Decimal]:
+    """Validate split payment coverage and return cash tender/change plus card leg."""
     applied_voucher_total = _applied_voucher_total(order)
     if voucher_amount != applied_voucher_total:
         raise HTTPException(
@@ -192,12 +204,11 @@ def _validate_split_payment_amounts(
             detail="Split voucher amount must match applied vouchers",
         )
 
-    # CDC vouchers are a cash-like tender entered by the cashier; together with
-    # cash and card/PayNow they must cover the payable total.
-    if quantize_money(cash_amount + card_amount + cdc_amount) != quantize_money(order.total):
+    card_leg = compute_split_card_leg(order, cash_amount=cash_amount, cdc_amount=cdc_amount)
+    if card_leg < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Split cash, CDC and card/PayNow amounts must equal the payable total",
+            detail="Cash + CDC + vouchers exceed the total",
         )
 
     if cash_amount > 0:
@@ -207,9 +218,9 @@ def _validate_split_payment_amounts(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cash tendered must be greater than or equal to the cash split amount",
             )
-        return tendered, quantize_money(tendered - cash_amount)
+        return tendered, quantize_money(tendered - cash_amount), card_leg
 
-    return None, None
+    return None, None, card_leg
 
 
 async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
@@ -342,7 +353,7 @@ async def update_order_status_service(
         normalized_voucher_amount = _money_or_zero(voucher_amount)
         normalized_cdc_amount = _money_or_zero(cdc_amount)
         if new_status == OrderStatus.paid:
-            normalized_cash_tendered, normalized_cash_change = _validate_split_payment_amounts(
+            normalized_cash_tendered, normalized_cash_change, card_leg = _validate_split_payment_amounts(
                 order,
                 cash_amount=normalized_cash_amount,
                 card_amount=normalized_card_amount,
@@ -352,11 +363,22 @@ async def update_order_status_service(
             )
             order.cash_tendered = normalized_cash_tendered
             order.cash_change = normalized_cash_change
+            order.card_amount = card_leg
         elif cash_tendered is not None:
             order.cash_tendered = _money_or_zero(cash_tendered)
+            order.card_amount = compute_split_card_leg(
+                order,
+                cash_amount=normalized_cash_amount,
+                cdc_amount=normalized_cdc_amount,
+            )
+        else:
+            order.card_amount = compute_split_card_leg(
+                order,
+                cash_amount=normalized_cash_amount,
+                cdc_amount=normalized_cdc_amount,
+            )
 
         order.cash_amount = normalized_cash_amount
-        order.card_amount = normalized_card_amount
         order.voucher_amount = normalized_voucher_amount
         order.cdc_amount = normalized_cdc_amount
     else:

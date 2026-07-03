@@ -16,16 +16,27 @@ export async function startCardPayment(
   orderId: string,
   amount: number,
   paymentType = 1,
-  options?: { idempotencyKey?: string },
+  options?: { idempotencyKey?: string; cashAmount?: number; cdcAmount?: number },
 ): Promise<PaymentIntent> {
   const headers: Record<string, string> = {};
   if (options?.idempotencyKey) {
     headers['Idempotency-Key'] = options.idempotencyKey;
   }
+  const body: Record<string, number | string> = {
+    order_id: orderId,
+    amount,
+    payment_type: paymentType,
+  };
+  if (options?.cashAmount !== undefined) {
+    body.cash_amount = options.cashAmount;
+  }
+  if (options?.cdcAmount !== undefined) {
+    body.cdc_amount = options.cdcAmount;
+  }
   return request<PaymentIntent>('/api/kpay/start', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ order_id: orderId, amount, payment_type: paymentType }),
+    body: JSON.stringify(body),
   });
 }
 

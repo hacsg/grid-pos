@@ -1,7 +1,8 @@
 """Voucher validation, creation, and application logic."""
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+import logging
 import secrets
 from uuid import UUID
 
@@ -16,10 +17,11 @@ from app.models.voucher import OrderVoucher, Voucher, VoucherType
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 
 CENT = Decimal("0.01")
+logger = logging.getLogger(__name__)
 
 
 def quantize_money(value: Decimal) -> Decimal:
-    return value.quantize(CENT)
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 async def get_voucher_by_code(db: AsyncSession, code: str) -> Voucher | None:
@@ -111,6 +113,17 @@ async def issue_voucher(
     return voucher
 
 
+def _parse_voucher_amount(amount_raw: object) -> Decimal:
+    """Parse a Plotholders voucher amount or raise 422."""
+    try:
+        return quantize_money(Decimal(str(amount_raw)))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Voucher amount could not be determined",
+        ) from exc
+
+
 async def apply_vouchers_to_order(
     db: AsyncSession,
     *,
@@ -134,16 +147,17 @@ async def apply_vouchers_to_order(
         )
 
     client = plotholders or PlotholdersClient()
-    applied: list[OrderVoucher] = []
+    collected: list[tuple[Voucher, Decimal, str]] = []
     total_voucher_amount = Decimal("0.00")
-    outlet_name = ""  # outlet name for ph redeem; order has outlet_id, name may be enriched elsewhere
+    remaining_total = order.total
+    outlet_name = ""
 
+    # Phase 1: validate and collect (no external redeem yet).
     for raw_code in codes:
         normalized = raw_code.strip()
         if not normalized:
             continue
 
-        # Validate via Plotholders (POS/apply path now sources from Plotholders)
         try:
             external = await client.get_voucher(normalized)
         except PlotholdersAPIError as exc:
@@ -159,13 +173,11 @@ async def apply_vouchers_to_order(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Voucher {normalized} has already been redeemed")
 
         amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
-        try:
-            amount = quantize_money(Decimal(str(amount_raw)))
-        except Exception:
-            amount = quantize_money(Decimal("0.00"))
-        total_voucher_amount += amount
+        amount = _parse_voucher_amount(amount_raw)
+        amount = min(amount, remaining_total)
+        if amount <= 0:
+            continue
 
-        # Provision minimal local voucher row if missing (required for OrderVoucher FK and history)
         voucher = await get_voucher_by_code(db, normalized)
         if voucher is None:
             vtype = VoucherType.acre_group
@@ -173,17 +185,25 @@ async def apply_vouchers_to_order(
                 vtype = VoucherType.cdc
             voucher = Voucher(code=normalized, type=vtype, amount=amount)
             db.add(voucher)
-            await db.flush()  # get id without full commit yet
+            await db.flush()
 
-        # Re-check local state
         if voucher.redeemed_at is not None or voucher.order_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Voucher {voucher.code} has already been redeemed",
             )
 
-        # Mark local voucher as redeemed (for local records)
-        now = datetime.now(UTC)
+        collected.append((voucher, amount, normalized))
+        total_voucher_amount += amount
+        remaining_total = quantize_money(remaining_total - amount)
+
+    if not collected:
+        return []
+
+    # Phase 2: persist locally and commit before any external side effects.
+    now = datetime.now(UTC)
+    applied: list[OrderVoucher] = []
+    for voucher, amount, _normalized in collected:
         voucher.redeemed_at = now
         voucher.status = "redeemed"
         voucher.redeemed_by_staff_id = staff.id if staff else None
@@ -199,19 +219,6 @@ async def apply_vouchers_to_order(
         db.add(link)
         applied.append(link)
 
-        # Also redeem on Plotholders side for source-of-truth (provide staff/outlet if available)
-        try:
-            staff_id = str(staff.id) if staff else ""
-            # outlet name not directly on order model here; pass outlet_id or empty — upstream may accept
-            await client.redeem_voucher_by_code(normalized, staff_id, outlet_name or str(order.outlet_id or ""))
-        except PlotholdersAPIError:
-            # Non-fatal for apply path (already validated); order discount recorded locally
-            pass
-
-    if not applied:
-        return applied
-
-    # Update order totals: total = subtotal - loyalty_discount - voucher amounts (floored at 0)
     loyalty_discount = order.loyalty_discount or Decimal("0.00")
     new_total = quantize_money(order.subtotal - loyalty_discount - total_voucher_amount)
     if new_total < 0:
@@ -220,7 +227,21 @@ async def apply_vouchers_to_order(
 
     await db.commit()
 
-    # Refresh links with voucher info if needed by caller
+    # Phase 3: external redeem only after local commit succeeds.
+    staff_id = str(staff.id) if staff else ""
+    for voucher, _amount, normalized in collected:
+        try:
+            await client.redeem_voucher_by_code(
+                normalized, staff_id, outlet_name or str(order.outlet_id or "")
+            )
+        except PlotholdersAPIError as exc:
+            logger.error(
+                "Plotholders redeem failed after local commit: voucher_id=%s, code=%s, error=%s",
+                voucher.id,
+                voucher.code,
+                exc,
+            )
+
     for link in applied:
         await db.refresh(link)
 

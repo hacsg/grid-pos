@@ -312,14 +312,22 @@ export default function PaymentModal({
     };
   }, [open]);
 
-  const totalDue = roundMoney(totals.total);
+  const payableTotal = totals.total;
+  const totalDue = roundMoney(payableTotal);
   const voucherAmount = roundMoney(totals.voucherDiscount);
   const cashTendered = roundMoney(money(cashAmount));
-  // CDC vouchers are a cashier-entered tender; cap at the payable total.
-  const splitCdcAmount = mode === 'split' ? roundMoney(Math.min(Math.max(money(cdcAmount), 0), totalDue)) : 0;
-  const splitCashCap = roundMoney(Math.max(0, totalDue - splitCdcAmount));
-  const splitCashAmount = mode === 'split' ? roundMoney(Math.min(Math.max(cashTendered, 0), splitCashCap)) : 0;
-  const splitTerminalAmount = mode === 'split' ? roundMoney(Math.max(0, totalDue - splitCashAmount - splitCdcAmount)) : 0;
+  // Raw split components for the server; display values are rounded separately.
+  const splitCdcAmountRaw =
+    mode === 'split' ? Math.min(Math.max(money(cdcAmount), 0), payableTotal) : 0;
+  const splitCashAmountRaw =
+    mode === 'split'
+      ? Math.min(Math.max(money(cashAmount), 0), Math.max(0, payableTotal - splitCdcAmountRaw))
+      : 0;
+  const splitTerminalAmountRaw =
+    mode === 'split' ? Math.max(0, payableTotal - splitCashAmountRaw - splitCdcAmountRaw) : 0;
+  const splitCdcAmount = mode === 'split' ? roundMoney(splitCdcAmountRaw) : 0;
+  const splitCashAmount = mode === 'split' ? roundMoney(splitCashAmountRaw) : 0;
+  const splitTerminalAmount = mode === 'split' ? roundMoney(splitTerminalAmountRaw) : 0;
   const splitCashInputValid = cashTendered >= 0 && money(cdcAmount) >= 0;
   const terminalMethod: TerminalPaymentMethod =
     mode === 'paynow' ? 'paynow' : mode === 'split' ? splitSecondMethod : 'card';
@@ -559,7 +567,6 @@ export default function PaymentModal({
         payment_reference: cardSession.paymentReference,
         cash_tendered: cardSession.cashTendered,
         cash_amount: cardSession.cashAmount,
-        card_amount: cardSession.cardAmount,
         voucher_amount: cardSession.voucherAmount,
         cdc_amount: cardSession.cdcAmount,
       };
@@ -832,11 +839,10 @@ export default function PaymentModal({
                   status: 'paid',
                   payment_method: 'split',
                   payment_reference: paymentReference,
-                  cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
-                  cash_amount: splitCashAmount,
-                  card_amount: splitTerminalAmount,
+                  cash_tendered: splitCashAmountRaw > 0 ? splitCashAmountRaw : undefined,
+                  cash_amount: splitCashAmountRaw,
                   voucher_amount: voucherAmount,
-                  cdc_amount: splitCdcAmount,
+                  cdc_amount: splitCdcAmountRaw,
                   paynow_confirmed_at: confirmedAt,
                 },
                 { idempotencyKey: markPaidIdempotencyKey }
@@ -867,12 +873,14 @@ export default function PaymentModal({
       }
 
       if (requiresTerminal && (mode === 'card' || mode === 'paynow' || (mode === 'split' && splitTerminalAmount > 0))) {
-        const paymentAmount = mode === 'split' ? splitTerminalAmount : totalDue;
+        const paymentAmount = mode === 'split' ? splitTerminalAmountRaw : payableTotal;
         const kpayPaymentType = terminalMethod === 'paynow' ? 13 : 1;
         const nextAttempt = kpayAttemptNumber + 1;
         try {
           const intent = await startCardPayment(order.id, paymentAmount, kpayPaymentType, {
             idempotencyKey: `${order.id}-kpay-${nextAttempt}`,
+            cashAmount: mode === 'split' ? splitCashAmountRaw : undefined,
+            cdcAmount: mode === 'split' ? splitCdcAmountRaw : undefined,
           });
           setKpayAttemptNumber(nextAttempt);
           setTerminalConnected(true);
@@ -882,11 +890,11 @@ export default function PaymentModal({
             paymentReference,
             paymentMode: mode === 'split' ? 'split' : mode,
             terminalPaymentMethod: terminalMethod,
-            cashAmount: mode === 'split' ? splitCashAmount : 0,
+            cashAmount: mode === 'split' ? splitCashAmountRaw : 0,
             cardAmount: paymentAmount,
             voucherAmount: mode === 'split' ? voucherAmount : 0,
-            cdcAmount: mode === 'split' ? splitCdcAmount : 0,
-            cashTendered: mode === 'split' && splitCashAmount > 0 ? splitCashAmount : undefined,
+            cdcAmount: mode === 'split' ? splitCdcAmountRaw : 0,
+            cashTendered: mode === 'split' && splitCashAmountRaw > 0 ? splitCashAmountRaw : undefined,
             startedAt: Date.now(),
           });
           setStep('processing');
@@ -912,11 +920,10 @@ export default function PaymentModal({
                 status: 'paid',
                 payment_method: 'split',
                 payment_reference: paymentReference,
-                cash_tendered: splitCashAmount > 0 ? splitCashAmount : undefined,
-                cash_amount: splitCashAmount,
-                card_amount: 0,
+                cash_tendered: splitCashAmountRaw > 0 ? splitCashAmountRaw : undefined,
+                cash_amount: splitCashAmountRaw,
                 voucher_amount: voucherAmount,
-                cdc_amount: splitCdcAmount,
+                cdc_amount: splitCdcAmountRaw,
               },
               { idempotencyKey: markPaidIdempotencyKey }
             )

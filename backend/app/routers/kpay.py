@@ -26,6 +26,7 @@ from app.models.order import Order, OrderStatus
 from app.models.staff import Staff
 from app.routers.ws_daemon import get_daemon_connection
 from app.services import idempotency, payment_intents
+from app.services.orders import compute_split_card_leg, quantize_money
 from app.utils.auth import get_current_staff
 
 # Roles permitted to void/refund. The KPay manager password itself is held and
@@ -63,6 +64,16 @@ class KPayStartRequest(BaseModel):
     """Request body for POST /api/kpay/start"""
     order_id: str = Field(..., description="Order ID to link payment to")
     amount: float = Field(..., gt=0, description="Payment amount (e.g., 100.50)")
+    cash_amount: float | None = Field(
+        default=None,
+        ge=0,
+        description="Cash leg for split payments (server derives card residual)",
+    )
+    cdc_amount: float | None = Field(
+        default=None,
+        ge=0,
+        description="CDC voucher leg for split payments (server derives card residual)",
+    )
     # KPay paymentType: 1=card, 3=QR reverse scan, 13=PayNow, 14=Alipay,
     # 15=WeChat Pay, 16=Thai QR (all forward scan). Defaults to card.
     payment_type: int = Field(default=1, description="KPay paymentType enum")
@@ -238,14 +249,27 @@ async def start_payment(
                     detail="Must query previous intent before retrying",
                 )
 
-            server_total = order.total
-            if Decimal(str(request.amount)) != server_total:
+            if order.payment_method == "split":
+                server_amount = compute_split_card_leg(
+                    order,
+                    cash_amount=quantize_money(Decimal(str(request.cash_amount or 0))),
+                    cdc_amount=quantize_money(Decimal(str(request.cdc_amount or 0))),
+                )
+                if server_amount <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No card amount due for this split payment",
+                    )
+            else:
+                server_amount = order.total
+
+            if quantize_money(Decimal(str(request.amount))) != server_amount:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Payment amount does not match order total",
                 )
 
-            # Create the intent using the *server* total (never the client-supplied amount).
+            # Create the intent using the *server* amount (never trusting client floats).
             # The partial unique index is the race-safe
             # backstop: if a concurrent request created an active intent between
             # the check above and this insert, the commit raises IntegrityError.
@@ -254,7 +278,7 @@ async def start_payment(
                     session=session,
                     outlet_id=outlet_id,
                     order_id=request.order_id,
-                    amount=server_total,
+                    amount=server_amount,
                 )
             except IntegrityError:
                 await session.rollback()
