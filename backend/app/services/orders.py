@@ -315,6 +315,8 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
                 customer_id=payload.customer_id,
                 order_total=float(order.total),
                 outlet=outlet.name,
+                order_id=order.id,
+                amount=order.total,
             )
         except PlotholdersAPIError:
             logger.exception("Unable to record Plotholders purchase for order %s", order.id)

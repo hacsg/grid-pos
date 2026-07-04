@@ -29,7 +29,7 @@ def normalize_sg_phone(phone: str, country_code: str = "+65") -> str:
         raise ValueError("Invalid Singapore phone number: must be 8 digits starting with 8 or 9")
 
     cleaned = _strip_non_digits(phone)
-    cc_digits = _strip_non_digits(country_code) or "65"
+    cc_digits = _strip_non_digits(country_code or "") or "65"
 
     # If already has country code digits at front (with or without +), normalize
     if cleaned.startswith(cc_digits):

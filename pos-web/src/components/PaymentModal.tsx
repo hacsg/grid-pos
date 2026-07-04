@@ -22,7 +22,7 @@ import {
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { newIdempotencyKey } from '@/utils/idempotency';
-import { printReceipt as printReceiptUsb } from '@/utils/printer';
+import { isPrintingSupported, openCashDrawer, printReceipt as printReceiptUsb } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
@@ -534,6 +534,13 @@ export default function PaymentModal({
       paynowConfirmedAt: paymentDetails?.paynowConfirmedAt ?? paidOrder.paynow_confirmed_at ?? null,
     };
     setReceipt(snapshot);
+    if (snapshot.cashAmount > 0 || snapshot.changeDue > 0 || paidMode === 'cash') {
+      void openCashDrawer().then((ok) => {
+        if (!ok) {
+          toast.error('Cash drawer did not open');
+        }
+      });
+    }
     setStep('complete');
     setCardPayment(null);
     setSubmitting(false);
@@ -987,9 +994,20 @@ export default function PaymentModal({
     tapFeedback();
     const text = buildReceiptText(receipt, session);
     const printed = await printReceiptUsb(text);
-    if (!printed) {
+    if (printed) {
+      toast.success('Receipt sent to printer');
+    } else {
       toast.error('Receipt print failed — receipt preview is below');
     }
+  }
+
+  function handleOpenDrawer() {
+    tapFeedback();
+    void openCashDrawer().then((ok) => {
+      if (!ok) {
+        toast.error('Cash drawer did not open');
+      }
+    });
   }
 
   return (
@@ -1416,6 +1434,12 @@ export default function PaymentModal({
                   >
                     <Undo2 size={18} aria-hidden="true" />
                     {voidState === 'voiding' ? 'Voiding…' : 'Void payment'}
+                  </button>
+                )}
+                {isPrintingSupported() && (
+                  <button className="secondary-button" type="button" onClick={handleOpenDrawer}>
+                    <Banknote size={18} aria-hidden="true" />
+                    Open drawer
                   </button>
                 )}
                 <button className="secondary-button" type="button" onClick={printReceipt}>

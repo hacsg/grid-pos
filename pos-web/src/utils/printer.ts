@@ -6,11 +6,50 @@
 // nothing has been granted yet — then remember it for next time.
 
 const PRINTER_KEY = 'grid_pos_printer';
+const DRAWER_PIN_KEY = 'grid_pos_drawer_pin';
+
+const PRINTER_INTERFACE_CLASSES = [7, 0xff];
 
 export interface SavedPrinter {
   vendorId: number;
   productId: number;
   name: string;
+}
+
+export interface ConnectPrinterOptions {
+  /** When true, show every USB device in the picker (not just class 7 printers). */
+  allDevices?: boolean;
+}
+
+/** Replace non-ASCII characters so ESC/POS default codepage does not garble output. */
+export function sanitizeAscii(text: string): string {
+  return text.replace(/[^\x20-\x7E\n\r\t]/g, '?');
+}
+
+/** ESC @ init + sanitized text + feed + GS V 0 full cut. */
+export function buildPrintPayload(text: string): Uint8Array {
+  const sanitized = sanitizeAscii(text);
+  const init = new Uint8Array([0x1b, 0x40]);
+  const body = new TextEncoder().encode(`${sanitized}\n\n\n\n`);
+  const cut = new Uint8Array([0x1d, 0x56, 0x00]);
+  const payload = new Uint8Array(init.length + body.length + cut.length);
+  payload.set(init, 0);
+  payload.set(body, init.length);
+  payload.set(cut, init.length + body.length);
+  return payload;
+}
+
+/** ESC p <pin> 25 250 — pulse the RJ11 drawer port on the receipt printer. */
+export function buildDrawerPulsePayload(pin: 0 | 1 = 0): Uint8Array {
+  return new Uint8Array([0x1b, 0x70, pin, 0x19, 0xfa]);
+}
+
+export function drawerPinFromStorage(): 0 | 1 {
+  try {
+    return localStorage.getItem(DRAWER_PIN_KEY) === '1' ? 1 : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function usbApi(): any | null {
@@ -44,13 +83,54 @@ function rememberPrinter(device: any): SavedPrinter {
   return saved;
 }
 
+function interfaceScore(iface: any): number {
+  for (const alternate of iface.alternates) {
+    const hasOut = alternate.endpoints.some((endpoint: any) => endpoint.direction === 'out');
+    if (!hasOut) {
+      continue;
+    }
+    if (PRINTER_INTERFACE_CLASSES.includes(alternate.interfaceClass)) {
+      return 2;
+    }
+    return 1;
+  }
+  return 0;
+}
+
+function findPrintableInterface(device: any): {
+  iface: any;
+  alternate: any;
+  endpoint: any;
+} | null {
+  const ranked = [...device.configuration.interfaces]
+    .map((iface: any) => ({ iface, score: interfaceScore(iface) }))
+    .filter((entry: { score: number }) => entry.score > 0)
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+
+  for (const { iface } of ranked) {
+    const alternate = iface.alternates.find((alt: any) =>
+      alt.endpoints.some((endpoint: any) => endpoint.direction === 'out')
+    );
+    const endpoint = alternate?.endpoints.find((ep: any) => ep.direction === 'out');
+    if (iface && alternate && endpoint) {
+      return { iface, alternate, endpoint };
+    }
+  }
+  return null;
+}
+
+async function requestPrinterDevice(usb: any, options?: ConnectPrinterOptions): Promise<any> {
+  const filters = options?.allDevices ? [] : [{ classCode: 7 }];
+  return usb.requestDevice({ filters });
+}
+
 /** Prompt the user to pick a printer once, and remember it. */
-export async function connectPrinter(): Promise<SavedPrinter> {
+export async function connectPrinter(options?: ConnectPrinterOptions): Promise<SavedPrinter> {
   const usb = usbApi();
   if (!usb) {
     throw new Error('Receipt printing needs Chrome/Edge over HTTPS (WebUSB).');
   }
-  const device = await usb.requestDevice({ filters: [{ classCode: 7 }] });
+  const device = await requestPrinterDevice(usb, options);
   return rememberPrinter(device);
 }
 
@@ -73,25 +153,44 @@ async function resolveGrantedDevice(): Promise<any | null> {
   return devices[0];
 }
 
-async function sendToDevice(device: any, text: string): Promise<void> {
+async function sendBytes(device: any, payload: Uint8Array): Promise<void> {
   await device.open();
   if (!device.configuration) {
     await device.selectConfiguration(1);
   }
-  const iface = device.configuration.interfaces.find((i: any) =>
-    i.alternates.some((a: any) => a.endpoints.some((e: any) => e.direction === 'out'))
-  );
-  const alternate = iface?.alternates.find((a: any) => a.endpoints.some((e: any) => e.direction === 'out'));
-  const endpoint = alternate?.endpoints.find((e: any) => e.direction === 'out');
-  if (!iface || !endpoint) {
+  const printable = findPrintableInterface(device);
+  if (!printable) {
     await device.close();
     throw new Error('No printable USB interface');
   }
+  const { iface, endpoint } = printable;
   await device.claimInterface(iface.interfaceNumber);
-  const payload = new TextEncoder().encode(`${text}\n\n\x1dV\x00`);
   await device.transferOut(endpoint.endpointNumber, payload);
   await device.releaseInterface(iface.interfaceNumber);
   await device.close();
+}
+
+let printInFlight = false;
+
+async function sendPayloadToPrinter(
+  payload: Uint8Array,
+  options?: ConnectPrinterOptions
+): Promise<boolean> {
+  const usb = usbApi();
+  if (!usb) {
+    return false;
+  }
+  try {
+    let device = await resolveGrantedDevice();
+    if (!device) {
+      device = await requestPrinterDevice(usb, options);
+      rememberPrinter(device);
+    }
+    await sendBytes(device, payload);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -100,19 +199,18 @@ async function sendToDevice(device: any, text: string): Promise<void> {
  * Returns true on success.
  */
 export async function printReceipt(text: string): Promise<boolean> {
-  const usb = usbApi();
-  if (!usb) {
+  if (printInFlight) {
     return false;
   }
+  printInFlight = true;
   try {
-    let device = await resolveGrantedDevice();
-    if (!device) {
-      device = await usb.requestDevice({ filters: [{ classCode: 7 }] });
-      rememberPrinter(device);
-    }
-    await sendToDevice(device, text);
-    return true;
-  } catch {
-    return false;
+    return await sendPayloadToPrinter(buildPrintPayload(text));
+  } finally {
+    printInFlight = false;
   }
+}
+
+/** Pulse the cash drawer connected to the receipt printer. Returns true on success. */
+export async function openCashDrawer(pin: 0 | 1 = drawerPinFromStorage()): Promise<boolean> {
+  return sendPayloadToPrinter(buildDrawerPulsePayload(pin));
 }

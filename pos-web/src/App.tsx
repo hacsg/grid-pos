@@ -696,13 +696,16 @@ function StaffShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
 
-  async function handleConnectPrinter() {
+  async function handleConnectPrinter(allDevices = false) {
     tapFeedback();
     try {
-      const saved = await connectPrinter();
+      const saved = await connectPrinter({ allDevices });
       setPrinterName(saved.name);
       toast.success(`Printer set: ${saved.name}`);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Could not set printer');
     }
   }
@@ -807,8 +810,15 @@ function StaffShell() {
                         Forget
                       </button>
                     )}
-                    <button className="secondary-button" type="button" onClick={handleConnectPrinter}>
+                    <button className="secondary-button" type="button" onClick={() => handleConnectPrinter()}>
                       {printerName ? 'Change' : 'Connect'}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => handleConnectPrinter(true)}
+                    >
+                      Show all USB devices
                     </button>
                   </div>
                 </div>
