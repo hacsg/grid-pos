@@ -43,6 +43,7 @@ func Run(ctx context.Context, cfg config.Config, h *Handler, log *logx.Logger) e
 			continue
 		}
 		backoff = time.Second
+		log.Info("ws connected", "url", wsURL)
 		_ = conn.Send(map[string]any{"type": "hello", "outlet_id": cfg.OutletID, "terminal_ip": cfg.TerminalIP, "daemon_version": "1.0.0"})
 		errc := make(chan error, 2)
 		cctx, cancel := context.WithCancel(ctx)
@@ -92,15 +93,21 @@ func dialWS(ctx context.Context, rawurl string, token string) (*wsConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Bound the whole dial (TCP + TLS + upgrade response). Without this a
+	// stalled handshake hangs Run() forever with nothing in the log — the
+	// retry/backoff loop never gets a chance.
+	dialCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	host := u.Host
 	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", addrFor(u))
+	conn, err := dialer.DialContext(dialCtx, "tcp", addrFor(u))
 	if err != nil {
 		return nil, err
 	}
+	_ = conn.SetDeadline(time.Now().Add(20 * time.Second))
 	if u.Scheme == "wss" {
 		tc := tls.Client(conn, &tls.Config{ServerName: strings.Split(host, ":")[0], MinVersion: tls.VersionTLS12})
-		if err := tc.HandshakeContext(ctx); err != nil {
+		if err := tc.HandshakeContext(dialCtx); err != nil {
 			_ = conn.Close()
 			return nil, err
 		}
@@ -130,6 +137,7 @@ func dialWS(ctx context.Context, rawurl string, token string) (*wsConn, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("bad websocket handshake: %s", resp.Status)
 	}
+	_ = conn.SetDeadline(time.Time{})
 	return &wsConn{Conn: conn, br: br}, nil
 }
 
