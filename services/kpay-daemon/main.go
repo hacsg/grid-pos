@@ -32,6 +32,13 @@ func main() {
 		ManagerPassword: cfg.ManagerPassword,
 	}, state, state)
 	handler := daemon.NewHandler(client, log)
+	if printSrv := daemon.StartPrintServer(cfg, log); printSrv != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = printSrv.Shutdown(shutdownCtx)
+		}()
+	}
 
 	if cfg.LocalTest {
 		srv := handler.StartLocal(":9000")

@@ -177,43 +177,71 @@ function cardFailureMessage(status: PaymentIntent['status'], errorMessage?: stri
   return errorMessage || 'Payment failed.';
 }
 
+// 58mm thermal paper prints 32 columns in the default ESC/POS font.
+const RECEIPT_WIDTH = 32;
+
+function receiptCenter(text: string): string {
+  const pad = Math.max(0, Math.floor((RECEIPT_WIDTH - text.length) / 2));
+  return ' '.repeat(pad) + text;
+}
+
+/** Left text with the amount right-aligned; long lines push the amount to its own row. */
+function receiptRow(left: string, right = ''): string {
+  if (!right) {
+    return left;
+  }
+  const space = RECEIPT_WIDTH - right.length - 1;
+  if (left.length > space) {
+    return `${left}\n${right.padStart(RECEIPT_WIDTH)}`;
+  }
+  return `${left.padEnd(space)} ${right}`;
+}
+
+const RECEIPT_DIVIDER = '-'.repeat(RECEIPT_WIDTH);
+
 function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): string {
   const rows = receipt.items.flatMap((item) => {
-    const modifierRows = item.modifiers.map(
-      (modifier) => `  ${modifier.modifier_name} ${modifier.price_adjustment > 0 ? formatCurrency(modifier.price_adjustment) : ''}`
+    const modifierRows = item.modifiers.map((modifier) =>
+      receiptRow(
+        `  ${modifier.modifier_name}`,
+        modifier.price_adjustment > 0 ? formatCurrency(modifier.price_adjustment) : ''
+      )
     );
     return [
-      `${item.quantity} x ${item.product.name} ${formatCurrency((money(item.product.price) + item.modifiers.reduce((sum, modifier) => sum + modifier.price_adjustment, 0)) * item.quantity)}`,
+      receiptRow(
+        `${item.quantity} x ${item.product.name}`,
+        formatCurrency((money(item.product.price) + item.modifiers.reduce((sum, modifier) => sum + modifier.price_adjustment, 0)) * item.quantity)
+      ),
       ...modifierRows,
     ];
   });
 
   const voucherLines: string[] = [];
   if (receipt.vouchers && receipt.vouchers.length > 0) {
-    voucherLines.push(`Vouchers redeemed: ${formatCurrency(receipt.totals.voucherDiscount || receipt.vouchers.reduce((s, v) => s + v.amount, 0))}`);
+    voucherLines.push(receiptRow('Vouchers redeemed', formatCurrency(receipt.totals.voucherDiscount || receipt.vouchers.reduce((s, v) => s + v.amount, 0))));
     receipt.vouchers.forEach((v) => {
-      voucherLines.push(`  ${v.type === 'cdc' ? 'CDC' : 'Acre Group'} ${v.code} -${formatCurrency(v.amount)}`);
+      voucherLines.push(receiptRow(`  ${v.type === 'cdc' ? 'CDC' : 'Acre Group'} ${v.code}`, `-${formatCurrency(v.amount)}`));
     });
   }
 
   return [
-    'Grid POS',
-    session.outlet.name,
-    `Order ${receipt.order.order_number}`,
-    new Date().toLocaleString('en-SG'),
-    '',
+    receiptCenter('Grid POS'),
+    receiptCenter(session.outlet.name),
+    receiptCenter(`Order ${receipt.order.order_number}`),
+    receiptCenter(new Date().toLocaleString('en-SG')),
+    RECEIPT_DIVIDER,
     ...rows,
-    '',
-    `Subtotal ${formatCurrency(receipt.totals.subtotal)}`,
-    `Discount -${formatCurrency(receipt.totals.discount + receipt.totals.loyaltyDiscount)}`,
-    ...(receipt.totals.voucherDiscount > 0 ? [`Vouchers -${formatCurrency(receipt.totals.voucherDiscount)}`] : []),
-    `Total ${formatCurrency(receipt.totals.total)}`,
+    RECEIPT_DIVIDER,
+    receiptRow('Subtotal', formatCurrency(receipt.totals.subtotal)),
+    receiptRow('Discount', `-${formatCurrency(receipt.totals.discount + receipt.totals.loyaltyDiscount)}`),
+    ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
+    receiptRow('Total', formatCurrency(receipt.totals.total)),
     ...receiptPaymentLines(receipt),
-    receipt.changeDue > 0 ? `Change ${formatCurrency(receipt.changeDue)}` : '',
+    receipt.changeDue > 0 ? receiptRow('Change', formatCurrency(receipt.changeDue)) : '',
     '',
     ...voucherLines,
     '',
-    'Thank you',
+    receiptCenter('Thank you'),
   ]
     .filter(Boolean)
     .join('\n');

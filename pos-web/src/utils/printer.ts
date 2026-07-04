@@ -56,8 +56,37 @@ function usbApi(): any | null {
   return (navigator as Navigator & { usb?: any }).usb ?? null;
 }
 
+// Local print service exposed by the KPay daemon on the POS PC — the fallback
+// for built-in printers WebUSB cannot see (internal serial wiring). It prints
+// through the Windows driver, so no browser device grant is needed.
+const PRINT_SERVICE_URL = 'http://127.0.0.1:9123';
+
+async function localServicePost(path: string, body?: unknown): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(`${PRINT_SERVICE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    if (!response.ok) {
+      return false;
+    }
+    const data = await response.json().catch(() => null);
+    return Boolean(data?.ok);
+  } catch {
+    return false;
+  }
+}
+
 export function isPrintingSupported(): boolean {
-  return Boolean(usbApi());
+  // WebUSB may be absent (or unable to see the printer) and printing can still
+  // work through the local print service, so always offer the print controls;
+  // failures surface as toasts.
+  return true;
 }
 
 export function getSavedPrinter(): SavedPrinter | null {
@@ -172,19 +201,14 @@ async function sendBytes(device: any, payload: Uint8Array): Promise<void> {
 
 let printInFlight = false;
 
-async function sendPayloadToPrinter(
-  payload: Uint8Array,
-  options?: ConnectPrinterOptions
-): Promise<boolean> {
-  const usb = usbApi();
-  if (!usb) {
-    return false;
-  }
+// Send via a previously-granted WebUSB device only — no picker prompt here.
+// Prompting stays in the explicit connect flow; print/drawer calls fall back
+// to the local print service instead of surprising the cashier with a picker.
+async function sendPayloadOverUsb(payload: Uint8Array): Promise<boolean> {
   try {
-    let device = await resolveGrantedDevice();
+    const device = await resolveGrantedDevice();
     if (!device) {
-      device = await requestPrinterDevice(usb, options);
-      rememberPrinter(device);
+      return false;
     }
     await sendBytes(device, payload);
     return true;
@@ -194,9 +218,8 @@ async function sendPayloadToPrinter(
 }
 
 /**
- * Print receipt text. Uses the saved/previously-granted printer without
- * prompting; only prompts (once) if no device has been granted yet.
- * Returns true on success.
+ * Print receipt text: granted WebUSB printer first, then the daemon's local
+ * print service (Windows driver). Returns true on success.
  */
 export async function printReceipt(text: string): Promise<boolean> {
   if (printInFlight) {
@@ -204,7 +227,10 @@ export async function printReceipt(text: string): Promise<boolean> {
   }
   printInFlight = true;
   try {
-    return await sendPayloadToPrinter(buildPrintPayload(text));
+    if (await sendPayloadOverUsb(buildPrintPayload(text))) {
+      return true;
+    }
+    return await localServicePost('/print', { text: sanitizeAscii(text) });
   } finally {
     printInFlight = false;
   }
@@ -212,5 +238,8 @@ export async function printReceipt(text: string): Promise<boolean> {
 
 /** Pulse the cash drawer connected to the receipt printer. Returns true on success. */
 export async function openCashDrawer(pin: 0 | 1 = drawerPinFromStorage()): Promise<boolean> {
-  return sendPayloadToPrinter(buildDrawerPulsePayload(pin));
+  if (await sendPayloadOverUsb(buildDrawerPulsePayload(pin))) {
+    return true;
+  }
+  return localServicePost('/drawer');
 }

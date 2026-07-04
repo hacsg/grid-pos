@@ -9,11 +9,25 @@ import (
 	"strings"
 )
 
-type Config struct{ OutletID, RailwayWSURL, DaemonToken, TerminalIP, AppID, AppSecret, ManagerPassword string; LocalTest bool }
+type Config struct{ OutletID, RailwayWSURL, DaemonToken, TerminalIP, AppID, AppSecret, ManagerPassword string; LocalTest bool; PrinterName, PrinterHTTPAddr string; DrawerPin byte }
 
 func Load() Config {
 	loadDotEnv()
-	return Config{os.Getenv("OUTLET_ID"), os.Getenv("RAILWAY_WS_URL"), os.Getenv("DAEMON_AUTH_TOKEN"), os.Getenv("KPAT_TERMINAL_IP"), os.Getenv("KPAT_APP_ID"), os.Getenv("KPAT_APP_SECRET"), os.Getenv("KPAT_MANAGER_PASSWORD"), os.Getenv("KPAY_LOCAL_TEST") == "1"}
+	pin := byte(0)
+	if os.Getenv("PRINTER_DRAWER_PIN") == "1" {
+		pin = 1
+	}
+	return Config{os.Getenv("OUTLET_ID"), os.Getenv("RAILWAY_WS_URL"), os.Getenv("DAEMON_AUTH_TOKEN"), os.Getenv("KPAT_TERMINAL_IP"), os.Getenv("KPAT_APP_ID"), os.Getenv("KPAT_APP_SECRET"), os.Getenv("KPAT_MANAGER_PASSWORD"), os.Getenv("KPAY_LOCAL_TEST") == "1", os.Getenv("PRINTER_NAME"), printerHTTPAddr(), pin}
+}
+
+// printerHTTPAddr returns where the local receipt-print HTTP service listens.
+// Empty PRINTER_HTTP_ADDR means the default; "off" disables the service.
+func printerHTTPAddr() string {
+	addr := strings.TrimSpace(os.Getenv("PRINTER_HTTP_ADDR"))
+	if addr == "" {
+		return "127.0.0.1:9123"
+	}
+	return addr
 }
 
 // loadDotEnv reads a .env file next to the executable (falling back to the
