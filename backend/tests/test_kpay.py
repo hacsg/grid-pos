@@ -418,3 +418,21 @@ class TestDaemonReconciliationEndpoints:
             headers={"X-Outlet-Id": str(outlet.id), "X-Daemon-Token": "wrong"},
         )
         assert resp.status_code == 401
+
+
+class TestDaemonRegistryKeying:
+    """The registry is keyed by string; UUID callers must still hit it.
+
+    Regression: start_sale_on_terminal passed PaymentIntent.outlet_id (a UUID)
+    to send_to_daemon, which missed the str-keyed dict and raised "Daemon not
+    connected" 44ms after the router's own str-keyed check had passed.
+    """
+
+    def test_get_daemon_connection_accepts_uuid(self, outlet) -> None:
+        sentinel = object()
+        ws_daemon._active_connections[str(outlet.id)] = sentinel
+        try:
+            assert ws_daemon.get_daemon_connection(outlet.id) is sentinel
+            assert ws_daemon.get_daemon_connection(str(outlet.id)) is sentinel
+        finally:
+            ws_daemon._active_connections.pop(str(outlet.id), None)

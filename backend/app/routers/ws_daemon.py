@@ -40,9 +40,12 @@ _TERMINAL_EVENT_TYPES = frozenset(
 )
 
 
-def get_daemon_connection(outlet_id: str) -> Optional[WebSocket]:
+def get_daemon_connection(outlet_id: str | uuid.UUID) -> Optional[WebSocket]:
     """Get active daemon WebSocket for an outlet, or None if not connected."""
-    return _active_connections.get(outlet_id)
+    # The registry is keyed by the outlet-id string from the daemon's connect
+    # URL; callers may hold a UUID (e.g. PaymentIntent.outlet_id), which would
+    # silently miss the dict lookup.
+    return _active_connections.get(str(outlet_id))
 
 
 async def send_to_daemon(outlet_id: str, command: str, params: dict, timeout: float = 30.0) -> dict:
@@ -64,6 +67,9 @@ async def send_to_daemon(outlet_id: str, command: str, params: dict, timeout: fl
     Raises:
         RuntimeError: If daemon not connected or timeout
     """
+    # Normalize so the _pending_responses key matches what the read loop uses
+    # (it resolves futures with the connection's string outlet id).
+    outlet_id = str(outlet_id)
     ws = get_daemon_connection(outlet_id)
     if not ws:
         raise RuntimeError(f"Daemon not connected for outlet {outlet_id}")
