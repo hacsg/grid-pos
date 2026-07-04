@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.order import Order, OrderStatus
 from app.models.staff import Staff

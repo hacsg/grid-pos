@@ -387,3 +387,34 @@ async def test_kpay_start_allowed_after_query(
         assert "id" in start_resp.json()
     finally:
         ws_daemon._active_connections.pop(str(outlet.id), None)
+
+
+class TestDaemonReconciliationEndpoints:
+    """Regression: these endpoints are called by the Go daemon with X-Daemon-Token.
+
+    They previously crashed with NameError because `settings` was not imported
+    in app/routers/kpay.py — nothing else exercised _ensure_daemon_token.
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_candidates_with_valid_token(
+        self, client: AsyncClient, outlet, kpay_test_db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "kpay_daemon_token", "test-daemon-token")
+        resp = await client.get(
+            "/api/kpay/reconciliation-candidates",
+            headers={"X-Outlet-Id": str(outlet.id), "X-Daemon-Token": "test-daemon-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_list_candidates_rejects_bad_token(
+        self, client: AsyncClient, outlet, kpay_test_db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "kpay_daemon_token", "test-daemon-token")
+        resp = await client.get(
+            "/api/kpay/reconciliation-candidates",
+            headers={"X-Outlet-Id": str(outlet.id), "X-Daemon-Token": "wrong"},
+        )
+        assert resp.status_code == 401
