@@ -36,11 +36,14 @@ func printerHTTPAddr() string {
 // vars still overrides the file. No external dependency — keeps the documented
 // "drop a .env next to kpay-daemon.exe" workflow working.
 func loadDotEnv() {
-	paths := make([]string, 0, 2)
+	// "env.txt" is accepted alongside ".env" because Windows Explorer with
+	// hidden extensions makes creating a dotfile genuinely hard on POS PCs.
+	paths := make([]string, 0, 4)
 	if exe, err := os.Executable(); err == nil {
-		paths = append(paths, filepath.Join(filepath.Dir(exe), ".env"))
+		dir := filepath.Dir(exe)
+		paths = append(paths, filepath.Join(dir, ".env"), filepath.Join(dir, "env.txt"))
 	}
-	paths = append(paths, ".env")
+	paths = append(paths, ".env", "env.txt")
 	for _, p := range paths {
 		if applyDotEnv(p) {
 			return
