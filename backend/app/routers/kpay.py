@@ -478,14 +478,14 @@ async def get_payment_status(
         if not intent:
             raise HTTPException(status_code=404, detail=f"Payment intent {id} not found")
         
-        if intent.outlet_id != outlet_id:
+        if str(intent.outlet_id) != outlet_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Payment intent {id} not found",
             )
-        
+
         return KPayStatusResponse(
-            id=intent.id,
+            id=str(intent.id),
             status=intent.status,
             out_trade_no=intent.out_trade_no,
             kpay_response=intent.kpay_response,

@@ -436,3 +436,45 @@ class TestDaemonRegistryKeying:
             assert ws_daemon.get_daemon_connection(str(outlet.id)) is sentinel
         finally:
             ws_daemon._active_connections.pop(str(outlet.id), None)
+
+
+@pytest.mark.asyncio
+async def test_kpay_status_poll_finds_intent(
+    client: AsyncClient,
+    db_session,
+    outlet,
+    cashier_staff,
+    product,
+    cashier_token,
+    kpay_test_db,
+) -> None:
+    """GET /kpay/status/{id} returns the intent instead of 404.
+
+    Regression: the outlet ownership check compared intent.outlet_id (UUID)
+    to the X-Outlet-Id header (str), so every status poll 404'd and the POS
+    showed 'payment intent not found' during live sales.
+    """
+    order_payload = OrderCreate(
+        outlet_id=outlet.id,
+        staff_id=cashier_staff.id,
+        items=[OrderItemCreate(product_id=product.id, quantity=1)],
+    )
+    order = await create_order_service(db_session, order_payload)
+    intent = await pi.create_payment_intent(
+        session=db_session,
+        outlet_id=outlet.id,
+        order_id=order.id,
+        amount=order.total,
+    )
+
+    resp = await client.get(
+        f"/api/kpay/status/{intent.id}",
+        headers={
+            "Authorization": f"Bearer {cashier_token}",
+            "X-Outlet-Id": str(outlet.id),
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == str(intent.id)
+    assert body["status"] == "pending"
