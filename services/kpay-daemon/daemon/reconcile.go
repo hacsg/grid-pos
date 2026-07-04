@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
+	"kpay-daemon/logx"
 	"net/http"
 	"strings"
 	"time"
@@ -31,7 +31,7 @@ type reconcileRequest struct {
 	Reason        string `json:"reason"`
 }
 
-func RunReconciliationLoop(ctx context.Context, cfg config.Config, client *kpay.Client, log *slog.Logger) {
+func RunReconciliationLoop(ctx context.Context, cfg config.Config, client *kpay.Client, log *logx.Logger) {
 	if cfg.LocalTest {
 		return
 	}
@@ -55,7 +55,7 @@ func RunReconciliationLoop(ctx context.Context, cfg config.Config, client *kpay.
 	}
 }
 
-func reconcileStaleIntents(ctx context.Context, cfg config.Config, client *kpay.Client, apiBase string, log *slog.Logger) error {
+func reconcileStaleIntents(ctx context.Context, cfg config.Config, client *kpay.Client, apiBase string, log *logx.Logger) error {
 	candidates, err := fetchReconciliationCandidates(ctx, apiBase, cfg)
 	if err != nil {
 		return err
