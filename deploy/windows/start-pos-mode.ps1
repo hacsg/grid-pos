@@ -37,10 +37,15 @@ $SwapMonitors = $false
 # till doesn't boot into Chrome's "no internet" page before the network is up.
 # Set to 0 to skip the wait.
 $NetworkWaitSeconds = 60
+
+# Folder containing kpay-daemon.exe and its env.txt. Leave $null to use this
+# script's own folder (recommended: keep the scripts next to the daemon).
+$DaemonDir = $null
 # ============================================
 
 $ProfileRoot = Join-Path $env:LOCALAPPDATA 'GridPos'
 $LogFile = Join-Path $ProfileRoot 'pos-mode.log'
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Write-Log {
     param([string]$Message)
@@ -260,6 +265,35 @@ function Move-NewWindowToBounds {
     Write-Log ("Moved display window to {0},{1} {2}x{3}" -f $X, $Y, $W, $H)
 }
 
+# Kill any previous Chrome instances so the kiosk windows always start from a
+# clean, single Chrome instance (a stale instance would swallow the forwarded
+# display window into old geometry, or hold the profile singleton).
+function Stop-PreviousInstances {
+    foreach ($name in @('chrome', 'kpay-daemon')) {
+        try { Stop-Process -Name $name -Force -ErrorAction SilentlyContinue } catch { }
+    }
+    # Let Chrome release the profile lock before relaunching.
+    Start-Sleep -Seconds 2
+}
+
+# Start the KPay daemon (terminal bridge + local receipt-print service) hidden,
+# with its output captured next to the exe. No elevation needed - it runs as
+# the logged-in user, same as when double-clicked.
+function Start-Daemon {
+    param([string]$Dir)
+    $exe = Join-Path $Dir 'kpay-daemon.exe'
+    if (-not (Test-Path $exe)) {
+        Write-Log "Daemon not found at $exe - skipping (card payments/printing will be offline)."
+        return
+    }
+    $out = Join-Path $Dir 'daemon.log'
+    $err = Join-Path $Dir 'daemon.err.log'
+    try { if (Test-Path $out) { Copy-Item $out "$out.prev" -Force -ErrorAction SilentlyContinue } } catch { }
+    Start-Process -FilePath $exe -WorkingDirectory $Dir -WindowStyle Hidden `
+        -RedirectStandardOutput $out -RedirectStandardError $err
+    Write-Log "Daemon started: $exe (log: $out)"
+}
+
 # ===================== MAIN =====================
 try {
     # Make cmdlet errors terminating so the catch below logs and surfaces them,
@@ -268,6 +302,11 @@ try {
 
     New-Item -ItemType Directory -Force -Path $ProfileRoot | Out-Null
     Write-Log '--- POS mode starting ---'
+
+    Write-Log 'Closing previous Chrome/daemon instances...'
+    Stop-PreviousInstances
+    $daemonFolder = if ($DaemonDir) { $DaemonDir } else { $ScriptDir }
+    Start-Daemon -Dir $daemonFolder
 
     if ($PosUrl -like '*CHANGE-ME*') {
         Show-Error 'POS URL is not configured. Edit $PosUrl in start-pos-mode.ps1.'
