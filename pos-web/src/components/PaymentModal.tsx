@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banknote, CheckCircle2, CreditCard, Loader2, Printer, QrCode, Receipt, Split, Undo2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -303,6 +303,12 @@ export default function PaymentModal({
   const [error, setError] = useState('');
   const [terminalConnected, setTerminalConnected] = useState<boolean | null>(null);
   const [cardPayment, setCardPayment] = useState<CardPaymentSession | null>(null);
+  // Lets the cashier abort a terminal payment (during the blocking /start call
+  // or while polling) instead of being trapped on the processing screen. The
+  // backend retry-gate + daemon reconciliation loop make an abort safe: the
+  // intent self-heals to its true state and blocks a double-charge on retry.
+  const cardAbortRef = useRef<AbortController | null>(null);
+  const [canAbortTerminal, setCanAbortTerminal] = useState(false);
   const [payNowQrUrl, setPayNowQrUrl] = useState<string | null>(null);
   const [payNowQrLoading, setPayNowQrLoading] = useState(false);
   const [payNowQrError, setPayNowQrError] = useState('');
@@ -626,6 +632,8 @@ export default function PaymentModal({
     setStep('complete');
     setCardPayment(null);
     setSubmitting(false);
+    setCanAbortTerminal(false);
+    cardAbortRef.current = null;
     setPendingOrder(null);
     setCheckoutIdempotencyKey(newIdempotencyKey());
     setMarkPaidIdempotencyKey(newIdempotencyKey());
@@ -702,6 +710,17 @@ export default function PaymentModal({
     }
   }
 
+  function abortTerminalPayment() {
+    tapFeedback();
+    cardAbortRef.current?.abort();
+    cardAbortRef.current = null;
+    setCanAbortTerminal(false);
+    setCardPayment(null);
+    setStep('payment');
+    setSubmitting(false);
+    setError('Terminal payment cancelled. If the customer may have been charged, query the terminal before retrying.');
+  }
+
   async function reconcileTimedOutPayment(
     cardSession: CardPaymentSession,
     voucherCodes: string[] | null,
@@ -760,6 +779,8 @@ export default function PaymentModal({
       setCardPayment(null);
       setStep('payment');
       setSubmitting(false);
+      setCanAbortTerminal(false);
+      cardAbortRef.current = null;
     };
 
     const poll = async () => {
@@ -965,11 +986,15 @@ export default function PaymentModal({
         const paymentAmount = mode === 'split' ? splitTerminalAmountRaw : payableTotal;
         const kpayPaymentType = terminalMethod === 'paynow' ? 13 : 1;
         const nextAttempt = kpayAttemptNumber + 1;
+        const controller = new AbortController();
+        cardAbortRef.current = controller;
+        setCanAbortTerminal(true);
         try {
           const intent = await startCardPayment(order.id, paymentAmount, kpayPaymentType, {
             idempotencyKey: `${order.id}-kpay-${nextAttempt}`,
             cashAmount: mode === 'split' ? splitCashAmountRaw : undefined,
             cdcAmount: mode === 'split' ? splitCdcAmountRaw : undefined,
+            signal: controller.signal,
           });
           setKpayAttemptNumber(nextAttempt);
           setTerminalConnected(true);
@@ -988,6 +1013,11 @@ export default function PaymentModal({
           });
           setStep('processing');
         } catch (err: unknown) {
+          // Cashier hit Cancel mid-request — abortTerminalPayment already
+          // reset the UI; don't clobber it with an error banner.
+          if (controller.signal.aborted) {
+            return;
+          }
           if (getHttpStatus(err) === 503) {
             setTerminalConnected(false);
             setError('Payment terminal offline');
@@ -996,6 +1026,8 @@ export default function PaymentModal({
             setError(getErrorMessage(err));
           }
           setSubmitting(false);
+          setCanAbortTerminal(false);
+          cardAbortRef.current = null;
         }
         return;
       }
@@ -1319,8 +1351,13 @@ export default function PaymentModal({
             </div>
 
             <footer className="sheet-actions">
-              <button className="secondary-button" type="button" onClick={handleClose} disabled={submitting}>
-                Cancel
+              <button
+                className={canAbortTerminal ? 'secondary-button danger-text' : 'secondary-button'}
+                type="button"
+                onClick={canAbortTerminal ? abortTerminalPayment : handleClose}
+                disabled={submitting && !canAbortTerminal}
+              >
+                {canAbortTerminal ? 'Cancel payment' : 'Cancel'}
               </button>
               {finalizationPending ? (
                 <button
@@ -1388,8 +1425,8 @@ export default function PaymentModal({
             </div>
 
             <footer className="sheet-actions">
-              <button className="secondary-button" type="button" disabled>
-                Cancel
+              <button className="secondary-button danger-text" type="button" onClick={abortTerminalPayment}>
+                Cancel payment
               </button>
               <button className="primary-button" type="button" disabled>
                 Processing payment…

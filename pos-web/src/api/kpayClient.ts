@@ -16,7 +16,7 @@ export async function startCardPayment(
   orderId: string,
   amount: number,
   paymentType = 1,
-  options?: { idempotencyKey?: string; cashAmount?: number; cdcAmount?: number },
+  options?: { idempotencyKey?: string; cashAmount?: number; cdcAmount?: number; signal?: AbortSignal },
 ): Promise<PaymentIntent> {
   const headers: Record<string, string> = {};
   if (options?.idempotencyKey) {
@@ -37,6 +37,7 @@ export async function startCardPayment(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
 }
 
