@@ -17,6 +17,9 @@ class Outlet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     paynow_qr_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    receipt_brand_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    receipt_company_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paynow_uen: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     categories = relationship("Category", back_populates="outlet")
     staff_members = relationship("Staff", back_populates="outlet")

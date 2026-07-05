@@ -20,8 +20,10 @@ import {
   type PaymentIntent,
 } from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import QRCode from 'qrcode';
 import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
+import { buildPayNowPayload, MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import { isPrintingSupported, openCashDrawer, printReceipt as printReceiptUsb } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
@@ -225,18 +227,36 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     });
   }
 
+  // Brand + legal entity come from the outlet record (editable in admin),
+  // so a rebrand never needs a code change.
+  const brand = session.outlet.receipt_brand_name?.trim() || session.outlet.name;
+  const companyLines = (session.outlet.receipt_company_details ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(receiptCenter);
+
+  const totalAdjustments = receipt.totals.discount + receipt.totals.loyaltyDiscount;
+  const showSubtotal = totalAdjustments > 0 || receipt.totals.voucherDiscount > 0;
+
   return [
-    receiptCenter('Grid POS'),
+    receiptCenter(brand.toUpperCase()),
+    ...companyLines,
     receiptCenter(session.outlet.name),
-    receiptCenter(`Order ${receipt.order.order_number}`),
-    receiptCenter(new Date().toLocaleString('en-SG')),
+    RECEIPT_DIVIDER,
+    receiptRow(`Order ${receipt.order.order_number}`),
+    receiptRow(new Date().toLocaleString('en-SG')),
     RECEIPT_DIVIDER,
     ...rows,
     RECEIPT_DIVIDER,
-    receiptRow('Subtotal', formatCurrency(receipt.totals.subtotal)),
-    receiptRow('Discount', `-${formatCurrency(receipt.totals.discount + receipt.totals.loyaltyDiscount)}`),
-    ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
-    receiptRow('Total', formatCurrency(receipt.totals.total)),
+    ...(showSubtotal
+      ? [
+          receiptRow('Subtotal', formatCurrency(receipt.totals.subtotal)),
+          ...(totalAdjustments > 0 ? [receiptRow('Discount', `-${formatCurrency(totalAdjustments)}`)] : []),
+          ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
+        ]
+      : []),
+    receiptRow('TOTAL', formatCurrency(receipt.totals.total)),
     ...receiptPaymentLines(receipt),
     receipt.changeDue > 0 ? receiptRow('Change', formatCurrency(receipt.changeDue)) : '',
     '',
@@ -430,6 +450,39 @@ export default function PaymentModal({
     setPayNowQrLoading(true);
     setPayNowQrError('');
 
+    // Preferred: generate a dynamic PayNow QR with the exact amount and a
+    // fixed reference, so the customer cannot mistype the amount. Falls back
+    // to the outlet's uploaded static QR image when no UEN is configured.
+    const uen = session.outlet.paynow_uen?.trim();
+    if (uen && manualPayNowAmount > 0) {
+      const payload = buildPayNowPayload({
+        uen,
+        amount: manualPayNowAmount,
+        merchantName: session.outlet.receipt_brand_name || session.outlet.name,
+        reference: MANUAL_PAYNOW_REFERENCE,
+      });
+      QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 2, width: 480 })
+        .then((dataUrl) => {
+          if (!cancelled) {
+            setPayNowQrUrl(dataUrl);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPayNowQrUrl(null);
+            setPayNowQrError('Manual PayNow QR code could not be generated');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setPayNowQrLoading(false);
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     getPayNowQr(session.outlet.id)
       .then((response) => {
         if (cancelled) {
@@ -455,7 +508,7 @@ export default function PaymentModal({
     return () => {
       cancelled = true;
     };
-  }, [manualPayNowActive, open, session.outlet.id, step]);
+  }, [manualPayNowActive, manualPayNowAmount, open, session.outlet, step]);
 
   useEffect(() => {
     if (!open || step !== 'payment' || !manualPayNowActive || !payNowQrUrl) {

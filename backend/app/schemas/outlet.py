@@ -25,6 +25,9 @@ class OutletUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     address: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, max_length=40)
+    receipt_brand_name: str | None = Field(default=None, max_length=64)
+    receipt_company_details: str | None = Field(default=None, max_length=500)
+    paynow_uen: str | None = Field(default=None, max_length=20)
 
 
 class OutletRead(OutletBase, TimestampSchema):
@@ -32,6 +35,9 @@ class OutletRead(OutletBase, TimestampSchema):
 
     paynow_qr_url: str | None = None
     logo_url: str | None = None
+    receipt_brand_name: str | None = None
+    receipt_company_details: str | None = None
+    paynow_uen: str | None = None
 
 
 class PayNowQrRead(BaseModel):
