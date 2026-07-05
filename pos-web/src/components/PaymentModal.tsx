@@ -20,6 +20,7 @@ import {
   type PaymentIntent,
 } from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import { isPrintingSupported, openCashDrawer, printReceipt as printReceiptUsb } from '@/utils/printer';
@@ -1108,15 +1109,13 @@ export default function PaymentModal({
               {error && <div className="payment-error">{error}</div>}
 
               {mode === 'cash' && (
-                <label className="amount-field">
-                  Cash received
-                  <input
-                    value={cashAmount}
-                    onChange={(event) => setCashAmount(event.target.value)}
-                    inputMode="decimal"
-                    autoFocus
-                  />
-                </label>
+                <CashTenderPad
+                  value={cashAmount}
+                  totalDue={totalDue}
+                  changeDue={changeDue}
+                  disabled={submitting}
+                  onChange={setCashAmount}
+                />
               )}
 
               {(mode === 'card' || mode === 'paynow') && (

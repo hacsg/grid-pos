@@ -3373,3 +3373,120 @@ html.display-active #root {
     aspect-ratio: 16 / 9;
   }
 }
+
+/* Cash tender pad — touch-first cash entry with change breakdown */
+.cash-pad {
+  display: grid;
+  gap: 12px;
+}
+
+.cash-pad-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid var(--grid-border);
+  border-radius: 12px;
+  background: var(--grid-surface);
+}
+
+.cash-pad-readout span {
+  color: var(--grid-muted);
+  font-size: var(--text-sm);
+}
+
+.cash-pad-readout strong {
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-pad-readout.short strong {
+  color: var(--grid-warning);
+}
+
+.cash-pad-quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.cash-pad-quick button {
+  min-height: 48px;
+  border: 1px solid var(--grid-border);
+  border-radius: 10px;
+  background: var(--grid-surface);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.cash-pad-quick button:active {
+  background: var(--grid-focus);
+}
+
+.cash-pad-quick .cash-pad-clear {
+  color: var(--grid-error);
+}
+
+.cash-pad-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.cash-pad-keys button {
+  min-height: 56px;
+  border: 1px solid var(--grid-border);
+  border-radius: 10px;
+  background: var(--grid-surface);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-pad-keys button:active {
+  background: var(--grid-focus);
+}
+
+.cash-pad-change {
+  border: 1px solid var(--grid-success);
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: #f1f9f4;
+  display: grid;
+  gap: 8px;
+}
+
+.cash-pad-change-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.cash-pad-change-total span {
+  color: var(--grid-muted);
+  font-size: var(--text-sm);
+}
+
+.cash-pad-change-total strong {
+  color: var(--grid-success);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-pad-change-parts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--grid-text);
+  font-size: var(--text-sm);
+}
+
+.cash-pad-short {
+  color: var(--grid-warning);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: center;
+}
