@@ -7,9 +7,8 @@ cd /d "%~dp0"
 
 fltmc >nul 2>&1
 if errorlevel 1 (
-  echo This script must be run as administrator.
-  pause
-  exit /b 1
+  echo WARNING: elevation check failed - continuing anyway.
+  echo If service install fails below, this window is not elevated.
 )
 
 echo [1/3] Stopping any console instance of the daemon...
