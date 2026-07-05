@@ -203,13 +203,10 @@ function receiptRow(left: string, right = ''): string {
 const RECEIPT_DIVIDER = '-'.repeat(RECEIPT_WIDTH);
 
 function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): string {
+  // Item line shows the consolidated line total; modifiers list underneath
+  // with no per-modifier price (the line total already includes them).
   const rows = receipt.items.flatMap((item) => {
-    const modifierRows = item.modifiers.map((modifier) =>
-      receiptRow(
-        `  ${modifier.modifier_name}`,
-        modifier.price_adjustment > 0 ? formatCurrency(modifier.price_adjustment) : ''
-      )
-    );
+    const modifierRows = item.modifiers.map((modifier) => `  ${modifier.modifier_name}`);
     return [
       receiptRow(
         `${item.quantity} x ${item.product.name}`,
@@ -237,7 +234,6 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     .map(receiptCenter);
 
   const totalAdjustments = receipt.totals.discount + receipt.totals.loyaltyDiscount;
-  const showSubtotal = totalAdjustments > 0 || receipt.totals.voucherDiscount > 0;
 
   return [
     receiptCenter(brand.toUpperCase()),
@@ -249,13 +245,9 @@ function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): stri
     RECEIPT_DIVIDER,
     ...rows,
     RECEIPT_DIVIDER,
-    ...(showSubtotal
-      ? [
-          receiptRow('Subtotal', formatCurrency(receipt.totals.subtotal)),
-          ...(totalAdjustments > 0 ? [receiptRow('Discount', `-${formatCurrency(totalAdjustments)}`)] : []),
-          ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
-        ]
-      : []),
+    // No subtotal/tax — just savings (if any) and the grand total.
+    ...(totalAdjustments > 0 ? [receiptRow('Discount', `-${formatCurrency(totalAdjustments)}`)] : []),
+    ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
     receiptRow('TOTAL', formatCurrency(receipt.totals.total)),
     ...receiptPaymentLines(receipt),
     receipt.changeDue > 0 ? receiptRow('Change', formatCurrency(receipt.changeDue)) : '',
@@ -281,6 +273,9 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [step, setStep] = useState<PaymentStep>('payment');
   const [mode, setMode] = useState<PaymentMode>('cash');
+  // Forces the direct-to-bank PayNow QR even when the terminal is online — the
+  // explicit "Manual PayNow" fallback the cashier can pick at will.
+  const [forceManualPayNow, setForceManualPayNow] = useState(false);
 
   // Close the modal. If payment never completed (cashier backed out of
   // checkout), tell the customer display to drop the "Processing payment…"
@@ -323,6 +318,7 @@ export default function PaymentModal({
     if (!open) {
       setStep('payment');
       setMode('cash');
+      setForceManualPayNow(false);
       setSplitSecondMethod('card');
       setCashAmount('');
       setCdcAmount('');
@@ -393,7 +389,9 @@ export default function PaymentModal({
         ? splitTerminalAmount
         : 0;
   const manualPayNowEligible = manualPayNowAmount > 0;
-  const manualPayNowActive = terminalConnected === false && manualPayNowEligible;
+  // Manual PayNow (direct-to-bank QR) is used when the terminal is offline OR
+  // when the cashier explicitly picks the Manual PayNow mode.
+  const manualPayNowActive = manualPayNowEligible && (terminalConnected === false || forceManualPayNow);
   const manualPayNowReady = manualPayNowActive && !payNowQrLoading && Boolean(payNowQrUrl);
   const terminalUnavailable =
     terminalConnected === false &&
@@ -411,7 +409,7 @@ export default function PaymentModal({
     items.length > 0 &&
     !submitting &&
     ((mode === 'card' && terminalConnected !== false) ||
-      (mode === 'paynow' && (terminalConnected !== false || manualPayNowReady)) ||
+      (mode === 'paynow' && (manualPayNowActive ? manualPayNowReady : terminalConnected !== false)) ||
       (mode === 'cash' && cashTendered >= totalDue) ||
       (mode === 'split' &&
         splitCashInputValid &&
@@ -845,7 +843,9 @@ export default function PaymentModal({
 
   const terminalStatusText =
     manualPayNowActive
-      ? 'Terminal offline – Manual PayNow'
+      ? forceManualPayNow
+        ? 'Manual PayNow – pay to bank QR'
+        : 'Terminal offline – Manual PayNow'
       : terminalConnected === null
       ? 'Checking terminal…'
       : terminalConnected
@@ -870,7 +870,7 @@ export default function PaymentModal({
       <div className="manual-paynow-panel">
         <div className="manual-paynow-banner">
           <QrCode size={18} aria-hidden="true" />
-          <span>Terminal offline – Manual PayNow</span>
+          <span>{forceManualPayNow ? 'Manual PayNow' : 'Terminal offline – Manual PayNow'}</span>
         </div>
         <strong>{formatCurrency(amount)}</strong>
         <div className="manual-paynow-qr">
@@ -1161,20 +1161,21 @@ export default function PaymentModal({
           <>
             <div className="payment-modes" role="radiogroup" aria-label="Payment mode">
               {[
-                { value: 'cash' as const, label: 'Cash', Icon: Banknote },
-                { value: 'card' as const, label: 'Card', Icon: CreditCard },
-                { value: 'paynow' as const, label: 'PayNow', Icon: QrCode },
-                { value: 'split' as const, label: 'Split', Icon: Split },
-              ].map(({ value, label, Icon }) => (
+                { key: 'cash', label: 'Cash', Icon: Banknote, active: mode === 'cash', select: () => { setMode('cash'); setForceManualPayNow(false); } },
+                { key: 'card', label: 'Card', Icon: CreditCard, active: mode === 'card', select: () => { setMode('card'); setForceManualPayNow(false); } },
+                { key: 'paynow', label: 'PayNow', Icon: QrCode, active: mode === 'paynow' && !forceManualPayNow, select: () => { setMode('paynow'); setForceManualPayNow(false); } },
+                { key: 'manual_paynow', label: 'Manual QR', Icon: QrCode, active: mode === 'paynow' && forceManualPayNow, select: () => { setMode('paynow'); setForceManualPayNow(true); } },
+                { key: 'split', label: 'Split', Icon: Split, active: mode === 'split', select: () => { setMode('split'); setForceManualPayNow(false); } },
+              ].map(({ key, label, Icon, active, select }) => (
                 <button
-                  key={value}
-                  className={mode === value ? 'active' : ''}
+                  key={key}
+                  className={active ? 'active' : ''}
                   type="button"
                   role="radio"
-                  aria-checked={mode === value}
+                  aria-checked={active}
                   disabled={submitting}
                   onPointerDown={() => tapFeedback()}
-                  onClick={() => setMode(value)}
+                  onClick={select}
                 >
                   <Icon size={18} aria-hidden="true" />
                   {label}

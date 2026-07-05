@@ -182,7 +182,6 @@ export default function CartSidebar({
                 ) : (
                   <h3>{item.product.name}</h3>
                 )}
-                <p>{formatCurrency(money(item.product.price))}</p>
               </div>
               <strong>{formatCurrency(lineTotal(item))}</strong>
             </div>
@@ -192,7 +191,6 @@ export default function CartSidebar({
                 {item.modifiers.map((modifier) => (
                   <li key={modifier.id}>
                     <span>{modifier.modifier_name}</span>
-                    {modifier.price_adjustment > 0 && <span>+{formatCurrency(modifier.price_adjustment)}</span>}
                   </li>
                 ))}
               </ul>
@@ -236,14 +234,6 @@ export default function CartSidebar({
       </div>
 
       <section className="cart-totals" aria-label="Totals">
-        <div>
-          <span>Subtotal</span>
-          <strong>{formatCurrency(totals.subtotal)}</strong>
-        </div>
-        <div>
-          <span>Tax</span>
-          <strong>{formatCurrency(totals.tax)}</strong>
-        </div>
         {totals.discount > 0 && (
           <div>
             <span>Discount</span>
