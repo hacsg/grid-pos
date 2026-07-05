@@ -3,6 +3,7 @@ import { CheckCircle2, QrCode, Search, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api, formatCurrency, lookupLoyalty, type LoyaltyMember } from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
+import { useScannerWedge } from '@/utils/useScannerWedge';
 import type { StaffSession, Totals } from '@/types';
 
 interface LoyaltySheetProps {
@@ -22,6 +23,13 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
   const [code, setCode] = useState('');
   const [member, setMember] = useState<LoyaltyMember | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  // Hardware wedge scanner (keyboard emulation): scanning the member QR at any
+  // time while the sheet is open looks the member up — no camera needed.
+  useScannerWedge({
+    enabled: open && (status === 'idle' || status === 'error' || status === 'looking'),
+    onScan: (scanned) => { void handleLookup(scanned); },
+  });
 
   if (!open) {
     return null;
@@ -65,13 +73,14 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
     }
   }
 
-  async function handleLookup() {
-    const trimmed = code.trim();
+  async function handleLookup(value?: string) {
+    const trimmed = (value ?? code).trim();
     if (!trimmed) {
       setMessage('Enter a phone number or member ID');
       return;
     }
     tapFeedback();
+    setCode(trimmed);
     setStatus('looking');
     setMessage('');
     try {
@@ -148,7 +157,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
         <div className="loyalty-body">
           {(status === 'idle' || status === 'looking' || status === 'error') && (
             <>
-              <p className="loyalty-prompt">Look up a member by phone or scan their QR.</p>
+              <p className="loyalty-prompt">Scan the member's Acre Club QR with the counter scanner, or look them up by phone.</p>
               <div className="loyalty-lookup">
                 <label className="search-field">
                   <Search size={20} aria-hidden="true" />
@@ -166,7 +175,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
                 <button
                   className="primary-button"
                   type="button"
-                  onClick={handleLookup}
+                  onClick={() => handleLookup()}
                   onPointerDown={() => tapFeedback()}
                   disabled={status === 'looking'}
                 >

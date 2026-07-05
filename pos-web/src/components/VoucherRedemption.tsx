@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { formatCurrency, redeemVoucher, validateVoucher } from '@/api/client';
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { useScannerWedge } from '@/utils/useScannerWedge';
 
 interface RecentRedemption {
   code: string;
@@ -375,6 +376,14 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
   const requestScannerResume = useCallback(() => {
     setScannerPaused(false);
   }, []);
+
+  // Hardware wedge scanner (keyboard emulation) — the primary path on this POS,
+  // whose client-facing scanner is not a camera. Disabled while the manual code
+  // field is open so typed input isn't double-handled.
+  useScannerWedge({
+    enabled: !manualOpen && !loading && !validated && !justRedeemed,
+    onScan: (scanned) => { void handleQrDetected(scanned); },
+  });
 
   async function handleValidate(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
