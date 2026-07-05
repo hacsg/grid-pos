@@ -24,11 +24,12 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
   const [member, setMember] = useState<LoyaltyMember | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  // Hardware wedge scanner (keyboard emulation): scanning the member QR at any
-  // time while the sheet is open looks the member up — no camera needed.
+  // Hardware wedge scanner (keyboard emulation): the membership QR encodes the
+  // Plotholders customer id ("show this to staff to collect moments"), so a
+  // scan records the purchase moment directly — no camera, no phone lookup.
   useScannerWedge({
-    enabled: open && (status === 'idle' || status === 'error' || status === 'looking'),
-    onScan: (scanned) => { void handleLookup(scanned); },
+    enabled: open && (status === 'idle' || status === 'error'),
+    onScan: (scanned) => { void earnFor(scanned.trim()); },
   });
 
   if (!open) {
