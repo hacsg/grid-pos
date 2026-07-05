@@ -153,7 +153,8 @@ function Start-PosWindow {
         '--disable-pinch',
         '--overscroll-history-navigation=0',
         '--check-for-update-interval=31536000',
-        '--disable-component-update'
+        '--disable-component-update',
+        '--simulate-outdated-no-au="Tue, 31 Dec 2099"'
     )
     if ($Kiosk) { $chromeArgs += '--kiosk' } else { $chromeArgs += '--start-fullscreen' }
 
@@ -289,9 +290,26 @@ function Start-Daemon {
     $out = Join-Path $Dir 'daemon.log'
     $err = Join-Path $Dir 'daemon.err.log'
     try { if (Test-Path $out) { Copy-Item $out "$out.prev" -Force -ErrorAction SilentlyContinue } } catch { }
-    Start-Process -FilePath $exe -WorkingDirectory $Dir -WindowStyle Hidden `
-        -RedirectStandardOutput $out -RedirectStandardError $err
-    Write-Log "Daemon started: $exe (log: $out)"
+    try {
+        Start-Process -FilePath $exe -WorkingDirectory $Dir -WindowStyle Hidden `
+            -RedirectStandardOutput $out -RedirectStandardError $err
+        Write-Log "Daemon started: $exe (log: $out)"
+    } catch {
+        Write-Log "Daemon failed to start: $_"
+        # Fallback: launch via cmd so redirect quirks on old PowerShell don't
+        # keep the terminal bridge down.
+        try {
+            Start-Process -FilePath "$env:ComSpec" -WindowStyle Hidden `
+                -ArgumentList '/c', "`"`"$exe`" >> `"$out`" 2>&1`""
+            Write-Log 'Daemon started via cmd fallback.'
+        } catch {
+            Write-Log "Daemon cmd fallback also failed: $_"
+        }
+    }
+    Start-Sleep -Seconds 2
+    $running = $null
+    try { $running = Get-Process -Name 'kpay-daemon' -ErrorAction SilentlyContinue } catch { }
+    if ($running) { Write-Log 'Daemon process confirmed running.' } else { Write-Log 'WARNING: daemon process is NOT running - check daemon.err.log next to the exe.' }
 }
 
 # ===================== MAIN =====================
@@ -303,9 +321,16 @@ try {
     New-Item -ItemType Directory -Force -Path $ProfileRoot | Out-Null
     Write-Log '--- POS mode starting ---'
 
+    # Suppress Chrome's Win7 unsupported-OS warning via user-level policy
+    # (no admin needed; harmless if already set).
+    try {
+        & reg.exe add 'HKCU\Software\Policies\Google\Chrome' /v SuppressUnsupportedOSWarning /t REG_DWORD /d 1 /f | Out-Null
+    } catch { Write-Log "Could not set Chrome policy: $_" }
+
     Write-Log 'Closing previous Chrome/daemon instances...'
     Stop-PreviousInstances
     $daemonFolder = if ($DaemonDir) { $DaemonDir } else { $ScriptDir }
+    Write-Log "Daemon folder: $daemonFolder"
     Start-Daemon -Dir $daemonFolder
 
     if ($PosUrl -like '*CHANGE-ME*') {
