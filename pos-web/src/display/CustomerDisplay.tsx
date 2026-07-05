@@ -281,7 +281,7 @@ export default function CustomerDisplay() {
         {/* MANUAL PAYNOW QR */}
         {phase === 'paynowQr' && paynowQrUrl && (
           <div className="display-paynow-qr" key={phase}>
-            <div className="display-paynow-message">Scan and pay {formatCurrency(paymentTotal ?? total)}</div>
+            <div className="display-paynow-message">PayNow Payment</div>
             <img src={paynowQrUrl} alt="PayNow QR code" />
             <div className="display-paynow-amount">{formatCurrency(paymentTotal ?? total)}</div>
           </div>
