@@ -257,10 +257,19 @@ class PlotholdersClient:
         json: dict[str, Any] | None = None,
         allow_not_found: bool = False,
     ) -> Any:
+        headers: dict[str, str] = {}
+        internal_key = settings.plotholders_internal_key
+        if internal_key:
+            # Server-to-server auth: Plotholders' requireServiceAuth accepts this
+            # shared key on customer/voucher/moment endpoints (which are no longer
+            # public). Must match INTERNAL_API_KEY on the Plotholders service.
+            headers["X-Internal-Key"] = internal_key
+
         async with httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
             transport=self.transport,
+            headers=headers,
         ) as client:
             try:
                 response = await client.request(method, path, params=params, json=json)

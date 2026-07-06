@@ -33,6 +33,11 @@ class Settings(BaseSettings):
         default="https://plotholders-api-production.up.railway.app",
         alias="PLOT_HOLDERS_API_URL",
     )
+    plotholders_internal_key: str = Field(
+        default="",
+        alias="PLOT_HOLDERS_INTERNAL_KEY",
+        description="Shared key sent as X-Internal-Key to authenticate to Plotholders",
+    )
     kpay_daemon_token: str = Field(
         default="",
         alias="KPAY_DAEMON_TOKEN",
