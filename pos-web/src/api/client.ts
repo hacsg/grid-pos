@@ -486,6 +486,31 @@ export async function lookupLoyalty(code: string): Promise<LoyaltyMember> {
   return data;
 }
 
+export interface PlotholdersVoucher {
+  id?: string;
+  code: string;
+  title?: string;
+  description?: string;
+  amount?: number | string | null;
+  discount_cents?: number | null;
+  type?: string;
+  expires_at?: string | null;
+}
+
+export interface MemberWithVouchers extends Omit<LoyaltyMember, 'vouchers'> {
+  vouchers?: PlotholdersVoucher[];
+}
+
+// Checkout scan path: the membership QR encodes the customer id. Returns the
+// member plus their active (redeemable) vouchers in one call.
+export async function getCustomerWithVouchers(customerId: string): Promise<MemberWithVouchers> {
+  const { data } = await api.get<MemberWithVouchers>(`/loyalty/customer/${encodeURIComponent(customerId.trim())}`);
+  if (!data || !data.member_id) {
+    throw new Error('Member not found');
+  }
+  return data;
+}
+
 export async function redeemLoyalty(
   memberId: string,
   orderId: string,

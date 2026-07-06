@@ -1,35 +1,62 @@
 import { useRef, useState } from 'react';
-import { CheckCircle2, QrCode, Search, X } from 'lucide-react';
+import { CheckCircle2, QrCode, Search, Ticket, UserPlus, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { api, formatCurrency, lookupLoyalty, type LoyaltyMember } from '@/api/client';
+import {
+  formatCurrency,
+  getCustomerWithVouchers,
+  lookupLoyalty,
+  money,
+  type LoyaltyMember,
+  type MemberWithVouchers,
+  type PlotholdersVoucher,
+} from '@/api/client';
 import { tapFeedback } from '@/utils/haptics';
 import { useScannerWedge } from '@/utils/useScannerWedge';
-import type { StaffSession, Totals } from '@/types';
+import type { AppliedVoucher, StaffSession, Totals } from '@/types';
 
 interface LoyaltySheetProps {
   open: boolean;
   session: StaffSession;
   totals: Totals;
+  appliedCodes: string[];
+  onSelectCustomer: (member: LoyaltyMember) => void;
+  onApplyVoucher: (voucher: AppliedVoucher) => void;
   onClose: () => void;
 }
 
 const QR_READER_ID = 'qr-reader-loyalty-simple';
 
-type Status = 'idle' | 'scanning' | 'looking' | 'found' | 'earning' | 'success' | 'error';
+type Status = 'idle' | 'scanning' | 'looking' | 'found' | 'error';
 
-export default function LoyaltySheet({ open, session, totals, onClose }: LoyaltySheetProps) {
+/** Map a Plotholders voucher to the order's AppliedVoucher shape. */
+function toAppliedVoucher(v: PlotholdersVoucher): AppliedVoucher {
+  const amount =
+    v.amount != null ? money(v.amount) : v.discount_cents != null ? v.discount_cents / 100 : 0;
+  const type = (v.type || '').toLowerCase() === 'cdc' ? 'cdc' : 'acre_group';
+  return { code: v.code, type, amount, id: v.id };
+}
+
+export default function LoyaltySheet({
+  open,
+  session,
+  totals,
+  appliedCodes,
+  onSelectCustomer,
+  onApplyVoucher,
+  onClose,
+}: LoyaltySheetProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
   const [code, setCode] = useState('');
-  const [member, setMember] = useState<LoyaltyMember | null>(null);
+  const [member, setMember] = useState<MemberWithVouchers | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   // Hardware wedge scanner (keyboard emulation): the membership QR encodes the
-  // Plotholders customer id ("show this to staff to collect moments"), so a
-  // scan records the purchase moment directly — no camera, no phone lookup.
+  // Plotholders customer id, so a scan pulls up the member and their active
+  // vouchers — no camera needed.
   useScannerWedge({
     enabled: open && (status === 'idle' || status === 'error'),
-    onScan: (scanned) => { void earnFor(scanned.trim()); },
+    onScan: (scanned) => { void loadById(scanned.trim()); },
   });
 
   if (!open) {
@@ -55,29 +82,27 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
     }
   }
 
-  async function earnFor(memberId: string) {
-    setStatus('earning');
-    setMessage('Recording points…');
+  // Scan path: the QR value is the customer id → member + active vouchers.
+  async function loadById(customerId: string) {
+    if (!customerId) return;
+    setStatus('looking');
+    setMessage('');
     try {
-      const response = await api.post('/loyalty/earn', {
-        customer_id: memberId,
-        order_total: totals.total,
-        outlet: session.outlet.name,
-      });
-      const earned = response.data?.points_earned;
-      setStatus('success');
-      setMessage(earned != null ? `${earned} points earned` : 'Points recorded');
+      const found = await getCustomerWithVouchers(customerId);
+      setMember(found);
+      setStatus('found');
       tapFeedback();
     } catch (err: any) {
       setStatus('error');
-      setMessage(err?.response?.data?.detail || 'Failed to record points. Please try again.');
+      setMessage(err?.response?.data?.detail || 'Member not found. Try their phone number instead.');
     }
   }
 
+  // Manual path: phone lookup, then pull their vouchers by the returned id.
   async function handleLookup(value?: string) {
     const trimmed = (value ?? code).trim();
     if (!trimmed) {
-      setMessage('Enter a phone number or member ID');
+      setMessage('Enter a phone number');
       return;
     }
     tapFeedback();
@@ -86,7 +111,15 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
     setMessage('');
     try {
       const found = await lookupLoyalty(trimmed);
-      setMember(found);
+      const id = found.customer_id || found.member_id;
+      const { vouchers: _legacy, ...base } = found;
+      let withVouchers: MemberWithVouchers = base;
+      try {
+        withVouchers = await getCustomerWithVouchers(id);
+      } catch {
+        // Lookup succeeded but voucher fetch failed — still let staff attach.
+      }
+      setMember(withVouchers);
       setStatus('found');
     } catch (err: any) {
       setStatus('error');
@@ -97,31 +130,37 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
   async function handleScan() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus('error');
-      setMessage('No camera available on this device. Enter the member number instead.');
+      setMessage('No camera on this device — use the counter scanner or enter the phone number.');
       return;
     }
     tapFeedback();
     setStatus('scanning');
     setMessage('Point camera at the Acre Club QR code…');
-
     const scanner = new Html5Qrcode(QR_READER_ID, { verbose: false });
     scannerRef.current = scanner;
-
     try {
       await scanner.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         async (decodedText) => {
           await stopScanner();
-          await earnFor(decodedText.trim());
+          await loadById(decodedText.trim());
         },
         () => {}
       );
     } catch {
       scannerRef.current = null;
       setStatus('error');
-      setMessage('Could not start the camera. Allow camera access or enter the member number.');
+      setMessage('Could not start the camera. Use the counter scanner or enter the phone number.');
     }
+  }
+
+  function handleAttach() {
+    if (!member) return;
+    tapFeedback();
+    const { vouchers: _v, ...memberOnly } = member;
+    onSelectCustomer(memberOnly);
+    void handleClose();
   }
 
   async function handleClose() {
@@ -130,6 +169,9 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
     onClose();
   }
 
+  const applied = new Set(appliedCodes.map((c) => c.toUpperCase()));
+  const vouchers = member?.vouchers ?? [];
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
@@ -137,12 +179,12 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
         role="dialog"
         aria-modal="true"
         aria-labelledby="loyalty-title"
-        style={{ maxWidth: '420px', margin: 'auto' }}
+        style={{ maxWidth: '440px', margin: 'auto' }}
       >
         <header className="sheet-header">
           <div>
             <p>Acre Club</p>
-            <h2 id="loyalty-title">Earn points</h2>
+            <h2 id="loyalty-title">Member &amp; vouchers</h2>
           </div>
           <button
             className="icon-button"
@@ -168,7 +210,7 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleLookup();
                     }}
-                    placeholder="Phone number or member ID"
+                    placeholder="Phone number"
                     inputMode="tel"
                     autoFocus
                   />
@@ -191,11 +233,10 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
                 onPointerDown={() => tapFeedback()}
               >
                 <QrCode size={18} aria-hidden="true" />
-                Scan QR code instead
+                Use camera instead
               </button>
 
               <p className="loyalty-total">Order total: {formatCurrency(totals.total)}</p>
-
               {status === 'error' && message && <p className="form-error">{message}</p>}
             </>
           )}
@@ -221,44 +262,54 @@ export default function LoyaltySheet({ open, session, totals, onClose }: Loyalty
             <>
               <div className="loyalty-member-card">
                 <div className="loyalty-member-top">
-                  <strong>{member.name}</strong>
+                  <strong>{member.name || 'Acre Club member'}</strong>
                   <span className="tier-badge">{member.tier}</span>
                 </div>
                 <p>
-                  {member.points} pts available
+                  {member.lifetime_moments ?? member.points ?? 0} visits
                   {member.phone ? ` · ${member.phone}` : ''}
                 </p>
               </div>
-              <p className="loyalty-total">Order total: {formatCurrency(totals.total)}</p>
+
               <button
                 className="primary-button loyalty-confirm"
                 type="button"
-                onClick={() => earnFor(member.customer_id || member.member_id)}
+                onClick={handleAttach}
                 onPointerDown={() => tapFeedback()}
               >
-                Earn points for this sale
+                <UserPlus size={18} aria-hidden="true" />
+                Add member to this sale
               </button>
+
+              <div className="loyalty-vouchers">
+                <p className="loyalty-vouchers-title">
+                  <Ticket size={16} aria-hidden="true" /> Active vouchers
+                </p>
+                {vouchers.length === 0 && <p className="loyalty-vouchers-empty">No active vouchers.</p>}
+                {vouchers.map((v) => {
+                  const isApplied = applied.has(v.code.toUpperCase());
+                  const av = toAppliedVoucher(v);
+                  return (
+                    <div className="loyalty-voucher-row" key={v.id || v.code}>
+                      <div>
+                        <strong>{v.title || v.code}</strong>
+                        <span>{av.amount > 0 ? formatCurrency(av.amount) : v.description || v.code}</span>
+                      </div>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={isApplied}
+                        onClick={() => { tapFeedback(); onApplyVoucher(av); }}
+                      >
+                        {isApplied ? 'Applied' : 'Apply'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
               <button className="secondary-button" type="button" onClick={resetState}>
                 Use a different member
-              </button>
-            </>
-          )}
-
-          {status === 'earning' && <p className="loyalty-prompt">{message}</p>}
-
-          {status === 'success' && (
-            <>
-              <div className="loyalty-result success">
-                <CheckCircle2 size={52} aria-hidden="true" />
-              </div>
-              <p className="loyalty-result-msg">{message}</p>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={handleClose}
-                onPointerDown={() => tapFeedback()}
-              >
-                Done
               </button>
             </>
           )}

@@ -619,6 +619,9 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           open={loyaltyOpen}
           session={session}
           totals={totals}
+          appliedCodes={vouchers.map((v) => v.code)}
+          onSelectCustomer={handleCustomerSelect}
+          onApplyVoucher={handleApplyVoucher}
           onClose={handleCloseLoyalty}
         />
       </ErrorBoundary>
