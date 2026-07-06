@@ -137,12 +137,15 @@ async def test_record_purchase_posts_grid_moment_payload() -> None:
     )
 
     assert result == {"id": "moment_1"}
+    # A moment is one visit: amount is always 1, the dollar total rides along as
+    # order_total (analytics only), and source_id=order id keeps it idempotent.
     assert captured_json == {
         "customer_id": "cus_1",
         "channel": "grid",
         "source_id": str(order_id),
-        "amount": 18.98,
+        "amount": 1,
         "order_total": 18.98,
+        "reason": "visit",
         "outlet": "Test Outlet",
         "brand": "hundred-acre",
     }

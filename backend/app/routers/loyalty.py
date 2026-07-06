@@ -118,6 +118,55 @@ async def lookup_member(
     }
 
 
+def _adapt_customer(customer: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a Plotholders customer to the POS LoyaltyMember shape."""
+    moments = (
+        customer.get("moments_total")
+        or customer.get("lifetime_moments")
+        or customer.get("points")
+        or 0
+    )
+    member_id = customer.get("id") or customer.get("member_id") or customer.get("customer_id")
+    return {
+        "member_id": member_id,
+        "customer_id": customer.get("id") or customer.get("customer_id") or member_id,
+        "name": customer.get("name") or "",
+        "phone": customer.get("phone") or "",
+        "points": int(moments) if isinstance(moments, (int, float)) else 0,
+        "tier": customer.get("tier") or "starter",
+        "lifetime_moments": moments,
+    }
+
+
+@router.get("/customer/{customer_id}")
+async def get_customer_with_vouchers(
+    customer_id: str,
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
+) -> dict[str, Any]:
+    """Fetch a member and their active (redeemable) vouchers by customer id.
+
+    This is the checkout scan path: the membership QR encodes the customer id,
+    so one call returns who they are plus what they can redeem right now.
+    """
+    try:
+        customer = await plotholders.get_customer(customer_id)
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    try:
+        vouchers = await plotholders.list_customer_vouchers(customer_id, status="active")
+    except PlotholdersAPIError:
+        # A voucher-list hiccup shouldn't block tagging the member to the order.
+        vouchers = []
+
+    member = _adapt_customer(customer)
+    member["vouchers"] = vouchers
+    return member
+
+
 @router.post("/earn")
 async def earn_points(
     payload: dict[str, Any],

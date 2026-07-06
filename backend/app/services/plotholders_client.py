@@ -121,31 +121,27 @@ class PlotholdersClient:
         Supports both the simple (customer_id, order_total, outlet) call and the
         legacy detailed call with order_id/amount (uses /moments for full data).
         """
-        if order_id is not None or amount is not None:
-            # Legacy detailed path used by orders service
-            amount_value = float(amount) if amount is not None else float(order_total or 0)
-            return await self._request(
-                "POST",
-                "/api/moments",
-                json={
-                    "customer_id": customer_id,
-                    "channel": "grid",
-                    "source_id": str(order_id) if order_id is not None else "",
-                    "amount": amount_value,
-                    "order_total": amount_value,
-                    "outlet": outlet,
-                    "brand": "hundred-acre",
-                },
-            )
-        # Simple Plotholders loyalty earn path (per cleanup spec)
-        ot = float(order_total) if order_total is not None else 0.0
+        # A moment = one visit. We always award exactly 1 per order and rely on
+        # the moments unique(channel, source_id) constraint (source_id = order id)
+        # for idempotency — a retried sync never double-counts a trip. The dollar
+        # total rides along as order_total for analytics only; it is not the
+        # moment amount and does not affect tiering.
+        dollar_total = float(amount) if amount is not None else float(order_total or 0)
+        # source_id=order id gives one-moment-per-order idempotency. Without an
+        # order id we send null (Postgres treats NULLs as distinct, so the
+        # unique(channel, source_id) constraint won't reject a second visit).
         return await self._request(
             "POST",
-            "/api/loyalty/earn",
+            "/api/moments",
             json={
                 "customer_id": customer_id,
-                "order_total": ot,
+                "channel": "grid",
+                "source_id": str(order_id) if order_id is not None else None,
+                "amount": 1,
+                "order_total": dollar_total,
+                "reason": "visit",
                 "outlet": outlet,
+                "brand": "hundred-acre",
             },
         )
 
@@ -222,6 +218,35 @@ class PlotholdersClient:
     async def redeem_reward(self, reward_id: str) -> dict[str, Any]:
         """Redeem a Plotholders reward."""
         return await self._request("POST", f"/api/rewards/{reward_id}/redeem")
+
+    async def get_customer(self, customer_id: str) -> dict[str, Any] | None:
+        """Return a Plotholders customer (with tier + history) by id."""
+        data = await self._request(
+            "GET",
+            f"/api/customers/{customer_id.strip()}",
+            allow_not_found=True,
+        )
+        return data if isinstance(data, dict) else None
+
+    async def list_customer_vouchers(
+        self, customer_id: str, status: str = "active"
+    ) -> list[dict[str, Any]]:
+        """Return a customer's vouchers (default: active/redeemable) by id."""
+        data = await self._request(
+            "GET",
+            f"/api/vouchers/customer/{customer_id.strip()}",
+            params={"status": status} if status else None,
+            allow_not_found=True,
+        )
+        if isinstance(data, dict):
+            for key in ("data", "vouchers", "results", "items"):
+                val = data.get(key)
+                if isinstance(val, list):
+                    return [v for v in val if isinstance(v, dict)]
+            return []
+        if isinstance(data, list):
+            return [v for v in data if isinstance(v, dict)]
+        return []
 
     async def _request(
         self,
