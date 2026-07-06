@@ -25,7 +25,7 @@ import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
 import { buildPayNowPayload, MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import { newIdempotencyKey } from '@/utils/idempotency';
-import { isPrintingSupported, openCashDrawer, printReceipt as printReceiptUsb } from '@/utils/printer';
+import { isPrintingSupported, openCashDrawer, printKitchenChit, printReceipt as printReceiptUsb, type KitchenChit } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
@@ -627,6 +627,17 @@ export default function PaymentModal({
         }
       });
     }
+    // Auto-send the kitchen chit on completion (kitchen starts prep immediately).
+    // Disable per-till with localStorage grid_pos_auto_chit = '0'.
+    let autoChit = true;
+    try {
+      autoChit = localStorage.getItem('grid_pos_auto_chit') !== '0';
+    } catch {
+      autoChit = true;
+    }
+    if (autoChit && snapshot.items.length > 0) {
+      void printKitchenChit(buildChit(snapshot));
+    }
     setStep('complete');
     setCardPayment(null);
     setSubmitting(false);
@@ -1115,6 +1126,31 @@ export default function PaymentModal({
     }
   }
 
+  function buildChit(snapshot: ReceiptSnapshot): KitchenChit {
+    return {
+      orderNumber: snapshot.order.order_number,
+      time: new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      items: snapshot.items.map((item) => ({
+        quantity: item.quantity,
+        name: item.product.name,
+        modifiers: item.modifiers.map((m) => m.modifier_name),
+      })),
+    };
+  }
+
+  async function printChit() {
+    if (!receipt) {
+      return;
+    }
+    tapFeedback();
+    const printed = await printKitchenChit(buildChit(receipt));
+    if (printed) {
+      toast.success('Kitchen chit sent');
+    } else {
+      toast.error('Kitchen chit print failed');
+    }
+  }
+
   function handleOpenDrawer() {
     tapFeedback();
     void openCashDrawer().then((ok) => {
@@ -1560,6 +1596,10 @@ export default function PaymentModal({
                     Open drawer
                   </button>
                 )}
+                <button className="secondary-button" type="button" onClick={printChit}>
+                  <Receipt size={18} aria-hidden="true" />
+                  Kitchen chit
+                </button>
                 <button className="secondary-button" type="button" onClick={printReceipt}>
                   <Printer size={18} aria-hidden="true" />
                   Print receipt

@@ -44,6 +44,68 @@ export function buildDrawerPulsePayload(pin: 0 | 1 = 0): Uint8Array {
   return new Uint8Array([0x1b, 0x70, pin, 0x19, 0xfa]);
 }
 
+// --- Kitchen chit -----------------------------------------------------------
+// A prep ticket: big, bold, items + modifiers only. No prices, totals, or
+// branding — the opposite of the customer receipt.
+export interface ChitItem {
+  quantity: number;
+  name: string;
+  modifiers: string[];
+}
+export interface KitchenChit {
+  orderNumber: string;
+  time: string; // preformatted, e.g. "14:05"
+  items: ChitItem[];
+}
+
+const enc = new TextEncoder();
+
+function concatBytes(...parts: Array<number[] | Uint8Array | string>): Uint8Array {
+  const chunks = parts.map((p) =>
+    typeof p === 'string' ? enc.encode(sanitizeAscii(p)) : p instanceof Uint8Array ? p : Uint8Array.from(p),
+  );
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
+
+// ESC/POS: GS ! n — width multiplier in the high nibble, height in the low.
+const escSize = (w: number, h: number): number[] => [0x1d, 0x21, ((w & 7) << 4) | (h & 7)];
+const ESC_INIT = [0x1b, 0x40];
+const ESC_CENTER = [0x1b, 0x61, 0x01];
+const ESC_LEFT = [0x1b, 0x61, 0x00];
+const ESC_BOLD_ON = [0x1b, 0x45, 0x01];
+const ESC_BOLD_OFF = [0x1b, 0x45, 0x00];
+const ESC_CUT = [0x1d, 0x56, 0x00];
+
+/** Build the ESC/POS byte payload for a kitchen chit (58mm, 32 cols). */
+export function buildKitchenChitPayload(chit: KitchenChit): Uint8Array {
+  const rule = `${'-'.repeat(32)}\n`;
+  const parts: Array<number[] | Uint8Array | string> = [
+    ESC_INIT,
+    // Big, bold order number — the number the kitchen calls out.
+    ESC_CENTER, ESC_BOLD_ON, escSize(1, 1), `#${chit.orderNumber}\n`, escSize(0, 0),
+    'KITCHEN\n', ESC_BOLD_OFF, `${chit.time}\n`,
+    ESC_LEFT, rule,
+  ];
+  for (const item of chit.items) {
+    // Double-height + bold keeps full 32-col width (long names don't wrap) but
+    // is readable across the kitchen.
+    parts.push(ESC_BOLD_ON, escSize(0, 1), `${item.quantity} x ${item.name.toUpperCase()}\n`, escSize(0, 0), ESC_BOLD_OFF);
+    for (const modifier of item.modifiers) {
+      parts.push(`   - ${modifier}\n`);
+    }
+    parts.push('\n');
+  }
+  parts.push(rule, '\n\n\n', ESC_CUT);
+  return concatBytes(...parts);
+}
+
 export function drawerPinFromStorage(): 0 | 1 {
   try {
     return localStorage.getItem(DRAWER_PIN_KEY) === '1' ? 1 : 0;
@@ -242,4 +304,22 @@ export async function openCashDrawer(pin: 0 | 1 = drawerPinFromStorage()): Promi
     return true;
   }
   return localServicePost('/drawer');
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/** Print a kitchen chit (pre-built ESC/POS bytes): WebUSB first, then the
+ * daemon's raw-print service. Returns true on success. */
+export async function printKitchenChit(chit: KitchenChit): Promise<boolean> {
+  const payload = buildKitchenChitPayload(chit);
+  if (await sendPayloadOverUsb(payload)) {
+    return true;
+  }
+  return localServicePost('/print-raw', { b64: toBase64(payload) });
 }

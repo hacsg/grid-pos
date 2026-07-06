@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -74,6 +75,27 @@ func StartPrintServer(cfg config.Config, log *logx.Logger) *http.Server {
 		err := printer.PrintRaw(cfg.PrinterName, printer.BuildPrintPayload(body.Text))
 		if err != nil {
 			log.Warn("receipt print failed", "error", err)
+		}
+		respond(w, err)
+	})
+	handle("/print-raw", func(w http.ResponseWriter, r *http.Request) {
+		// Pre-built ESC/POS payload (base64) — used by the kitchen chit, which
+		// carries its own font-size/emphasis control codes. Printed verbatim.
+		var body struct {
+			B64 string `json:"b64"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.B64 == "" {
+			http.Error(w, "expected JSON body with non-empty \"b64\"", http.StatusBadRequest)
+			return
+		}
+		raw, derr := base64.StdEncoding.DecodeString(body.B64)
+		if derr != nil {
+			http.Error(w, "invalid base64", http.StatusBadRequest)
+			return
+		}
+		err := printer.PrintRaw(cfg.PrinterName, raw)
+		if err != nil {
+			log.Warn("raw print failed", "error", err)
 		}
 		respond(w, err)
 	})
