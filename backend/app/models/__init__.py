@@ -14,6 +14,7 @@ from app.models.refund import Refund
 from app.models.shift import Shift
 from app.models.staff import Staff, StaffRole
 from app.models.discount import Discount
+from app.models.gto_file import GtoFile
 from app.models.voucher import OrderVoucher, Voucher, VoucherType
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "Customer",
     "LoyaltyMember",
     "Discount",
+    "GtoFile",
     "IdempotencyKey",
     "ModifierGroup",
     "ModifierOption",
