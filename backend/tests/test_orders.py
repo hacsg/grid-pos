@@ -114,7 +114,7 @@ class TestCreateOrder:
         resp = await client.post("/api/orders", json=payload)
         assert resp.status_code == 404
 
-    async def test_create_with_customer_id_records_plotholders_purchase(
+    async def test_customer_visit_moment_recorded_on_paid_not_create(
         self, client: AsyncClient, outlet, cashier_staff, product, monkeypatch
     ) -> None:
         recorded: dict[str, object] = {}
@@ -135,12 +135,19 @@ class TestCreateOrder:
                 "items": [{"product_id": str(product.id), "quantity": 1}],
             },
         )
-
         assert resp.status_code == 201
         data = resp.json()
+        # Pending order is not a trip yet — no moment recorded.
+        assert recorded == {}
+
+        paid = await client.put(
+            f"/api/orders/{data['id']}/status",
+            json={"status": "paid", "payment_method": "cash", "cash_tendered": "9.99"},
+        )
+        assert paid.status_code == 200
+        # The visit is recorded exactly once, on payment.
         assert recorded["customer_id"] == "cus_1"
         assert recorded["order_id"] == UUID(data["id"])
-        assert str(recorded["amount"]) == "9.99"
         assert recorded["outlet"] == outlet.name
 
     async def test_create_order_ignores_client_status(

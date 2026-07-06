@@ -309,17 +309,9 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
             # Re-raise so caller sees validation errors (e.g. already redeemed)
             raise
 
-    if payload.customer_id:
-        try:
-            await PlotholdersClient().record_purchase(
-                customer_id=payload.customer_id,
-                order_total=float(order.total),
-                outlet=outlet.name,
-                order_id=order.id,
-                amount=order.total,
-            )
-        except PlotholdersAPIError:
-            logger.exception("Unable to record Plotholders purchase for order %s", order.id)
+    # NB: the loyalty "moment" (one visit) is recorded when the order is *paid*,
+    # not here at pending creation — an abandoned cart is not a trip. See
+    # update_order_status_service.
 
     result = await db.execute(
         select(Order)
@@ -438,7 +430,27 @@ async def update_order_status_service(
             order.cash_tendered = normalized_cash_tendered
             # Calculate change: cash_tendered - total (if positive, otherwise 0)
             order.cash_change = quantize_money(max(Decimal("0"), normalized_cash_tendered - order.total))
+
+    # Reaching here with new_status == paid means a valid pending→paid
+    # transition (paid→paid is rejected by _validate_status_transition), so this
+    # fires exactly once per order — the customer's one visit/moment.
+    became_paid = new_status == OrderStatus.paid and order.customer_id
     await db.commit()
+
+    if became_paid:
+        try:
+            outlet_name = await db.scalar(
+                select(Outlet.name).where(Outlet.id == order.outlet_id)
+            )
+            await PlotholdersClient().record_purchase(
+                customer_id=str(order.customer_id),
+                order_total=float(order.total),
+                outlet=outlet_name or "",
+                order_id=order.id,
+                amount=order.total,
+            )
+        except PlotholdersAPIError:
+            logger.exception("Unable to record Plotholders visit for order %s", order.id)
 
     result = await db.execute(
         select(Order)
