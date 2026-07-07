@@ -118,6 +118,7 @@ async def _build_order_item(db: AsyncSession, item: OrderItemCreate, outlet_id: 
     line_total = quantize_money(unit_price * item.quantity)
     order_item = OrderItem(
         product_id=product.id,
+        product_name=product.name,
         quantity=item.quantity,
         unit_price=unit_price,
         modifiers=[m.model_dump(mode="json") for m in item.modifiers],

@@ -28,6 +28,7 @@ class OrderItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
         index=True,
     )
+    product_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     modifiers: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)

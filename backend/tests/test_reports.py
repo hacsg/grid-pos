@@ -71,6 +71,7 @@ async def _seed_order_item(
     item = OrderItem(
         order_id=order_id,
         product_id=product_id,
+        product_name="Test Product",
         quantity=quantity,
         unit_price=unit_price,
         modifiers=[],

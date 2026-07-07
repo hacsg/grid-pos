@@ -292,6 +292,8 @@ class TestGetOrder:
         assert item["notes"] == "Extra hot"
         assert len(item["modifiers"]) == 1
         assert item["modifiers"][0]["modifier_name"] == "Large"
+        assert item["product_name"] == product.name
+        assert item["product_name"]
 
     async def test_not_found(self, client: AsyncClient) -> None:
         bogus = "00000000-0000-0000-0000-000000000000"

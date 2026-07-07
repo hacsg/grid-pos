@@ -34,6 +34,7 @@ class OrderItemRead(UUIDSchema):
 
     order_id: UUID
     product_id: UUID
+    product_name: str
     quantity: int
     unit_price: Money
     modifiers: list[SelectedModifier]
