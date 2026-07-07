@@ -455,6 +455,74 @@ export async function createOrder(
   return data;
 }
 
+export interface OrderSummaryRead {
+  id: string;
+  order_number: string;
+  outlet_id: string;
+  staff_id: string;
+  subtotal: number | string;
+  total: number | string;
+  status: OrderStatus;
+  payment_method: string | null;
+  payment_reference: string | null;
+  cash_tendered?: number | string | null;
+  cash_change?: number | string | null;
+  cash_amount?: number | string | null;
+  card_amount?: number | string | null;
+  voucher_amount?: number | string | null;
+  cdc_amount?: number | string | null;
+  paynow_confirmed_at?: string | null;
+  loyalty_member_id?: string | null;
+  customer_id?: string | null;
+  loyalty_points_earned?: number | null;
+  loyalty_points_redeemed?: number | null;
+  loyalty_discount?: number | string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RefundRead {
+  id: string;
+  order_id: string;
+  staff_id: string;
+  amount: number | string;
+  reason: string | null;
+  kind: string;
+  created_at: string;
+}
+
+export interface ListOrdersParams {
+  date_from?: string;
+  date_to?: string;
+  status?: OrderStatus;
+  limit?: number;
+  offset?: number;
+  outlet_id?: string;
+  staff_id?: string;
+}
+
+export async function listOrders(params?: ListOrdersParams): Promise<OrderSummaryRead[]> {
+  const { data } = await api.get<OrderSummaryRead[]>('/orders', { params });
+  return data;
+}
+
+export async function getTodayOrders(outletId?: string): Promise<OrderSummaryRead[]> {
+  const { data } = await api.get<OrderSummaryRead[]>('/orders/today', {
+    params: outletId ? { outlet_id: outletId } : undefined,
+  });
+  return data;
+}
+
+export async function getOrder(orderId: string): Promise<OrderRead> {
+  const { data } = await api.get<OrderRead>(`/orders/${orderId}`);
+  return data;
+}
+
+export async function getOrderRefunds(orderId: string): Promise<RefundRead[]> {
+  const { data } = await api.get<RefundRead[]>(`/orders/${orderId}/refunds`);
+  return data;
+}
+
 export async function updateOrderStatus(
   orderId: string,
   payload: {
