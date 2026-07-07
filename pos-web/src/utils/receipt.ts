@@ -1,5 +1,6 @@
 import { formatCurrency, money, type OrderRead } from '@/api/client';
 import type { KitchenChit } from '@/utils/printer';
+import { MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import type { AppliedVoucher, CartItem, StaffSession, Totals } from '@/types';
 
 export interface PrintableOrderItem {
@@ -290,7 +291,7 @@ export function orderReadToPrintableOrder(
   const paymentMethod = order.payment_method ?? 'cash';
   const isManualPayNow =
     options?.manualPayNow ??
-    (paymentMethod === 'paynow' && order.payment_reference === 'MANUAL');
+    (paymentMethod === 'paynow' && order.payment_reference === MANUAL_PAYNOW_REFERENCE);
   const terminalMethod: 'card' | 'paynow' =
     options?.terminalPaymentMethod ??
     (paymentMethod === 'paynow' || isManualPayNow ? 'paynow' : 'card');

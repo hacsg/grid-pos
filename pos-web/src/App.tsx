@@ -9,6 +9,7 @@ import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
 import ProductGrid from '@/components/ProductGrid';
 import VoucherRedemption from '@/components/VoucherRedemption';
+import TransactionsPage from '@/components/TransactionsPage';
 import DiscountSheet from '@/components/DiscountSheet';
 import VoucherSheet from '@/components/VoucherSheet';
 import ParkedSheet from '@/components/ParkedSheet';
@@ -672,7 +673,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   );
 }
 
-function StaffTabs({ active }: { active: 'pos' | 'vouchers' }) {
+function StaffTabs({ active }: { active: 'pos' | 'vouchers' | 'transactions' }) {
   return (
     <div className="staff-tabs">
       <Link
@@ -688,6 +689,13 @@ function StaffTabs({ active }: { active: 'pos' | 'vouchers' }) {
         onPointerDown={() => tapFeedback()}
       >
         Vouchers
+      </Link>
+      <Link
+        to="/transactions"
+        className={`staff-tab ${active === 'transactions' ? 'active' : ''}`}
+        onPointerDown={() => tapFeedback()}
+      >
+        Transactions
       </Link>
     </div>
   );
@@ -719,7 +727,11 @@ function StaffShell() {
     setPrinterName(null);
   }
 
-  const activeTab: 'pos' | 'vouchers' = location.pathname.startsWith('/vouchers') ? 'vouchers' : 'pos';
+  const activeTab: 'pos' | 'vouchers' | 'transactions' = location.pathname.startsWith('/transactions')
+    ? 'transactions'
+    : location.pathname.startsWith('/vouchers')
+      ? 'vouchers'
+      : 'pos';
 
   function handleLogin(nextSession: StaffSession) {
     setSession(nextSession);
@@ -762,11 +774,11 @@ function StaffShell() {
       </div>
 
       <div className="staff-content">
-        {activeTab === 'pos' ? (
-          <PosWorkspace session={session} onLogout={handleLogout} />
-        ) : (
-          <VoucherRedemption session={session} onLogout={handleLogout} />
-        )}
+        <Routes>
+          <Route path="/vouchers" element={<VoucherRedemption session={session} onLogout={handleLogout} />} />
+          <Route path="/transactions" element={<TransactionsPage session={session} />} />
+          <Route path="/*" element={<PosWorkspace session={session} onLogout={handleLogout} />} />
+        </Routes>
       </div>
 
       {settingsOpen && (
