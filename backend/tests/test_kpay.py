@@ -478,3 +478,44 @@ async def test_kpay_status_poll_finds_intent(
     body = resp.json()
     assert body["id"] == str(intent.id)
     assert body["status"] == "pending"
+
+
+class TestReversalAuthorization:
+    """Manager-PIN gate for void/refund: cashier may initiate, PIN authorizes."""
+
+    @pytest.mark.asyncio
+    async def test_manager_authorizes_without_pin(self, db_session, manager_staff):
+        from app.routers.kpay import _authorize_reversal
+        who = await _authorize_reversal(db_session, manager_staff, None)
+        assert who.id == manager_staff.id
+
+    @pytest.mark.asyncio
+    async def test_cashier_needs_pin(self, db_session, cashier_staff):
+        from fastapi import HTTPException
+        from app.routers.kpay import _authorize_reversal
+        with pytest.raises(HTTPException) as exc:
+            await _authorize_reversal(db_session, cashier_staff, None)
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_cashier_with_valid_manager_pin(self, db_session, cashier_staff, manager_staff):
+        from app.routers.kpay import _authorize_reversal
+        who = await _authorize_reversal(db_session, cashier_staff, "1111")  # manager PIN
+        assert who.id == manager_staff.id
+
+    @pytest.mark.asyncio
+    async def test_cashier_with_wrong_pin_rejected(self, db_session, cashier_staff, manager_staff):
+        from fastapi import HTTPException
+        from app.routers.kpay import _authorize_reversal
+        with pytest.raises(HTTPException) as exc:
+            await _authorize_reversal(db_session, cashier_staff, "9999")
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_cashier_pin_is_not_manager_pin(self, db_session, cashier_staff):
+        # A valid *cashier* PIN must not authorize a reversal.
+        from fastapi import HTTPException
+        from app.routers.kpay import _authorize_reversal
+        with pytest.raises(HTTPException) as exc:
+            await _authorize_reversal(db_session, cashier_staff, "1234")  # cashier's own PIN
+        assert exc.value.status_code == 403

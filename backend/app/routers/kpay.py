@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.order import Order, OrderStatus
 from app.models.staff import Staff
+from app.utils.hashing import verify_pin
 from app.routers.ws_daemon import get_daemon_connection
 from app.services import idempotency, payment_intents
 from app.services.orders import (
@@ -48,6 +49,42 @@ def _ensure_manager(current_staff: Staff) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Manager authorization required for void/refund",
         )
+
+
+async def _authorize_reversal(
+    session, current_staff: Staff, manager_pin: str | None
+) -> Staff:
+    """Return the manager who authorized a void/refund.
+
+    A cashier may initiate the reversal but must supply a manager PIN. If the
+    logged-in staff is already a manager, their own authority is used and no PIN
+    is needed. Otherwise the PIN is matched against an active manager-role staff
+    at the same outlet. Returns the authorizing manager (for the audit trail).
+    """
+    role = str(getattr(current_staff.role, "value", current_staff.role))
+    if role in _MANAGER_ROLES:
+        return current_staff
+
+    if not manager_pin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager PIN required to authorize a void/refund",
+        )
+
+    result = await session.execute(
+        select(Staff).where(
+            Staff.outlet_id == current_staff.outlet_id, Staff.is_active.is_(True)
+        )
+    )
+    for staff in result.scalars().all():
+        staff_role = str(getattr(staff.role, "value", staff.role))
+        if staff_role in _MANAGER_ROLES and verify_pin(manager_pin, staff.pin_hash):
+            return staff
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Invalid manager PIN",
+    )
 
 log = logging.getLogger(__name__)
 
@@ -503,6 +540,9 @@ class KPayReversalRequest(BaseModel):
     amount: Optional[float] = Field(
         default=None, gt=0, description="Refund amount (defaults to full order total)"
     )
+    manager_pin: Optional[str] = Field(
+        default=None, description="Manager PIN, required when a non-manager initiates the reversal"
+    )
 
 
 class KPayReversalResponse(BaseModel):
@@ -528,12 +568,12 @@ async def void_payment(
 ) -> KPayReversalResponse:
     """Void (cancel) a same-day card sale on the terminal and mark the order cancelled."""
     _ensure_staff_can_access_outlet(outlet_id, current_staff)
-    _ensure_manager(current_staff)
 
     if not get_daemon_connection(outlet_id):
         raise HTTPException(status_code=503, detail=f"Daemon not connected for outlet {outlet_id}")
 
     async with AsyncSessionLocal() as session:
+        await _authorize_reversal(session, current_staff, request.manager_pin)
         intent = await payment_intents.get_successful_intent_for_order(session, request.order_id)
         if not intent:
             raise HTTPException(status_code=404, detail="No successful card payment found for this order")
@@ -578,12 +618,12 @@ async def refund_payment(
 ) -> KPayReversalResponse:
     """Refund a settled card sale on the terminal and mark the order refunded."""
     _ensure_staff_can_access_outlet(outlet_id, current_staff)
-    _ensure_manager(current_staff)
 
     if not get_daemon_connection(outlet_id):
         raise HTTPException(status_code=503, detail=f"Daemon not connected for outlet {outlet_id}")
 
     async with AsyncSessionLocal() as session:
+        await _authorize_reversal(session, current_staff, request.manager_pin)
         order = await session.get(Order, request.order_id)
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")

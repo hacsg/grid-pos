@@ -3578,6 +3578,30 @@ html.display-active #root {
   font-size: 14px;
 }
 
+.transactions-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.txn-quick-filter {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--grid-border);
+  border-radius: 999px;
+  background: var(--grid-surface);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--grid-text);
+}
+
+.txn-quick-filter.active {
+  background: var(--grid-primary);
+  border-color: var(--grid-primary);
+  color: #fff;
+}
+
 .transactions-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

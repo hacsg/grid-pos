@@ -61,16 +61,20 @@ export interface KPayReversalResult {
   message?: string | null;
 }
 
-export async function voidCardPayment(orderId: string): Promise<KPayReversalResult> {
+export async function voidCardPayment(orderId: string, managerPin?: string): Promise<KPayReversalResult> {
   return request<KPayReversalResult>('/api/kpay/void', {
     method: 'POST',
-    body: JSON.stringify({ order_id: orderId }),
+    body: JSON.stringify({ order_id: orderId, manager_pin: managerPin }),
   });
 }
 
-export async function refundCardPayment(orderId: string, amount?: number): Promise<KPayReversalResult> {
+export async function refundCardPayment(
+  orderId: string,
+  amount?: number,
+  managerPin?: string,
+): Promise<KPayReversalResult> {
   return request<KPayReversalResult>('/api/kpay/refund', {
     method: 'POST',
-    body: JSON.stringify({ order_id: orderId, amount }),
+    body: JSON.stringify({ order_id: orderId, amount, manager_pin: managerPin }),
   });
 }

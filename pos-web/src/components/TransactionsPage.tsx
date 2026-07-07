@@ -32,6 +32,12 @@ function todaySgtDate(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
 }
 
+function sgtDateOffset(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+}
+
 function formatOrderTime(createdAt: string): string {
   return new Date(createdAt).toLocaleTimeString('en-SG', {
     hour: '2-digit',
@@ -98,8 +104,11 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [refundAmount, setRefundAmount] = useState('');
+  const [managerPin, setManagerPin] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
 
+  // The logged-in staff may already be a manager (no PIN needed); a cashier can
+  // still initiate a void/refund but must enter a manager PIN to authorize it.
   const manager = isManager(session.staff.role);
 
   const loadOrders = useCallback(async () => {
@@ -202,17 +211,29 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
     tapFeedback();
     if (!detail) return;
     setConfirmAction(action);
+    setManagerPin('');
     if (action === 'refund') {
       setRefundAmount(String(money(detail.total)));
     }
   }
 
+  function closeConfirm() {
+    setConfirmAction(null);
+    setManagerPin('');
+  }
+
   async function handleConfirmAction() {
     if (!detail || !confirmAction) return;
+    // A non-manager must supply a PIN; a manager's own session authorizes.
+    const pin = manager ? undefined : managerPin.trim();
+    if (!manager && !pin) {
+      toast.error('Enter a manager PIN to authorize');
+      return;
+    }
     setActionBusy(true);
     try {
       if (confirmAction === 'void') {
-        const result = await voidCardPayment(detail.id);
+        const result = await voidCardPayment(detail.id, pin);
         if (result.result !== 'ok') {
           toast.error(result.message || 'Void failed');
           return;
@@ -220,7 +241,7 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
         toast.success('Payment voided');
       } else {
         const parsed = refundAmount.trim() ? money(refundAmount) : undefined;
-        const result = await refundCardPayment(detail.id, parsed);
+        const result = await refundCardPayment(detail.id, parsed, pin);
         if (result.result !== 'ok') {
           toast.error(result.message || 'Refund failed');
           return;
@@ -229,7 +250,7 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
       }
       await refreshDetail(detail.id);
       await loadOrders();
-      setConfirmAction(null);
+      closeConfirm();
       setRefundAmount('');
     } catch (err) {
       toast.error(getErrorDetail(err, confirmAction === 'void' ? 'Void failed' : 'Refund failed'));
@@ -238,15 +259,14 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
     }
   }
 
+  // Visible to any staff — a manager PIN authorizes the actual reversal.
   const showVoid =
-    manager &&
     detail &&
     detail.status === 'paid' &&
     isTerminalReversible(detail) &&
     isPaidToday(detail.created_at ?? '');
 
   const showRefund =
-    manager &&
     detail &&
     detail.status === 'paid' &&
     isTerminalReversible(detail);
@@ -366,7 +386,7 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
         )}
 
         {confirmAction && detail && (
-          <div className="modal-backdrop" role="presentation" onClick={() => !actionBusy && setConfirmAction(null)}>
+          <div className="modal-backdrop" role="presentation" onClick={() => !actionBusy && closeConfirm()}>
             <section
               className="loyalty-sheet txn-confirm-dialog"
               role="dialog"
@@ -398,12 +418,27 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
                     />
                   </label>
                 )}
+                {!manager && (
+                  <label className="txn-refund-input">
+                    <span>Manager PIN</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="••••"
+                      value={managerPin}
+                      onChange={(e) => setManagerPin(e.target.value)}
+                      disabled={actionBusy}
+                      autoFocus
+                    />
+                  </label>
+                )}
                 <div className="txn-confirm-actions">
                   <button
                     className="secondary-button"
                     type="button"
                     disabled={actionBusy}
-                    onClick={() => setConfirmAction(null)}
+                    onClick={closeConfirm}
                   >
                     Cancel
                   </button>
@@ -430,6 +465,26 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
         <h1>Transactions</h1>
         <p className="transactions-subtitle">Look up orders, reprint, void or refund</p>
       </header>
+
+      <div className="transactions-quick-filters" role="group" aria-label="Quick date filters">
+        {[
+          { label: 'Today', from: todaySgtDate(), to: todaySgtDate() },
+          { label: 'Yesterday', from: sgtDateOffset(-1), to: sgtDateOffset(-1) },
+          { label: 'Last 7 days', from: sgtDateOffset(-6), to: todaySgtDate() },
+        ].map((preset) => {
+          const active = dateFrom === preset.from && dateTo === preset.to;
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              className={active ? 'txn-quick-filter active' : 'txn-quick-filter'}
+              onClick={() => { tapFeedback(); setDateFrom(preset.from); setDateTo(preset.to); }}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="transactions-filters">
         <label className="txn-filter-field">
