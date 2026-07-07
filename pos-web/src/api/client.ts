@@ -138,6 +138,7 @@ export interface OrderRead extends Timestamped {
   items: Array<{
     id: string;
     product_id: string;
+    product_name: string;
     quantity: number;
     unit_price: number | string;
     modifiers: SelectedModifier[];

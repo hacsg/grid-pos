@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildReceiptText > produces deterministic output for a fixed PrintableOrder 1`] = `
+"          GRID WAFFLES
+          Grid Pte Ltd
+         UEN 202600001A
+        Grid Test Outlet
+--------------------------------
+Order 0042
+07/07/2026, 10:30:00 am
+--------------------------------
+2 x Coconut Pandan Waffle $19.98
+  Extra crispy
+1 x Iced Latte             $5.50
+--------------------------------
+Discount                  -$2.00
+Vouchers                  -$3.00
+TOTAL                     $25.48
+Payment: Split
+  Cash: $10.00
+  Card: $9.48
+  Voucher: $3.00
+Change                     $1.50
+Vouchers redeemed          $3.00
+  Acre Group ACRE-10      -$3.00
+           Thank you"
+`;

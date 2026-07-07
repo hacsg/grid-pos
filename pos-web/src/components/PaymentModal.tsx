@@ -25,7 +25,13 @@ import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
 import { buildPayNowPayload, MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import { newIdempotencyKey } from '@/utils/idempotency';
-import { isPrintingSupported, openCashDrawer, printKitchenChit, printReceipt as printReceiptUsb, type KitchenChit } from '@/utils/printer';
+import { isPrintingSupported, openCashDrawer, printKitchenChit, printReceipt as printReceiptUsb } from '@/utils/printer';
+import {
+  buildChit,
+  buildReceiptText,
+  formatReceiptTime,
+  receiptSnapshotToPrintableOrder,
+} from '@/utils/receipt';
 import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
@@ -110,50 +116,6 @@ function terminalMethodLabel(method: TerminalPaymentMethod): string {
   return method === 'paynow' ? 'PayNow' : 'Card';
 }
 
-function formatReceiptTime(value?: string | null): string {
-  const parsed = value ? new Date(value) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleTimeString('en-SG', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function receiptPaymentLines(receipt: ReceiptSnapshot): string[] {
-  if (receipt.paymentMode !== 'split') {
-    if (receipt.paymentMode === 'paynow' && receipt.manualPayNow) {
-      return [
-        'Payment: PayNow (Manual)',
-        `Amount: ${formatCurrency(receipt.cardAmount)}`,
-        `Confirmed: ${formatReceiptTime(receipt.paynowConfirmedAt)}`,
-      ];
-    }
-    return [`Payment: ${paymentModeLabel(receipt.paymentMode)}`];
-  }
-
-  const lines = ['Payment: Split'];
-  if (receipt.cashAmount > 0) {
-    lines.push(`  Cash: ${formatCurrency(receipt.cashAmount)}`);
-  }
-  if (receipt.cdcAmount > 0) {
-    lines.push(`  CDC voucher: ${formatCurrency(receipt.cdcAmount)}`);
-  }
-  if (receipt.cardAmount > 0) {
-    const label =
-      receipt.manualPayNow && receipt.terminalPaymentMethod === 'paynow'
-        ? 'PayNow (Manual)'
-        : terminalMethodLabel(receipt.terminalPaymentMethod ?? 'card');
-    lines.push(`  ${label}: ${formatCurrency(receipt.cardAmount)}`);
-  }
-  if (receipt.voucherAmount > 0) {
-    lines.push(`  Voucher: ${formatCurrency(receipt.voucherAmount)}`);
-  }
-  if (receipt.manualPayNow) {
-    lines.push(`Confirmed: ${formatReceiptTime(receipt.paynowConfirmedAt)}`);
-  }
-  return lines;
-}
-
 function getHttpStatus(err: unknown): number | undefined {
   return (err as { response?: { status?: number } })?.response?.status;
 }
@@ -178,86 +140,6 @@ function cardFailureMessage(status: PaymentIntent['status'], errorMessage?: stri
     return errorMessage || 'Payment failed. You may retry once the terminal confirms no charge.';
   }
   return errorMessage || 'Payment failed.';
-}
-
-// 58mm thermal paper prints 32 columns in the default ESC/POS font.
-const RECEIPT_WIDTH = 32;
-
-function receiptCenter(text: string): string {
-  const pad = Math.max(0, Math.floor((RECEIPT_WIDTH - text.length) / 2));
-  return ' '.repeat(pad) + text;
-}
-
-/** Left text with the amount right-aligned; long lines push the amount to its own row. */
-function receiptRow(left: string, right = ''): string {
-  if (!right) {
-    return left;
-  }
-  const space = RECEIPT_WIDTH - right.length - 1;
-  if (left.length > space) {
-    return `${left}\n${right.padStart(RECEIPT_WIDTH)}`;
-  }
-  return `${left.padEnd(space)} ${right}`;
-}
-
-const RECEIPT_DIVIDER = '-'.repeat(RECEIPT_WIDTH);
-
-function buildReceiptText(receipt: ReceiptSnapshot, session: StaffSession): string {
-  // Item line shows the consolidated line total; modifiers list underneath
-  // with no per-modifier price (the line total already includes them).
-  const rows = receipt.items.flatMap((item) => {
-    const modifierRows = item.modifiers.map((modifier) => `  ${modifier.modifier_name}`);
-    return [
-      receiptRow(
-        `${item.quantity} x ${item.product.name}`,
-        formatCurrency((money(item.product.price) + item.modifiers.reduce((sum, modifier) => sum + modifier.price_adjustment, 0)) * item.quantity)
-      ),
-      ...modifierRows,
-    ];
-  });
-
-  const voucherLines: string[] = [];
-  if (receipt.vouchers && receipt.vouchers.length > 0) {
-    voucherLines.push(receiptRow('Vouchers redeemed', formatCurrency(receipt.totals.voucherDiscount || receipt.vouchers.reduce((s, v) => s + v.amount, 0))));
-    receipt.vouchers.forEach((v) => {
-      voucherLines.push(receiptRow(`  ${v.type === 'cdc' ? 'CDC' : 'Acre Group'} ${v.code}`, `-${formatCurrency(v.amount)}`));
-    });
-  }
-
-  // Brand + legal entity come from the outlet record (editable in admin),
-  // so a rebrand never needs a code change.
-  const brand = session.outlet.receipt_brand_name?.trim() || session.outlet.name;
-  const companyLines = (session.outlet.receipt_company_details ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map(receiptCenter);
-
-  const totalAdjustments = receipt.totals.discount + receipt.totals.loyaltyDiscount;
-
-  return [
-    receiptCenter(brand.toUpperCase()),
-    ...companyLines,
-    receiptCenter(session.outlet.name),
-    RECEIPT_DIVIDER,
-    receiptRow(`Order ${receipt.order.order_number}`),
-    receiptRow(new Date().toLocaleString('en-SG')),
-    RECEIPT_DIVIDER,
-    ...rows,
-    RECEIPT_DIVIDER,
-    // No subtotal/tax — just savings (if any) and the grand total.
-    ...(totalAdjustments > 0 ? [receiptRow('Discount', `-${formatCurrency(totalAdjustments)}`)] : []),
-    ...(receipt.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(receipt.totals.voucherDiscount)}`)] : []),
-    receiptRow('TOTAL', formatCurrency(receipt.totals.total)),
-    ...receiptPaymentLines(receipt),
-    receipt.changeDue > 0 ? receiptRow('Change', formatCurrency(receipt.changeDue)) : '',
-    '',
-    ...voucherLines,
-    '',
-    receiptCenter('Thank you'),
-  ]
-    .filter(Boolean)
-    .join('\n');
 }
 
 export default function PaymentModal({
@@ -636,7 +518,7 @@ export default function PaymentModal({
       autoChit = true;
     }
     if (autoChit && snapshot.items.length > 0) {
-      void printKitchenChit(buildChit(snapshot));
+      void printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(snapshot, session)));
     }
     setStep('complete');
     setCardPayment(null);
@@ -1117,7 +999,7 @@ export default function PaymentModal({
       return;
     }
     tapFeedback();
-    const text = buildReceiptText(receipt, session);
+    const text = buildReceiptText(receiptSnapshotToPrintableOrder(receipt, session));
     const printed = await printReceiptUsb(text);
     if (printed) {
       toast.success('Receipt sent to printer');
@@ -1126,24 +1008,12 @@ export default function PaymentModal({
     }
   }
 
-  function buildChit(snapshot: ReceiptSnapshot): KitchenChit {
-    return {
-      orderNumber: snapshot.order.order_number,
-      time: new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false }),
-      items: snapshot.items.map((item) => ({
-        quantity: item.quantity,
-        name: item.product.name,
-        modifiers: item.modifiers.map((m) => m.modifier_name),
-      })),
-    };
-  }
-
   async function printChit() {
     if (!receipt) {
       return;
     }
     tapFeedback();
-    const printed = await printKitchenChit(buildChit(receipt));
+    const printed = await printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(receipt, session)));
     if (printed) {
       toast.success('Kitchen chit sent');
     } else {
