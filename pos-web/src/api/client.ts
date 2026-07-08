@@ -523,6 +523,20 @@ export async function getOrderRefunds(orderId: string): Promise<RefundRead[]> {
   return data;
 }
 
+/** POS-side refund: marks a paid order refunded + audit trail (no terminal).
+ * Works for any payment type; the physical refund is done manually. */
+export async function refundOrder(
+  orderId: string,
+  opts?: { amount?: number; reason?: string; managerPin?: string },
+): Promise<OrderRead> {
+  const { data } = await api.post<OrderRead>(`/orders/${orderId}/refund`, {
+    amount: opts?.amount,
+    reason: opts?.reason,
+    manager_pin: opts?.managerPin,
+  });
+  return data;
+}
+
 export async function updateOrderStatus(
   orderId: string,
   payload: {

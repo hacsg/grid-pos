@@ -229,6 +229,17 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     enabled: Boolean(session),
   });
 
+  // No "All" tab: land on the first category once categories load (or if the
+  // current selection is no longer valid).
+  useEffect(() => {
+    const cats = categoriesQuery.data;
+    if (!cats || cats.length === 0) return;
+    const sorted = [...cats].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    if (selectedCategoryId === 'all' || !sorted.some((c) => c.id === selectedCategoryId)) {
+      setSelectedCategoryId(sorted[0].id);
+    }
+  }, [categoriesQuery.data, selectedCategoryId]);
+
   const productsQuery = useQuery({
     queryKey: ['products', session?.outlet.id, selectedCategoryId, search],
     queryFn: () =>

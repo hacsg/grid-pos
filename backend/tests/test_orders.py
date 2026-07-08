@@ -1201,3 +1201,33 @@ class TestVoucherApplication:
 
         result = await db_session.execute(select(OrderVoucher))
         assert len(result.scalars().all()) == 1
+
+
+class TestOrderRefundManagerPin:
+    """POS-side order refund: manager session OR a valid manager PIN authorizes."""
+
+    @pytest.mark.asyncio
+    async def test_manager_no_pin(self, db_session, manager_staff):
+        from app.routers.orders import _authorize_manager_action
+        await _authorize_manager_action(db_session, manager_staff, None)  # no raise
+
+    @pytest.mark.asyncio
+    async def test_cashier_no_pin_rejected(self, db_session, cashier_staff):
+        from fastapi import HTTPException
+        from app.routers.orders import _authorize_manager_action
+        with pytest.raises(HTTPException) as exc:
+            await _authorize_manager_action(db_session, cashier_staff, None)
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_cashier_valid_manager_pin(self, db_session, cashier_staff, manager_staff):
+        from app.routers.orders import _authorize_manager_action
+        await _authorize_manager_action(db_session, cashier_staff, "1111")  # manager PIN, no raise
+
+    @pytest.mark.asyncio
+    async def test_cashier_own_pin_rejected(self, db_session, cashier_staff):
+        from fastapi import HTTPException
+        from app.routers.orders import _authorize_manager_action
+        with pytest.raises(HTTPException) as exc:
+            await _authorize_manager_action(db_session, cashier_staff, "1234")  # cashier's own PIN
+        assert exc.value.status_code == 403

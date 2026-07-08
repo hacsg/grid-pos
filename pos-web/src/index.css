@@ -2553,6 +2553,11 @@ html.display-active #root {
   flex-direction: column;
   gap: 14px;
   padding: 22px 24px 26px;
+  /* Scroll within the sheet so the logout button at the bottom is always
+     reachable (the sheet itself is overflow:hidden). */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .settings-row {

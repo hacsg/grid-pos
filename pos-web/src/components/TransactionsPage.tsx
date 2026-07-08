@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Printer, Receipt, RotateCcw, Undo2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Printer, Receipt, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   formatCurrency,
@@ -8,15 +8,14 @@ import {
   getTodayOrders,
   listOrders,
   money,
+  refundOrder,
   type OrderRead,
   type OrderSummaryRead,
   type RefundRead,
   type StaffRole,
 } from '@/api/client';
-import { refundCardPayment, voidCardPayment } from '@/api/kpayClient';
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
-import { MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import { printKitchenChit, printReceipt } from '@/utils/printer';
 import { buildChit, buildReceiptText, orderReadToPrintableOrder } from '@/utils/receipt';
 
@@ -26,7 +25,7 @@ interface TransactionsPageProps {
   session: StaffSession;
 }
 
-type ConfirmAction = 'void' | 'refund' | null;
+type ConfirmAction = 'refund' | null;
 
 function todaySgtDate(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
@@ -63,21 +62,6 @@ function statusBadgeClass(status: string): string {
 
 function isManager(role: StaffRole): boolean {
   return MANAGER_ROLES.includes(role);
-}
-
-function isTerminalReversible(order: OrderSummaryRead | OrderRead): boolean {
-  const method = order.payment_method;
-  if (!method || method === 'cash') return false;
-  if (method === 'paynow' && order.payment_reference === MANUAL_PAYNOW_REFERENCE) return false;
-  if (method === 'card') return true;
-  if (method === 'paynow') return true;
-  if (method === 'split') return money(order.card_amount) > 0;
-  return false;
-}
-
-function isPaidToday(createdAt: string): boolean {
-  const orderDay = new Date(createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
-  return orderDay === todaySgtDate();
 }
 
 function getErrorDetail(err: unknown, fallback: string): string {
@@ -232,44 +216,24 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
     }
     setActionBusy(true);
     try {
-      if (confirmAction === 'void') {
-        const result = await voidCardPayment(detail.id, pin);
-        if (result.result !== 'ok') {
-          toast.error(result.message || 'Void failed');
-          return;
-        }
-        toast.success('Payment voided');
-      } else {
-        const parsed = refundAmount.trim() ? money(refundAmount) : undefined;
-        const result = await refundCardPayment(detail.id, parsed, pin);
-        if (result.result !== 'ok') {
-          toast.error(result.message || 'Refund failed');
-          return;
-        }
-        toast.success('Refund processed');
-      }
+      const parsed = refundAmount.trim() ? money(refundAmount) : undefined;
+      await refundOrder(detail.id, { amount: parsed, managerPin: pin });
+      toast.success('Refund recorded');
       await refreshDetail(detail.id);
       await loadOrders();
       closeConfirm();
       setRefundAmount('');
     } catch (err) {
-      toast.error(getErrorDetail(err, confirmAction === 'void' ? 'Void failed' : 'Refund failed'));
+      toast.error(getErrorDetail(err, 'Refund failed'));
     } finally {
       setActionBusy(false);
     }
   }
 
-  // Visible to any staff — a manager PIN authorizes the actual reversal.
-  const showVoid =
-    detail &&
-    detail.status === 'paid' &&
-    isTerminalReversible(detail) &&
-    isPaidToday(detail.created_at ?? '');
-
-  const showRefund =
-    detail &&
-    detail.status === 'paid' &&
-    isTerminalReversible(detail);
+  // Any paid order can be refunded (records it in the POS; the physical refund
+  // — cash from drawer, card/PayNow on the terminal/bank — is done manually).
+  // Visible to all staff; a manager PIN authorizes.
+  const showRefund = detail && detail.status === 'paid';
 
   if (selectedId) {
     return (
@@ -368,19 +332,12 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
                 <Receipt size={18} aria-hidden="true" />
                 Reprint receipt
               </button>
-              {showVoid && (
-                <button className="danger-button txn-action-btn" type="button" onClick={() => openConfirm('void')}>
-                  <Undo2 size={18} aria-hidden="true" />
-                  Void
-                </button>
-              )}
               {showRefund && (
                 <button className="danger-button txn-action-btn" type="button" onClick={() => openConfirm('refund')}>
                   <RotateCcw size={18} aria-hidden="true" />
                   Refund
                 </button>
               )}
-              {/* TODO: Cash / PayNow-manual refunds (drawer open + status note) — out of scope */}
             </section>
           </div>
         )}
@@ -396,28 +353,26 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
               <header className="sheet-header">
                 <div>
                   <p>Order {detail.order_number}</p>
-                  <h2>{confirmAction === 'void' ? 'Void payment?' : 'Refund payment?'}</h2>
+                  <h2>Refund order?</h2>
                 </div>
               </header>
               <div className="txn-confirm-body">
                 <p>
-                  {confirmAction === 'void'
-                    ? `Void the card payment of ${formatCurrency(detail.card_amount || detail.total)}? This is a same-day reversal before settlement.`
-                    : `Refund from the terminal. Full order total: ${formatCurrency(detail.total)}.`}
+                  Record a refund of up to {formatCurrency(detail.total)} for this order. Give the
+                  physical refund to the customer (cash from the drawer, or reverse it on the KPay
+                  terminal / bank) — this marks the order refunded in the POS.
                 </p>
-                {confirmAction === 'refund' && (
-                  <label className="txn-refund-input">
-                    <span>Amount (leave full for complete refund)</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={refundAmount}
-                      onChange={(e) => setRefundAmount(e.target.value)}
-                      disabled={actionBusy}
-                    />
-                  </label>
-                )}
+                <label className="txn-refund-input">
+                  <span>Amount (leave full for complete refund)</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    disabled={actionBusy}
+                  />
+                </label>
                 {!manager && (
                   <label className="txn-refund-input">
                     <span>Manager PIN</span>
@@ -448,7 +403,7 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
                     disabled={actionBusy}
                     onClick={() => void handleConfirmAction()}
                   >
-                    {actionBusy ? 'Processing…' : confirmAction === 'void' ? 'Void' : 'Refund'}
+                    {actionBusy ? 'Processing…' : 'Refund'}
                   </button>
                 </div>
               </div>

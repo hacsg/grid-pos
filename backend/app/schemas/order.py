@@ -106,6 +106,9 @@ class OrderRefundCreate(BaseModel):
 
     reason: str | None = Field(default=None, max_length=500)
     amount: Money | None = Field(default=None, gt=0)
+    manager_pin: str | None = Field(
+        default=None, description="Manager PIN, required when a non-manager initiates the refund"
+    )
 
 
 class RefundRead(UUIDSchema):

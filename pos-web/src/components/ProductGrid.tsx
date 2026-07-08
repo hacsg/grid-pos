@@ -272,34 +272,7 @@ export default function ProductGrid({
         </button>
       </header>
 
-      <div className="catalog-toolbar">
-        <label className={`search-field ${scanSuccess ? 'scan-success' : ''}`}>
-          <Search size={20} aria-hidden="true" />
-          <input
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search products"
-            type="search"
-          />
-          {scanSuccess && (
-            <span className="search-scan-status" aria-live="polite">
-              <Check size={15} aria-hidden="true" />
-              Added
-            </span>
-          )}
-        </label>
-      </div>
-
       <nav className="category-tabs" aria-label="Categories">
-        <button
-          className={selectedCategoryId === 'all' ? 'active' : ''}
-          type="button"
-          onPointerDown={() => tapFeedback()}
-          onClick={() => onCategoryChange('all')}
-        >
-          All
-        </button>
         {sortedCategories.map((category) => {
           const isActive = selectedCategoryId === category.id;
           const tabColor = category.color ?? undefined;

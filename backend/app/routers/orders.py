@@ -40,6 +40,7 @@ from app.services.orders import (
 SGT_TZ = ZoneInfo("Asia/Singapore")
 from app.services.vouchers import apply_vouchers_to_order, load_applied_vouchers_for_order
 from app.utils.auth import get_current_staff
+from app.utils.hashing import verify_pin
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -54,6 +55,34 @@ def _ensure_manager_authorized(current_staff: Staff) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Manager authorization required",
         )
+
+
+async def _authorize_manager_action(
+    db: AsyncSession, current_staff: Staff, manager_pin: str | None
+) -> None:
+    """Allow a manager (by session) or any staff supplying a valid manager PIN.
+
+    Lets a cashier initiate a refund with a manager's PIN — the same pattern as
+    KPay void/refund. A cashier's own PIN cannot authorize.
+    """
+    role = str(getattr(current_staff.role, "value", current_staff.role))
+    if role in _MANAGER_ROLES:
+        return
+    if not manager_pin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager PIN required to authorize a refund",
+        )
+    result = await db.execute(
+        select(Staff).where(
+            Staff.outlet_id == current_staff.outlet_id, Staff.is_active.is_(True)
+        )
+    )
+    for staff in result.scalars().all():
+        staff_role = str(getattr(staff.role, "value", staff.role))
+        if staff_role in _MANAGER_ROLES and verify_pin(manager_pin, staff.pin_hash):
+            return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid manager PIN")
 
 
 async def _ensure_status_change_authorized(
@@ -229,7 +258,7 @@ async def refund_order(
     current_staff: Staff = Depends(get_current_staff),
 ) -> Order:
     """Process a full or partial refund on a paid order."""
-    _ensure_manager_authorized(current_staff)
+    await _authorize_manager_action(db, current_staff, payload.manager_pin)
     return await refund_order_service(
         db,
         order_id,
