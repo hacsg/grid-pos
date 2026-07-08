@@ -523,6 +523,43 @@ export async function getOrderRefunds(orderId: string): Promise<RefundRead[]> {
   return data;
 }
 
+// --- Till / cash drawer -----------------------------------------------------
+export interface TillSession {
+  id: string;
+  outlet_id: string;
+  business_date: string;
+  status: 'open' | 'closed';
+  opening_float: number | string;
+  opened_at: string;
+  counted_cash?: number | string | null;
+  closed_at?: string | null;
+  // Manager-only fields (null for cashiers):
+  expected_cash?: number | string | null;
+  variance?: number | string | null;
+  opened_by_staff_id?: string | null;
+  closed_by_staff_id?: string | null;
+}
+
+export async function getCurrentTill(outletId: string): Promise<TillSession | null> {
+  const { data } = await api.get<TillSession | null>('/till/current', { params: { outlet_id: outletId } });
+  return data;
+}
+
+export async function openTill(outletId: string, openingFloat: number): Promise<TillSession> {
+  const { data } = await api.post<TillSession>('/till/open', { outlet_id: outletId, opening_float: openingFloat });
+  return data;
+}
+
+export async function closeTill(sessionId: string, countedCash: number): Promise<TillSession> {
+  const { data } = await api.post<TillSession>('/till/close', { session_id: sessionId, counted_cash: countedCash });
+  return data;
+}
+
+export async function getTillSessions(outletId: string): Promise<TillSession[]> {
+  const { data } = await api.get<TillSession[]>('/till/sessions', { params: { outlet_id: outletId } });
+  return data;
+}
+
 /** POS-side refund: marks a paid order refunded + audit trail (no terminal).
  * Works for any payment type; the physical refund is done manually. */
 export async function refundOrder(

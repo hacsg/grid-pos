@@ -7,6 +7,7 @@ import CartSidebar from '@/components/CartSidebar';
 import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal from '@/components/PaymentModal';
+import TillControls from '@/components/TillControls';
 import ProductGrid from '@/components/ProductGrid';
 import VoucherRedemption from '@/components/VoucherRedemption';
 import TransactionsPage from '@/components/TransactionsPage';
@@ -17,6 +18,7 @@ import CustomerDisplay from '@/display/CustomerDisplay';
 import {
   getActiveDiscounts,
   getCategories,
+  getCurrentTill,
   getProducts,
   money,
   type LoyaltyMember,
@@ -777,9 +779,17 @@ function StaffShell() {
     localStorage.removeItem('auth_token');
   }
 
+  const tillQuery = useQuery({
+    queryKey: ['till', session?.outlet.id],
+    queryFn: () => getCurrentTill(session!.outlet.id),
+    enabled: Boolean(session),
+  });
+
   if (!session) {
     return <LoginScreen onLogin={handleLogin} />;
   }
+
+  const tillNotOpen = tillQuery.isFetched && tillQuery.data == null;
 
   const buildTime = new Date(__BUILD_TIME__).toLocaleString('en-SG', {
     timeZone: 'Asia/Singapore',
@@ -803,6 +813,16 @@ function StaffShell() {
           <ChevronDown size={16} aria-hidden="true" />
         </button>
       </div>
+
+      {tillNotOpen && (
+        <button
+          className="till-open-banner"
+          type="button"
+          onClick={() => { tapFeedback(); setSettingsOpen(true); }}
+        >
+          Cash till not opened for today — tap to enter the opening float
+        </button>
+      )}
 
       <div className="staff-content">
         <Routes>
@@ -887,6 +907,8 @@ function StaffShell() {
                   {manualTerminal ? 'On' : 'Off'}
                 </button>
               </div>
+
+              <TillControls session={session} />
 
               <div className="settings-build">
                 <div className="settings-build-title">Current build</div>
