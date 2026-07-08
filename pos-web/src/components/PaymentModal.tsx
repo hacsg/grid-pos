@@ -105,6 +105,16 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/** Plan B: POS doesn't drive the KPay terminal; staff key card amounts in
+ * manually and confirm. Toggle in Settings. */
+export function manualTerminalEnabled(): boolean {
+  try {
+    return localStorage.getItem('grid_pos_manual_terminal') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function paymentModeLabel(mode: PaymentMode): string {
   if (mode === 'paynow') {
     return 'PayNow';
@@ -271,26 +281,38 @@ export default function PaymentModal({
         ? splitTerminalAmount
         : 0;
   const manualPayNowEligible = manualPayNowAmount > 0;
-  // Manual PayNow (direct-to-bank QR) is used when the terminal is offline OR
-  // when the cashier explicitly picks the Manual PayNow mode.
-  const manualPayNowActive = manualPayNowEligible && (terminalConnected === false || forceManualPayNow);
+  // Manual terminal mode (Plan B / go-live without KPay API integration): the
+  // POS does NOT drive the terminal. Staff key the amount into the KPay terminal
+  // themselves and confirm; PayNow uses our self-generated QR. Toggle in
+  // Settings (localStorage 'grid_pos_manual_terminal').
+  const manualTerminal = manualTerminalEnabled();
+  // Manual PayNow (direct-to-bank QR) is used when the terminal is offline, when
+  // the cashier picks Manual QR, or whenever manual terminal mode is on.
+  const manualPayNowActive =
+    manualPayNowEligible && (terminalConnected === false || forceManualPayNow || manualTerminal);
   const manualPayNowReady = manualPayNowActive && !payNowQrLoading && Boolean(payNowQrUrl);
+  // Manual card: staff enter the amount on the terminal, then confirm here.
+  const manualCardActive =
+    manualTerminal &&
+    (mode === 'card' || (mode === 'split' && splitSecondMethod === 'card' && splitTerminalAmount > 0));
   const terminalUnavailable =
+    !manualTerminal &&
     terminalConnected === false &&
     (mode === 'card' || (mode === 'split' && splitSecondMethod === 'card' && splitTerminalAmount > 0));
   const requiresTerminal =
-    mode === 'card' ||
-    (mode === 'paynow' && !manualPayNowActive) ||
-    (mode === 'split' &&
-      splitTerminalAmount > 0 &&
-      (splitSecondMethod === 'card' || !manualPayNowActive));
+    !manualTerminal &&
+    (mode === 'card' ||
+      (mode === 'paynow' && !manualPayNowActive) ||
+      (mode === 'split' &&
+        splitTerminalAmount > 0 &&
+        (splitSecondMethod === 'card' || !manualPayNowActive)));
   const changeDue = mode === 'cash' ? roundMoney(Math.max(0, cashTendered - totalDue)) : 0;
   const cashDue = mode === 'cash' ? totalDue : splitCashAmount;
 
   const canComplete =
     items.length > 0 &&
     !submitting &&
-    ((mode === 'card' && terminalConnected !== false) ||
+    ((mode === 'card' && (manualTerminal || terminalConnected !== false)) ||
       (mode === 'paynow' && (manualPayNowActive ? manualPayNowReady : terminalConnected !== false)) ||
       (mode === 'cash' && cashTendered >= totalDue) ||
       (mode === 'split' &&
@@ -735,7 +757,9 @@ export default function PaymentModal({
   }
 
   const terminalStatusText =
-    manualPayNowActive
+    manualTerminal
+      ? 'Manual terminal mode — key amount into the KPay terminal'
+      : manualPayNowActive
       ? forceManualPayNow
         ? 'Manual PayNow – pay to bank QR'
         : 'Terminal offline – Manual PayNow'
@@ -748,6 +772,8 @@ export default function PaymentModal({
     ? step === 'processing'
       ? 'Processing payment…'
       : 'Processing…'
+    : manualCardActive
+      ? 'Card received'
     : manualPayNowActive
       ? 'Payment received'
     : requiresTerminal && error && terminalConnected !== false
@@ -826,13 +852,19 @@ export default function PaymentModal({
     setFinalizationPending(null);
 
     try {
-      const paymentReference = manualPayNowActive ? 'MANUAL' : `POS-${checkoutIdempotencyKey.slice(0, 8)}`;
+      const paymentReference =
+        manualPayNowActive || manualCardActive ? 'MANUAL' : `POS-${checkoutIdempotencyKey.slice(0, 8)}`;
       const voucherCodes = vouchers.length > 0 ? vouchers.map((v) => v.code) : null;
 
       const order = await ensurePendingOrder(paymentReference, voucherCodes, mode);
 
-      if (manualPayNowActive) {
-        const confirmedAt = new Date().toISOString();
+      // Manual-confirm tender: manual PayNow (self-QR) or manual card (staff key
+      // the amount into the terminal). Either way we mark the order paid with no
+      // daemon/terminal call.
+      if (manualPayNowActive || manualCardActive) {
+        const isPayNow = manualPayNowActive;
+        const confirmedAt = isPayNow ? new Date().toISOString() : null;
+        const singleMethod = mode === 'paynow' ? 'paynow' : 'card';
         await redeemPostPayment(order.id, voucherCodes);
         const paidOrder =
           mode === 'split'
@@ -846,7 +878,7 @@ export default function PaymentModal({
                   cash_amount: splitCashAmountRaw,
                   voucher_amount: voucherAmount,
                   cdc_amount: splitCdcAmountRaw,
-                  paynow_confirmed_at: confirmedAt,
+                  ...(confirmedAt ? { paynow_confirmed_at: confirmedAt } : {}),
                 },
                 { idempotencyKey: markPaidIdempotencyKey }
               )
@@ -854,24 +886,24 @@ export default function PaymentModal({
                 order.id,
                 {
                   status: 'paid',
-                  payment_method: 'paynow',
+                  payment_method: singleMethod,
                   payment_reference: paymentReference,
-                  paynow_confirmed_at: confirmedAt,
+                  ...(confirmedAt ? { paynow_confirmed_at: confirmedAt } : {}),
                 },
                 { idempotencyKey: markPaidIdempotencyKey }
               );
 
         completePaidOrder(paidOrder, mode, {
-          terminalPaymentMethod: 'paynow',
+          terminalPaymentMethod: isPayNow ? 'paynow' : 'card',
           cashAmount: mode === 'split' ? splitCashAmount : 0,
           cardAmount: mode === 'split' ? splitTerminalAmount : totalDue,
           voucherAmount: mode === 'split' ? voucherAmount : 0,
           cdcAmount: mode === 'split' ? splitCdcAmount : 0,
           changeDue: 0,
-          manualPayNow: true,
-          paynowConfirmedAt: paidOrder.paynow_confirmed_at ?? confirmedAt,
+          manualPayNow: isPayNow,
+          paynowConfirmedAt: confirmedAt ?? undefined,
         });
-        toast.success('Manual PayNow confirmed');
+        toast.success(isPayNow ? 'Manual PayNow confirmed' : 'Card payment recorded');
         return;
       }
 
@@ -1113,6 +1145,12 @@ export default function PaymentModal({
               {(mode === 'card' || mode === 'paynow') && (
                 mode === 'paynow' && manualPayNowActive ? (
                   renderManualPayNowPanel(totalDue)
+                ) : manualCardActive ? (
+                  <div className="terminal-panel">
+                    <CreditCard size={32} aria-hidden="true" />
+                    <strong>{formatCurrency(totalDue)}</strong>
+                    <span>Enter this amount on the KPay terminal, then press “Card received”.</span>
+                  </div>
                 ) : (
                   <div className="terminal-panel">
                     {mode === 'paynow' ? <QrCode size={32} aria-hidden="true" /> : <CreditCard size={32} aria-hidden="true" />}

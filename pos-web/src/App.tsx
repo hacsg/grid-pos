@@ -706,6 +706,26 @@ function StaffShell() {
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
+  const [manualTerminal, setManualTerminal] = useState(() => {
+    try {
+      return localStorage.getItem('grid_pos_manual_terminal') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleManualTerminal() {
+    tapFeedback();
+    setManualTerminal((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('grid_pos_manual_terminal', next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   async function handleConnectPrinter(allDevices = false) {
     tapFeedback();
@@ -838,6 +858,24 @@ function StaffShell() {
                   </div>
                 </div>
               )}
+
+              <div className="settings-row settings-toggle-row">
+                <div>
+                  <strong>Manual terminal mode</strong>
+                  <small>
+                    {manualTerminal
+                      ? 'Card: key the amount into the KPay terminal, then confirm. PayNow: self-QR.'
+                      : 'Off — POS drives the KPay terminal directly (needs integration).'}
+                  </small>
+                </div>
+                <button
+                  className={manualTerminal ? 'primary-button' : 'secondary-button'}
+                  type="button"
+                  onClick={toggleManualTerminal}
+                >
+                  {manualTerminal ? 'On' : 'Off'}
+                </button>
+              </div>
 
               <div className="settings-build">
                 <div className="settings-build-title">Current build</div>

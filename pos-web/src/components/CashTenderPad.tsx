@@ -101,12 +101,32 @@ export default function CashTenderPad({ value, totalDue, changeDue, disabled, on
     onChange(amount.toFixed(2));
   }
 
+  const shortBy = Math.max(0, totalDue - (Number.parseFloat(value) || 0));
+
   return (
     <div className="cash-pad" aria-label="Cash received">
-      <div className={`cash-pad-readout ${value && !enough ? 'short' : ''}`}>
-        <span>Cash received</span>
-        <strong>{value === '' ? '$0.00' : formatMoney(Number.parseFloat(value) || 0)}</strong>
+      {/* Readout + change/short are always at the top, visible without scrolling. */}
+      <div className="cash-pad-summary">
+        <div className={`cash-pad-readout ${value && !enough ? 'short' : ''}`}>
+          <span>Cash received</span>
+          <strong>{value === '' ? '$0.00' : formatMoney(Number.parseFloat(value) || 0)}</strong>
+        </div>
+        <div className={`cash-pad-readout ${enough ? 'change' : 'due'}`}>
+          <span>{enough ? 'Change due' : 'Short by'}</span>
+          <strong>{formatMoney(enough ? changeDue : shortBy)}</strong>
+        </div>
       </div>
+
+      {enough && parts.length > 0 && (
+        <ul className="cash-pad-change-parts" role="status">
+          {parts.map((part) => (
+            <li key={`${part.kind}-${part.value}`}>
+              {formatDenomination(part)} {part.kind === 'note' ? 'note' : 'coin'}
+              {part.count > 1 ? 's' : ''}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="cash-pad-quick">
         <button type="button" disabled={disabled} onClick={() => setAmount(totalDue)}>
@@ -129,30 +149,6 @@ export default function CashTenderPad({ value, totalDue, changeDue, disabled, on
           </button>
         ))}
       </div>
-
-      {enough && (
-        <div className="cash-pad-change" role="status">
-          <div className="cash-pad-change-total">
-            <span>Change due</span>
-            <strong>{formatMoney(changeDue)}</strong>
-          </div>
-          {parts.length > 0 && (
-            <ul className="cash-pad-change-parts">
-              {parts.map((part) => (
-                <li key={`${part.kind}-${part.value}`}>
-                  {formatDenomination(part)} {part.kind === 'note' ? 'note' : 'coin'}
-                  {part.count > 1 ? 's' : ''}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      {value !== '' && !enough && (
-        <div className="cash-pad-short" role="status">
-          Short by {formatMoney(Math.max(0, totalDue - (Number.parseFloat(value) || 0)))}
-        </div>
-      )}
     </div>
   );
 }
