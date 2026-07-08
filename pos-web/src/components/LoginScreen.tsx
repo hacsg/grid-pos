@@ -45,9 +45,19 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   });
 
   useEffect(() => {
-    if (!selectedOutletId && outletsQuery.data?.length) {
-      setSelectedOutletId(outletsQuery.data[0].id);
+    if (selectedOutletId || !outletsQuery.data?.length) {
+      return;
     }
+    // Preselect an outlet from ?outlet=<id|name> so a per-outlet start-pos.bat
+    // can deep-link straight to the right till (e.g. ?outlet=HAC%20Bedok).
+    const params = new URLSearchParams(window.location.search);
+    const wanted = (params.get('outlet') ?? '').trim().toLowerCase();
+    const match = wanted
+      ? outletsQuery.data.find(
+          (o) => o.id.toLowerCase() === wanted || o.name.toLowerCase() === wanted,
+        )
+      : null;
+    setSelectedOutletId((match ?? outletsQuery.data[0]).id);
   }, [outletsQuery.data, selectedOutletId]);
 
   // Reset the staff selection when the outlet changes.

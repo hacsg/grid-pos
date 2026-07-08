@@ -54,9 +54,11 @@ export default function LoyaltySheet({
   // Hardware wedge scanner (keyboard emulation): the membership QR encodes the
   // Plotholders customer id, so a scan pulls up the member and their active
   // vouchers — no camera needed.
+  // Also enabled while the camera view is up ('scanning') — this POS uses a
+  // hardware wedge scanner, not a camera, so a scan must resolve even there.
   useScannerWedge({
-    enabled: open && (status === 'idle' || status === 'error'),
-    onScan: (scanned) => { void loadById(scanned.trim()); },
+    enabled: open && (status === 'idle' || status === 'error' || status === 'scanning'),
+    onScan: (scanned) => { void stopScanner().then(() => loadById(scanned.trim())); },
   });
 
   if (!open) {

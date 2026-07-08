@@ -1101,8 +1101,12 @@ export default function PaymentModal({
               {[
                 { key: 'cash', label: 'Cash', Icon: Banknote, active: mode === 'cash', select: () => { setMode('cash'); setForceManualPayNow(false); } },
                 { key: 'card', label: 'Card', Icon: CreditCard, active: mode === 'card', select: () => { setMode('card'); setForceManualPayNow(false); } },
-                { key: 'paynow', label: 'PayNow', Icon: QrCode, active: mode === 'paynow' && !forceManualPayNow, select: () => { setMode('paynow'); setForceManualPayNow(false); } },
-                { key: 'manual_paynow', label: 'Manual QR', Icon: QrCode, active: mode === 'paynow' && forceManualPayNow, select: () => { setMode('paynow'); setForceManualPayNow(true); } },
+                { key: 'paynow', label: 'PayNow', Icon: QrCode, active: mode === 'paynow' && (manualTerminal || !forceManualPayNow), select: () => { setMode('paynow'); setForceManualPayNow(false); } },
+                // In manual terminal mode PayNow already IS the self-generated QR,
+                // so the separate "Manual QR" mode is a duplicate — hide it.
+                ...(manualTerminal
+                  ? []
+                  : [{ key: 'manual_paynow', label: 'Manual QR', Icon: QrCode, active: mode === 'paynow' && forceManualPayNow, select: () => { setMode('paynow'); setForceManualPayNow(true); } }]),
                 { key: 'split', label: 'Split', Icon: Split, active: mode === 'split', select: () => { setMode('split'); setForceManualPayNow(false); } },
               ].map(({ key, label, Icon, active, select }) => (
                 <button
