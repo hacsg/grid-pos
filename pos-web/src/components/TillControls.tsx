@@ -53,6 +53,15 @@ export default function TillControls({ session }: { session: StaffSession }) {
   const [reasonInput, setReasonInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
+  // Start-of-day: pop the drawer so the cashier can count the opening float.
+  // No manager PIN — the till isn't open yet and there's no sales cash at risk;
+  // the manager reviews declared opening floats in the till history.
+  async function handleCountDrawer() {
+    tapFeedback();
+    const ok = await openCashDrawer();
+    if (!ok) toast.error('Could not open the drawer');
+  }
+
   async function handleOpen() {
     const amount = money(floatInput);
     if (!floatInput.trim() || amount < 0) { toast.error('Enter the opening float'); return; }
@@ -143,16 +152,18 @@ export default function TillControls({ session }: { session: StaffSession }) {
         </>
       ) : (
         <>
-          <p className="till-muted">No till open for today.</p>
+          <p className="till-muted">No till open for today. Open the drawer, count the cash, then enter it as the opening float.</p>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => void handleCountDrawer()}>
+            1. Open drawer to count
+          </button>
           <label className="till-field">
-            <span>Opening float (cash in drawer now)</span>
+            <span>2. Opening float (counted cash in drawer)</span>
             <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="$0.00"
               value={floatInput} onChange={(e) => setFloatInput(e.target.value)} disabled={busy} />
           </label>
           <button className="primary-button" type="button" disabled={busy} onClick={() => void handleOpen()}>
-            {busy ? 'Opening…' : 'Open till'}
+            {busy ? 'Opening…' : '3. Open till'}
           </button>
-          <button className="secondary-button" type="button" onClick={() => openAction('drawer')}>Open drawer</button>
         </>
       )}
 
