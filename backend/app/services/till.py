@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderStatus
+from app.models.till_movement import TillMovement
 from app.models.till_session import TillSession
 from app.services.orders import SGT_TZ, business_day_bounds
 
@@ -84,6 +85,56 @@ async def open_till(
     return session
 
 
+async def movement_totals(db: AsyncSession, session_id: UUID) -> tuple[Decimal, Decimal]:
+    """Return (cash_in, cash_out) totals recorded on a till session."""
+    stmt = select(
+        func.coalesce(func.sum(case((TillMovement.direction == "in", TillMovement.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((TillMovement.direction == "out", TillMovement.amount), else_=0)), 0),
+    ).where(TillMovement.till_session_id == session_id)
+    row = (await db.execute(stmt)).one()
+    return _q(Decimal(str(row[0] or 0))), _q(Decimal(str(row[1] or 0)))
+
+
+async def expected_cash_now(db: AsyncSession, session: TillSession) -> Decimal:
+    """Live expected drawer cash: float + cash kept + cash in − cash out."""
+    cash = await cash_kept_today(db, session.outlet_id, session.opened_at)
+    cash_in, cash_out = await movement_totals(db, session.id)
+    return _q(Decimal(str(session.opening_float)) + cash + cash_in - cash_out)
+
+
+async def record_movement(
+    db: AsyncSession,
+    session: TillSession,
+    *,
+    direction: str,
+    amount: Decimal,
+    reason: str | None,
+    staff_id: UUID,
+    authorized_by_staff_id: UUID,
+) -> TillMovement:
+    if direction not in ("in", "out", "nosale"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid movement direction")
+    mv = TillMovement(
+        till_session_id=session.id,
+        direction=direction,
+        amount=_q(amount) if direction != "nosale" else Decimal("0.00"),
+        reason=reason,
+        staff_id=staff_id,
+        authorized_by_staff_id=authorized_by_staff_id,
+    )
+    db.add(mv)
+    await db.commit()
+    await db.refresh(mv)
+    return mv
+
+
+async def list_movements(db: AsyncSession, session_id: UUID) -> list[TillMovement]:
+    result = await db.execute(
+        select(TillMovement).where(TillMovement.till_session_id == session_id).order_by(TillMovement.created_at)
+    )
+    return list(result.scalars().all())
+
+
 async def close_till(
     db: AsyncSession, session_id: UUID, counted_cash: Decimal, staff_id: UUID
 ) -> TillSession:
@@ -95,8 +146,7 @@ async def close_till(
     if session.status != "open":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Till is already closed")
 
-    cash = await cash_kept_today(db, session.outlet_id, session.opened_at)
-    expected = _q(Decimal(str(session.opening_float)) + cash)
+    expected = await expected_cash_now(db, session)
     counted = _q(counted_cash)
     session.counted_cash = counted
     session.expected_cash = expected

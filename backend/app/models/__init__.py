@@ -16,6 +16,7 @@ from app.models.staff import Staff, StaffRole
 from app.models.discount import Discount
 from app.models.gto_file import GtoFile
 from app.models.till_session import TillSession
+from app.models.till_movement import TillMovement
 from app.models.voucher import OrderVoucher, Voucher, VoucherType
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "Discount",
     "GtoFile",
     "TillSession",
+    "TillMovement",
     "IdempotencyKey",
     "ModifierGroup",
     "ModifierOption",

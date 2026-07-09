@@ -14,6 +14,8 @@ from app.models.staff import Staff
 from app.models.till_session import TillSession
 from app.services import till as till_service
 from app.utils.auth import get_current_staff
+from app.utils.hashing import verify_pin
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/till", tags=["till"])
@@ -23,6 +25,23 @@ _MANAGER_ROLES = {"admin", "manager", "supervisor"}
 
 def _is_manager(staff: Staff) -> bool:
     return str(getattr(staff.role, "value", staff.role)) in _MANAGER_ROLES
+
+
+async def _authorize_manager(db: AsyncSession, current_staff: Staff, manager_pin: str | None) -> Staff:
+    """Return the authorizing manager: the current staff if already a manager,
+    otherwise a manager at the outlet matching the PIN. A cashier's own PIN
+    cannot authorize."""
+    if _is_manager(current_staff):
+        return current_staff
+    if not manager_pin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager PIN required")
+    result = await db.execute(
+        select(Staff).where(Staff.outlet_id == current_staff.outlet_id, Staff.is_active.is_(True))
+    )
+    for staff in result.scalars().all():
+        if _is_manager(staff) and verify_pin(manager_pin, staff.pin_hash):
+            return staff
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid manager PIN")
 
 
 # Blind view — what the counting cashier sees. No expected/variance.
@@ -75,9 +94,8 @@ async def current_till(
     if session is None:
         return None
     if _is_manager(current_staff):
-        cash = await till_service.cash_kept_today(db, outlet_id, session.opened_at)
         full = _full(session)
-        full.expected_cash = (session.opening_float or Decimal("0")) + cash
+        full.expected_cash = await till_service.expected_cash_now(db, session)
         return full
     return _full(session).model_copy(update={"expected_cash": None, "variance": None})
 
@@ -119,3 +137,79 @@ async def list_sessions(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
     sessions = await till_service.list_sessions(db, outlet_id)
     return [_full(s) for s in sessions]
+
+
+class TillMovementRequest(BaseModel):
+    session_id: UUID
+    direction: str  # in | out
+    amount: Decimal = Field(gt=0)
+    reason: str | None = Field(default=None, max_length=200)
+    manager_pin: str | None = None
+
+
+class TillMovementRead(BaseModel):
+    id: UUID
+    direction: str
+    amount: Decimal
+    reason: str | None = None
+    created_at: datetime
+
+
+class DrawerOpenRequest(BaseModel):
+    outlet_id: UUID
+    reason: str | None = Field(default=None, max_length=200)
+    manager_pin: str | None = None
+
+
+@router.post("/movement", response_model=TillMovementRead)
+async def add_movement(
+    payload: TillMovementRequest,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> TillMovementRead:
+    """Record a cash-in (float top-up) or cash-out (paid-out / drop). These
+    adjust the expected drawer cash at close. Manager-authorized."""
+    if payload.direction not in ("in", "out"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="direction must be 'in' or 'out'")
+    session = await db.get(TillSession, payload.session_id)
+    if session is None or session.status != "open":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No open till session")
+    manager = await _authorize_manager(db, current_staff, payload.manager_pin)
+    mv = await till_service.record_movement(
+        db, session,
+        direction=payload.direction, amount=payload.amount, reason=payload.reason,
+        staff_id=current_staff.id, authorized_by_staff_id=manager.id,
+    )
+    return TillMovementRead.model_validate(mv, from_attributes=True)
+
+
+@router.post("/drawer-open")
+async def drawer_open(
+    payload: DrawerOpenRequest,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> dict:
+    """Authorize a no-sale drawer open with a manager PIN. Logs it against the
+    open till (if any) for audit; the POS pulses the physical drawer on success."""
+    manager = await _authorize_manager(db, current_staff, payload.manager_pin)
+    session = await till_service.get_open_till(db, payload.outlet_id)
+    if session is not None:
+        await till_service.record_movement(
+            db, session, direction="nosale", amount=Decimal("0"),
+            reason=payload.reason or "Drawer opened", staff_id=current_staff.id,
+            authorized_by_staff_id=manager.id,
+        )
+    return {"ok": True}
+
+
+@router.get("/{session_id}/movements", response_model=list[TillMovementRead])
+async def session_movements(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> list[TillMovementRead]:
+    """Manager-only: the cash movements recorded on a till session."""
+    if not _is_manager(current_staff):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    movements = await till_service.list_movements(db, session_id)
+    return [TillMovementRead.model_validate(m, from_attributes=True) for m in movements]
