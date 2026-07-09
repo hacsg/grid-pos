@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import Layout from '@/components/layout/Layout';
 import Dashboard from '@/pages/Dashboard';
+import Analytics from '@/pages/Analytics';
 import Products from '@/pages/Products';
 import Categories from '@/pages/Categories';
 import Modifiers from '@/pages/Modifiers';
@@ -46,6 +47,7 @@ export default function App() {
             }
           >
             <Route index element={<Dashboard />} />
+            <Route path="analytics" element={<Analytics />} />
             <Route path="products" element={<Products />} />
             <Route path="modifiers" element={<Modifiers />} />
             <Route path="categories" element={<Categories />} />

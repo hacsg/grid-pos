@@ -51,6 +51,7 @@ import type {
   Discount,
   DiscountFormData,
 } from '@/types';
+import type { AnalyticsDashboard, AnalyticsDashboardParams } from '@/types/analytics';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
@@ -471,6 +472,14 @@ export const getStaffReport = async (params?: StaffReportParams): Promise<StaffR
 
 export const getOutletReport = async (params?: OutletReportParams): Promise<OutletReport> => {
   const { data } = await api.get('/reports/outlets', { params });
+  return data;
+};
+
+// Analytics
+export const getAnalyticsDashboard = async (
+  params?: AnalyticsDashboardParams
+): Promise<AnalyticsDashboard> => {
+  const { data } = await api.get('/analytics/dashboard', { params });
   return data;
 };
 

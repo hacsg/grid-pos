@@ -8,6 +8,7 @@ import {
   Users,
   Store,
   BarChart3,
+  TrendingUp,
   Megaphone,
   Ticket,
   UserRound,
@@ -16,6 +17,7 @@ import {
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/analytics', icon: TrendingUp, label: 'Analytics' },
   { to: '/products', icon: Package, label: 'Products' },
   { to: '/modifiers', icon: SlidersHorizontal, label: 'Modifiers' },
   { to: '/categories', icon: Tags, label: 'Categories' },
