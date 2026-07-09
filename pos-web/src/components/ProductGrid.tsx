@@ -448,17 +448,21 @@ export default function ProductGrid({
                             onClick={() => { if (!atMax) changeModifierQty(group, modifier.id, 1); }}
                           >
                             <span className="modifier-name">{modifier.name}</span>
-                            {priceLabel && <span className="modifier-price">{priceLabel}</span>}
-                            {count > 0 && <span className="modifier-qty-badge">{count}</span>}
-                            {count > 0 && (
-                              <button
-                                type="button"
-                                className="modifier-dec"
-                                aria-label={`Remove one ${modifier.name}`}
-                                onClick={(e) => { e.stopPropagation(); changeModifierQty(group, modifier.id, -1); }}
-                              >
-                                <Minus size={18} aria-hidden="true" />
-                              </button>
+                            {(priceLabel || count > 0) && (
+                              <div className="modifier-multi-foot">
+                                {priceLabel && <span className="modifier-price">{priceLabel}</span>}
+                                {count > 0 && <span className="modifier-qty-badge">× {count}</span>}
+                                {count > 0 && (
+                                  <button
+                                    type="button"
+                                    className="modifier-dec"
+                                    aria-label={`Remove one ${modifier.name}`}
+                                    onClick={(e) => { e.stopPropagation(); changeModifierQty(group, modifier.id, -1); }}
+                                  >
+                                    <Minus size={18} aria-hidden="true" />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         );
