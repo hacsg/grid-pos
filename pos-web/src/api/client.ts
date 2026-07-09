@@ -57,6 +57,7 @@ export interface Product extends Timestamped {
   category_id: string;
   image_url: string | null;
   is_available: boolean;
+  is_open_price?: boolean;
   category?: Category;
   modifier_groups: ModifierGroup[];
   stock?: number | null;

@@ -27,6 +27,7 @@ import {
 } from '@/api/client';
 import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, ParkedCart, StaffSession, Totals } from '@/types';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { lineLabel, lineTotal } from '@/utils/cart';
 import { tapFeedback } from '@/utils/haptics';
 import { connectPrinter, forgetPrinter, getSavedPrinter, isPrintingSupported } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
@@ -124,16 +125,12 @@ function buildDisplaySnapshot(
   brandName?: string,
   brandLogoUrl?: string | null
 ) {
-  const displayItems = items.map((item) => {
-    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
-    const lineTotal = (money(item.product.price) + modifierTotal) * item.quantity;
-    return {
-      name: item.product.name,
-      quantity: item.quantity,
-      lineTotal,
-      modifiers: item.modifiers.map((m) => m.modifier_name),
-    };
-  });
+  const displayItems = items.map((item) => ({
+    name: lineLabel(item),
+    quantity: item.quantity,
+    lineTotal: lineTotal(item),
+    modifiers: item.modifiers.map((m) => m.modifier_name),
+  }));
 
   const voucherDiscount = vouchers.reduce((s, v) => s + v.amount, 0);
 
@@ -196,6 +193,9 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   const [parkedOpen, setParkedOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [cartScanConfirmed, setCartScanConfirmed] = useState(false);
+  const [quickChargeOpen, setQuickChargeOpen] = useState(false);
+  const [quickChargeAmount, setQuickChargeAmount] = useState('');
+  const [quickChargeLabel, setQuickChargeLabel] = useState('');
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -255,6 +255,15 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     enabled: Boolean(session),
   });
 
+  // The seeded open-price "Quick Charge" product, for ad-hoc upcharges.
+  const quickChargeQuery = useQuery({
+    queryKey: ['quick-charge-product', session?.outlet.id],
+    queryFn: () => getProducts({ outlet_id: session?.outlet.id, is_available: true }),
+    enabled: Boolean(session),
+    select: (products: Product[]) => products.find((p) => p.is_open_price) ?? null,
+  });
+  const quickChargeProduct = quickChargeQuery.data ?? null;
+
   const discountsQuery = useQuery({
     queryKey: ['discounts'],
     queryFn: getActiveDiscounts,
@@ -262,10 +271,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   });
 
   const totals = useMemo<Totals>(() => {
-    const subtotal = cartItems.reduce((sum, item) => {
-      const modifierTotal = item.modifiers.reduce((modifierSum, modifier) => modifierSum + modifier.price_adjustment, 0);
-      return sum + (money(item.product.price) + modifierTotal) * item.quantity;
-    }, 0);
+    const subtotal = cartItems.reduce((sum, item) => sum + lineTotal(item), 0);
     const tax = 0;
     const cartDiscount = discount?.kind === 'percent' ? subtotal * (discount.amount / 100) : discount?.amount ?? 0;
     const loyaltyDiscount = loyalty?.reward?.discount_amount ?? 0;
@@ -372,6 +378,35 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         },
       ];
     });
+    setCartOpen(true);
+  }
+
+  function confirmQuickCharge() {
+    if (!quickChargeProduct) {
+      toast.error('Quick charge is not set up');
+      return;
+    }
+    const amount = money(quickChargeAmount);
+    if (!quickChargeAmount.trim() || amount <= 0) {
+      toast.error('Enter an amount');
+      return;
+    }
+    tapFeedback();
+    const label = quickChargeLabel.trim() || 'Quick charge';
+    setCartItems((items) => [
+      ...items,
+      {
+        lineId: `quick-${Date.now()}`, // unique so charges never merge
+        product: quickChargeProduct,
+        quantity: 1,
+        modifiers: [],
+        customPrice: amount,
+        customLabel: label,
+      },
+    ]);
+    setQuickChargeOpen(false);
+    setQuickChargeAmount('');
+    setQuickChargeLabel('');
     setCartOpen(true);
   }
 
@@ -608,6 +643,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           onDiscount={openDiscountPicker}
           onLoyalty={() => setLoyaltyOpen(true)}
           onVouchers={() => setVoucherOpen(true)}
+          onQuickCharge={() => { tapFeedback(); setQuickChargeOpen(true); }}
           onClear={clearCart}
           onEditItem={handleEditItem}
           onCheckout={() => {
@@ -682,6 +718,34 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         onResume={resumeParked}
         onDiscard={discardParked}
       />
+
+      {quickChargeOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setQuickChargeOpen(false)}>
+          <section className="loyalty-sheet txn-confirm-dialog" role="dialog" aria-modal="true" style={{ maxWidth: '420px', margin: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <header className="sheet-header">
+              <div><p>Add-on</p><h2>Quick charge</h2></div>
+              <button className="icon-button" type="button" aria-label="Close" onClick={() => setQuickChargeOpen(false)}><X size={20} /></button>
+            </header>
+            <div className="txn-confirm-body">
+              <p className="till-muted">Charge an extra amount (e.g. add ice, premium flavour) as a small separate sale — no need to refund the original order.</p>
+              <label className="txn-refund-input">
+                <span>Amount</span>
+                <input type="number" min="0.01" step="0.01" inputMode="decimal" placeholder="$0.00"
+                  value={quickChargeAmount} onChange={(e) => setQuickChargeAmount(e.target.value)} autoFocus />
+              </label>
+              <label className="txn-refund-input">
+                <span>Description (shown on receipt)</span>
+                <input type="text" placeholder="e.g. Add ice, Premium flavour"
+                  value={quickChargeLabel} onChange={(e) => setQuickChargeLabel(e.target.value)} />
+              </label>
+              <div className="txn-confirm-actions">
+                <button className="secondary-button" type="button" onClick={() => setQuickChargeOpen(false)}>Cancel</button>
+                <button className="primary-button" type="button" onClick={confirmQuickCharge}>Add to order</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

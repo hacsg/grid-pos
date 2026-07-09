@@ -490,6 +490,9 @@ export default function PaymentModal({
             modifier_name: modifier.modifier_name,
             price_adjustment: modifier.price_adjustment,
           })),
+          // Open-price line (ad-hoc upcharge): send the amount + label.
+          ...(item.customPrice != null ? { unit_price: item.customPrice } : {}),
+          ...(item.customLabel ? { notes: item.customLabel } : {}),
         })),
       },
       { idempotencyKey: checkoutIdempotencyKey }

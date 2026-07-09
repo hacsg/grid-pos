@@ -15,8 +15,9 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { formatCurrency, money } from '@/api/client';
+import { formatCurrency } from '@/api/client';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, Totals } from '@/types';
+import { lineLabel, lineTotal } from '@/utils/cart';
 import { tapFeedback } from '@/utils/haptics';
 
 interface CartSidebarProps {
@@ -37,15 +38,12 @@ interface CartSidebarProps {
   onDiscount: () => void;
   onLoyalty: () => void;
   onVouchers: () => void;
+  onQuickCharge: () => void;
   onClear: () => void;
   onCheckout: () => void;
   onEditItem: (lineId: string) => void;
 }
 
-function lineTotal(item: CartItem): number {
-  const modifierTotal = item.modifiers.reduce((sum, modifier) => sum + modifier.price_adjustment, 0);
-  return (money(item.product.price) + modifierTotal) * item.quantity;
-}
 
 export default function CartSidebar({
   items,
@@ -65,6 +63,7 @@ export default function CartSidebar({
   onDiscount,
   onLoyalty,
   onVouchers,
+  onQuickCharge,
   onClear,
   onCheckout,
   onEditItem,
@@ -176,11 +175,11 @@ export default function CartSidebar({
                     type="button"
                     onClick={() => onEditItem(item.lineId)}
                   >
-                    <h3>{item.product.name}</h3>
+                    <h3>{lineLabel(item)}</h3>
                     <Pencil size={15} aria-hidden="true" />
                   </button>
                 ) : (
-                  <h3>{item.product.name}</h3>
+                  <h3>{lineLabel(item)}</h3>
                 )}
               </div>
               <strong>{formatCurrency(lineTotal(item))}</strong>
@@ -274,6 +273,10 @@ export default function CartSidebar({
         <button className="secondary-button" type="button" onClick={onVouchers}>
           <Ticket size={18} aria-hidden="true" />
           Voucher
+        </button>
+        <button className="secondary-button" type="button" onClick={onQuickCharge}>
+          <Plus size={18} aria-hidden="true" />
+          Quick charge
         </button>
         {clearConfirm ? (
           <div className="clear-confirm">

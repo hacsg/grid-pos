@@ -9,6 +9,9 @@ export interface CartItem {
   product: Product;
   quantity: number;
   modifiers: CartModifier[];
+  // Open-price / ad-hoc upcharge line: overrides price and display name.
+  customPrice?: number;
+  customLabel?: string;
 }
 
 export interface StaffSession {

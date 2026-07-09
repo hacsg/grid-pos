@@ -93,7 +93,11 @@ export default function ProductGrid({
   const scanSuccessTimer = useRef<number | null>(null);
 
   const sortedCategories = useMemo(
-    () => [...categories].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    // Hide the system "Extras" category (holds only the Quick Charge product).
+    () =>
+      [...categories]
+        .filter((c) => c.name !== 'Extras')
+        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
     [categories]
   );
 
@@ -276,7 +280,9 @@ export default function ProductGrid({
   }
 
   const availableProducts = useMemo(
-    () => products.filter((product) => product.is_available),
+    // Open-price products (Quick Charge) are added via the cart's Quick charge
+    // button, not shown as $0 tiles.
+    () => products.filter((product) => product.is_available && !product.is_open_price),
     [products]
   );
 

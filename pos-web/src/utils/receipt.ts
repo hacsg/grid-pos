@@ -243,9 +243,10 @@ export function receiptSnapshotToPrintableOrder(receipt: ReceiptSnapshotLike, se
     usePrintTime: true,
     items: receipt.items.map((item) => ({
       quantity: item.quantity,
-      name: item.product.name,
+      name: item.customLabel ?? item.product.name,
       modifiers: item.modifiers.map((modifier) => modifier.modifier_name),
       unitPrice:
+        item.customPrice ??
         money(item.product.price) + item.modifiers.reduce((sum, modifier) => sum + modifier.price_adjustment, 0),
     })),
     totals: {
