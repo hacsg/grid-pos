@@ -27,6 +27,8 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # Open-price: the order line supplies the amount (ad-hoc upcharges).
+    is_open_price: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     category = relationship("Category", back_populates="products")
     modifier_group_assignments = relationship(

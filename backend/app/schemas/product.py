@@ -19,6 +19,7 @@ class ProductBase(BaseModel):
     category_id: UUID
     image_url: str | None = Field(default=None, max_length=500)
     is_available: bool = True
+    is_open_price: bool = False
 
 
 class ProductCreate(ProductBase):

@@ -1231,3 +1231,34 @@ class TestOrderRefundManagerPin:
         with pytest.raises(HTTPException) as exc:
             await _authorize_manager_action(db_session, cashier_staff, "1234")  # cashier's own PIN
         assert exc.value.status_code == 403
+
+
+class TestOpenPriceItem:
+    """Ad-hoc upcharge via an open-price product (amount from the order line)."""
+
+    async def _open_product(self, db, category):
+        from app.models.product import Product
+        p = Product(name="Quick Charge", price=0, category_id=category.id, is_available=True, is_open_price=True)
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        return p
+
+    async def test_open_price_uses_line_amount(self, client, db_session, outlet, cashier_staff, category):
+        p = await self._open_product(db_session, category)
+        resp = await client.post("/api/orders", json={
+            "outlet_id": str(outlet.id), "staff_id": str(cashier_staff.id),
+            "items": [{"product_id": str(p.id), "quantity": 1, "unit_price": "1.50", "notes": "add ice"}],
+        })
+        assert resp.status_code == 201
+        data = resp.json()
+        assert str(data["total"]) == "1.50"
+        assert str(data["items"][0]["unit_price"]) == "1.50"
+
+    async def test_open_price_requires_amount(self, client, db_session, outlet, cashier_staff, category):
+        p = await self._open_product(db_session, category)
+        resp = await client.post("/api/orders", json={
+            "outlet_id": str(outlet.id), "staff_id": str(cashier_staff.id),
+            "items": [{"product_id": str(p.id), "quantity": 1}],
+        })
+        assert resp.status_code == 400

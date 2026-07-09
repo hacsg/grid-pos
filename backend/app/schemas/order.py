@@ -27,6 +27,8 @@ class OrderItemCreate(BaseModel):
     quantity: int = Field(ge=1)
     modifiers: list[SelectedModifier] = []
     notes: str | None = Field(default=None, max_length=500)
+    # Only honoured for open-price products (ad-hoc upcharges); ignored otherwise.
+    unit_price: Money | None = Field(default=None, ge=0)
 
 
 class OrderItemRead(UUIDSchema):

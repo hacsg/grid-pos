@@ -114,7 +114,16 @@ async def _build_order_item(db: AsyncSession, item: OrderItemCreate, outlet_id: 
     """Build an OrderItem from a creation payload, returning (item, line_total)."""
     product = await _load_available_product(db, item.product_id, outlet_id)
     modifier_total = sum((m.price_adjustment for m in item.modifiers), Decimal("0.00"))
-    unit_price = _compute_item_unit_price(product, item, modifier_total)
+    if getattr(product, "is_open_price", False):
+        # Open-price line (ad-hoc upcharge): amount comes from the order line.
+        if item.unit_price is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An open-price item requires a unit_price",
+            )
+        unit_price = quantize_money(Decimal(str(item.unit_price)) + modifier_total)
+    else:
+        unit_price = _compute_item_unit_price(product, item, modifier_total)
     line_total = quantize_money(unit_price * item.quantity)
     order_item = OrderItem(
         product_id=product.id,
