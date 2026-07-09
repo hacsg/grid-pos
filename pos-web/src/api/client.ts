@@ -23,6 +23,7 @@ export interface Outlet extends Timestamped {
   receipt_brand_name?: string | null;
   receipt_company_details?: string | null;
   paynow_uen?: string | null;
+  manual_terminal_mode?: boolean;
 }
 
 export interface Modifier extends Timestamped {

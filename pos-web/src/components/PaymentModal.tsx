@@ -106,13 +106,17 @@ function roundMoney(value: number): number {
 }
 
 /** Plan B: POS doesn't drive the KPay terminal; staff key card amounts in
- * manually and confirm. Toggle in Settings. */
-export function manualTerminalEnabled(): boolean {
+ * manually and confirm. Default comes from the outlet setting (admin-controlled,
+ * default ON); a per-till localStorage override wins if explicitly set. */
+export function manualTerminalEnabled(session?: StaffSession | null): boolean {
   try {
-    return localStorage.getItem('grid_pos_manual_terminal') === '1';
+    const ls = localStorage.getItem('grid_pos_manual_terminal');
+    if (ls === '1') return true;
+    if (ls === '0') return false;
   } catch {
-    return false;
+    // ignore
   }
+  return session?.outlet?.manual_terminal_mode ?? true;
 }
 
 function paymentModeLabel(mode: PaymentMode): string {
@@ -285,7 +289,7 @@ export default function PaymentModal({
   // POS does NOT drive the terminal. Staff key the amount into the KPay terminal
   // themselves and confirm; PayNow uses our self-generated QR. Toggle in
   // Settings (localStorage 'grid_pos_manual_terminal').
-  const manualTerminal = manualTerminalEnabled();
+  const manualTerminal = manualTerminalEnabled(session);
   // Manual PayNow (direct-to-bank QR) is used when the terminal is offline, when
   // the cashier picks Manual QR, or whenever manual terminal mode is on.
   const manualPayNowActive =

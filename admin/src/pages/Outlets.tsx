@@ -74,6 +74,27 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
   );
 }
 
+function TerminalModeToggle({ outlet }: { outlet: Outlet }) {
+  const update = useUpdateOutlet(outlet.id);
+  // Default ON when the field is absent.
+  const manual = outlet.manual_terminal_mode ?? true;
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        update.mutate({ manual_terminal_mode: !manual });
+      }}
+      disabled={update.isPending}
+      title="When ON, staff key card amounts into the KPay terminal manually (no POS integration). PayNow uses the self-generated QR."
+      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+        manual ? 'bg-primary/15 text-primary' : 'bg-surface text-text-muted'
+      }`}
+    >
+      {update.isPending ? '…' : manual ? 'Manual: ON' : 'Manual: OFF'}
+    </button>
+  );
+}
+
 function PayNowQrControls({ outlet }: { outlet: Outlet }) {
   const uploadQr = useUploadPayNowQr();
   const deleteQr = useDeletePayNowQr();
@@ -246,6 +267,11 @@ export default function Outlets() {
       key: 'paynow_qr',
       header: 'Manual PayNow',
       render: (outlet: Outlet) => <PayNowQrControls outlet={outlet} />,
+    },
+    {
+      key: 'terminal_mode',
+      header: 'Terminal mode',
+      render: (outlet: Outlet) => <TerminalModeToggle outlet={outlet} />,
     },
     {
       key: 'logo',

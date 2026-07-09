@@ -6,7 +6,7 @@ import { ChevronDown, LogOut, WifiOff, X } from 'lucide-react';
 import CartSidebar from '@/components/CartSidebar';
 import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
-import PaymentModal from '@/components/PaymentModal';
+import PaymentModal, { manualTerminalEnabled } from '@/components/PaymentModal';
 import TillControls from '@/components/TillControls';
 import ProductGrid from '@/components/ProductGrid';
 import VoucherRedemption from '@/components/VoucherRedemption';
@@ -719,13 +719,7 @@ function StaffShell() {
   const [session, setSession] = useState<StaffSession | null>(() => loadSession());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
-  const [manualTerminal, setManualTerminal] = useState(() => {
-    try {
-      return localStorage.getItem('grid_pos_manual_terminal') === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [manualTerminal, setManualTerminal] = useState(() => manualTerminalEnabled(loadSession()));
 
   function toggleManualTerminal() {
     tapFeedback();
