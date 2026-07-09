@@ -199,6 +199,10 @@ export default function PaymentModal({
   // backend retry-gate + daemon reconciliation loop make an abort safe: the
   // intent self-heals to its true state and blocks a double-charge on retry.
   const cardAbortRef = useRef<AbortController | null>(null);
+  // Synchronous re-entrancy guard: a fast double-tap on the pay button fires
+  // completePayment twice before `submitting` state propagates, sending two
+  // requests with the same idempotency key (→ 409 "already in progress").
+  const completingRef = useRef(false);
   const [canAbortTerminal, setCanAbortTerminal] = useState(false);
   const [payNowQrUrl, setPayNowQrUrl] = useState<string | null>(null);
   const [payNowQrLoading, setPayNowQrLoading] = useState(false);
@@ -209,6 +213,15 @@ export default function PaymentModal({
   const [markPaidIdempotencyKey, setMarkPaidIdempotencyKey] = useState(() => newIdempotencyKey());
   const [kpayAttemptNumber, setKpayAttemptNumber] = useState(0);
   const [finalizationPending, setFinalizationPending] = useState<FinalizationPending | null>(null);
+
+  // Release the re-entrancy guard whenever a payment attempt finishes
+  // (completed, failed, or the terminal flow settled) — all paths set
+  // submitting back to false.
+  useEffect(() => {
+    if (!submitting) {
+      completingRef.current = false;
+    }
+  }, [submitting]);
 
   useEffect(() => {
     if (!open) {
@@ -850,6 +863,12 @@ export default function PaymentModal({
       setError(payNowQrError || 'Manual PayNow QR code is not configured');
       return;
     }
+
+    // Block a concurrent second invocation from a double-tap.
+    if (completingRef.current) {
+      return;
+    }
+    completingRef.current = true;
 
     setSubmitting(true);
     setError('');
