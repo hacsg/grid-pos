@@ -66,6 +66,13 @@ class ConcentrationData(BaseModel):
     total_products: int
 
 
+class ScoopRatioData(BaseModel):
+    single_qty: int
+    double_qty: int
+    single_pct: float
+    double_pct: float
+
+
 class AnalyticsDashboardResponse(BaseModel):
     date_from: str
     date_to: str
@@ -78,3 +85,4 @@ class AnalyticsDashboardResponse(BaseModel):
     day_of_week: list[DayOfWeekPoint]
     hourly: list[HourlyPoint]
     concentration: ConcentrationData
+    scoop_ratio: ScoopRatioData

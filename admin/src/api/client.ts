@@ -51,7 +51,13 @@ import type {
   Discount,
   DiscountFormData,
 } from '@/types';
-import type { AnalyticsDashboard, AnalyticsDashboardParams } from '@/types/analytics';
+import type {
+  AnalyticsDashboard,
+  AnalyticsDashboardParams,
+  FlavorAnalysis,
+  FlavorAnalysisParams,
+  FlavorRankings,
+} from '@/types/analytics';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
@@ -480,6 +486,20 @@ export const getAnalyticsDashboard = async (
   params?: AnalyticsDashboardParams
 ): Promise<AnalyticsDashboard> => {
   const { data } = await api.get('/analytics/dashboard', { params });
+  return data;
+};
+
+export const getFlavorAnalysis = async (
+  params?: FlavorAnalysisParams
+): Promise<FlavorAnalysis> => {
+  const { data } = await api.get('/analytics/flavors', { params });
+  return data;
+};
+
+export const getFlavorRankings = async (params?: {
+  outlet_id?: string;
+}): Promise<FlavorRankings> => {
+  const { data } = await api.get('/analytics/flavor-rankings', { params });
   return data;
 };
 

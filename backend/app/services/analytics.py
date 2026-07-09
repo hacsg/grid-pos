@@ -17,7 +17,7 @@ from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderStatus
@@ -31,6 +31,7 @@ from app.schemas.analytics import (
     HourlyPoint,
     OutletSalesItem,
     PaymentBreakdownItem,
+    ScoopRatioData,
     TopProductItem,
     TrendPoint,
 )
@@ -174,6 +175,19 @@ def day_of_week_averages(by_date: dict[date, list]) -> list[DayOfWeekPoint]:
     return points
 
 
+def scoop_ratio_from_products(products: list[tuple]) -> ScoopRatioData:
+    """Single vs Double Scoop split, matched on product name."""
+    single = sum(p[2] for p in products if "single scoop" in p[1].casefold())
+    double = sum(p[2] for p in products if "double scoop" in p[1].casefold())
+    total = single + double
+    return ScoopRatioData(
+        single_qty=single,
+        double_qty=double,
+        single_pct=round(single / total * 100, 1) if total else 0.0,
+        double_pct=round(double / total * 100, 1) if total else 0.0,
+    )
+
+
 def concentration_from_quantities(quantities: list[int]) -> ConcentrationData:
     """Share of units sold captured by the top 3 / top 5 products."""
     ordered = sorted(quantities, reverse=True)
@@ -205,17 +219,21 @@ async def _product_rollup(
     to_date: date | None,
     outlet_id: UUID | None,
 ) -> list[tuple[UUID, str, int, Decimal]]:
-    """(product_id, name, quantity, revenue) per product for paid orders in range."""
+    """(product_id, name, quantity, revenue) per product for paid orders in range.
+
+    Grouped by the product_name snapshot (not product_id) so renamed or
+    deleted products keep their sales history distinct.
+    """
     paid_ids = _paid_orders_stmt(from_date, to_date, outlet_id).with_only_columns(Order.id)
     stmt = (
         select(
-            OrderItem.product_id,
-            func.max(OrderItem.product_name).label("name"),
+            func.max(func.cast(OrderItem.product_id, String)).label("product_id"),
+            OrderItem.product_name.label("name"),
             func.coalesce(func.sum(OrderItem.quantity), 0).label("quantity"),
             func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0).label("revenue"),
         )
         .where(OrderItem.order_id.in_(paid_ids))
-        .group_by(OrderItem.product_id)
+        .group_by(OrderItem.product_name)
     )
     rows = (await db.execute(stmt)).all()
     return [(r.product_id, r.name or "", int(r.quantity), Decimal(str(r.revenue))) for r in rows]
@@ -327,4 +345,5 @@ async def get_analytics_dashboard(
         day_of_week=day_of_week_averages(agg.by_date),
         hourly=hourly,
         concentration=concentration_from_quantities([p[2] for p in products]),
+        scoop_ratio=scoop_ratio_from_products(products),
     )

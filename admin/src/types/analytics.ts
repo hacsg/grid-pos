@@ -57,6 +57,13 @@ export interface ConcentrationData {
   total_products: number;
 }
 
+export interface ScoopRatioData {
+  single_qty: number;
+  double_qty: number;
+  single_pct: number;
+  double_pct: number;
+}
+
 export interface AnalyticsDashboard {
   date_from: string;
   date_to: string;
@@ -69,6 +76,7 @@ export interface AnalyticsDashboard {
   day_of_week: DayOfWeekPoint[];
   hourly: HourlyPoint[];
   concentration: ConcentrationData;
+  scoop_ratio: ScoopRatioData;
 }
 
 export interface AnalyticsDashboardParams {
@@ -76,4 +84,80 @@ export interface AnalyticsDashboardParams {
   days?: number;
   from_date?: string;
   to_date?: string;
+}
+
+// ── Flavour analytics (GET /analytics/flavors, /analytics/flavor-rankings) ──
+
+export type FlavorClassification = 'hero' | 'rising' | 'stable' | 'rotate_out';
+export type RankClassification =
+  | 'consistent_top'
+  | 'rising'
+  | 'stable'
+  | 'dropping'
+  | 'consistent_bottom';
+
+export interface FlavorTrendPoint {
+  bucket: string;
+  qty: number;
+}
+
+export interface FlavorOutletQty {
+  outlet_id: string;
+  outlet_name: string;
+  qty: number;
+  share_pct: number;
+}
+
+export interface FlavorItem {
+  name: string;
+  total_qty: number;
+  share_pct: number;
+  rank: number;
+  trend_pct: number;
+  classification: FlavorClassification;
+  days_sold: number;
+  active_days: number;
+  consistency_pct: number;
+  trend: FlavorTrendPoint[];
+  by_outlet: FlavorOutletQty[];
+}
+
+export interface ParetoPoint {
+  name: string;
+  quantity: number;
+  share_pct: number;
+  cumulative_pct: number;
+}
+
+export interface FlavorDowRow {
+  name: string;
+  quantities: number[]; // Monday..Sunday
+}
+
+export interface FlavorAnalysis {
+  date_from: string;
+  date_to: string;
+  active_days: number;
+  flavors: FlavorItem[];
+  addons: FlavorItem[];
+  pareto: ParetoPoint[];
+  day_of_week: FlavorDowRow[];
+}
+
+export interface FlavorAnalysisParams extends AnalyticsDashboardParams {
+  granularity?: 'daily' | 'weekly' | 'monthly';
+}
+
+export interface FlavorRankingItem {
+  name: string;
+  monthly_rank: (number | null)[];
+  monthly_qty: number[];
+  rank_change: number | null;
+  avg_rank: number;
+  classification: RankClassification;
+}
+
+export interface FlavorRankings {
+  months: string[];
+  flavors: FlavorRankingItem[];
 }
