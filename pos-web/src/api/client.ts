@@ -561,6 +561,37 @@ export async function getTillSessions(outletId: string): Promise<TillSession[]> 
   return data;
 }
 
+export interface TillMovement {
+  id: string;
+  direction: 'in' | 'out' | 'nosale';
+  amount: number | string;
+  reason?: string | null;
+  created_at: string;
+}
+
+export async function addTillMovement(
+  sessionId: string,
+  direction: 'in' | 'out',
+  amount: number,
+  reason: string,
+  managerPin?: string,
+): Promise<TillMovement> {
+  const { data } = await api.post<TillMovement>('/till/movement', {
+    session_id: sessionId, direction, amount, reason, manager_pin: managerPin,
+  });
+  return data;
+}
+
+export async function getTillMovements(sessionId: string): Promise<TillMovement[]> {
+  const { data } = await api.get<TillMovement[]>(`/till/${sessionId}/movements`);
+  return data;
+}
+
+/** Authorize a no-sale drawer open with a manager PIN (server verifies). */
+export async function authorizeDrawerOpen(outletId: string, managerPin?: string, reason?: string): Promise<void> {
+  await api.post('/till/drawer-open', { outlet_id: outletId, manager_pin: managerPin, reason });
+}
+
 /** POS-side refund: marks a paid order refunded + audit trail (no terminal).
  * Works for any payment type; the physical refund is done manually. */
 export async function refundOrder(

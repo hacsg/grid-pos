@@ -4108,3 +4108,39 @@ html.display-active #root {
 .till-variance.ok { color: var(--grid-success); }
 .till-variance.over { color: var(--grid-warning); }
 .till-variance.short { color: var(--grid-error); }
+
+/* Till movements */
+.till-action-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.till-action-row button {
+  min-height: 42px;
+  font-size: var(--text-sm);
+}
+
+.till-movements {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px dashed var(--grid-border);
+  display: grid;
+  gap: 3px;
+  font-size: var(--text-xs);
+}
+
+.till-movements li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border: none;
+  padding: 0;
+}
+
+.till-mv { font-weight: 700; }
+.till-mv.in { color: var(--grid-success); }
+.till-mv.out { color: var(--grid-error); }
+.till-mv.nosale { color: var(--grid-muted); }
+.till-mv-reason { color: var(--grid-muted); }
