@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, LogOut, Minus, Package, Plus, Search, X } from 'lucide-react';
+import { Check, LogOut, Minus, Package, Search, X } from 'lucide-react';
 import type { Category, Modifier, ModifierGroup, Product } from '@/api/client';
 import { formatCurrency, money } from '@/api/client';
 import type { CartModifier } from '@/types';
@@ -436,32 +436,30 @@ export default function ProductGrid({
                           );
                         }
                         const count = selected.filter((id) => id === modifier.id).length;
+                        // Whole tile is the tap target to add one; a corner −
+                        // removes one. Big, touch-friendly, name never cramped.
                         return (
                           <div
                             key={modifier.id}
-                            className={`modifier-option modifier-option-qty ${count > 0 ? 'selected' : ''}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Add ${modifier.name}`}
+                            className={`modifier-option modifier-option-multi ${count > 0 ? 'selected' : ''} ${atMax && count === 0 ? 'dimmed' : ''}`}
+                            onClick={() => { if (!atMax) changeModifierQty(group, modifier.id, 1); }}
                           >
                             <span className="modifier-name">{modifier.name}</span>
                             {priceLabel && <span className="modifier-price">{priceLabel}</span>}
-                            <div className="modifier-qty-stepper">
+                            {count > 0 && <span className="modifier-qty-badge">{count}</span>}
+                            {count > 0 && (
                               <button
                                 type="button"
-                                aria-label={`Remove ${modifier.name}`}
-                                disabled={count === 0}
-                                onClick={() => changeModifierQty(group, modifier.id, -1)}
+                                className="modifier-dec"
+                                aria-label={`Remove one ${modifier.name}`}
+                                onClick={(e) => { e.stopPropagation(); changeModifierQty(group, modifier.id, -1); }}
                               >
-                                <Minus size={16} aria-hidden="true" />
+                                <Minus size={18} aria-hidden="true" />
                               </button>
-                              <span>{count}</span>
-                              <button
-                                type="button"
-                                aria-label={`Add ${modifier.name}`}
-                                disabled={atMax}
-                                onClick={() => changeModifierQty(group, modifier.id, 1)}
-                              >
-                                <Plus size={16} aria-hidden="true" />
-                              </button>
-                            </div>
+                            )}
                           </div>
                         );
                       })}

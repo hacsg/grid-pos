@@ -4146,50 +4146,54 @@ html.display-active #root {
 .till-mv-reason { color: var(--grid-muted); }
 
 /* Modifier quantity stepper (multi-select groups, e.g. double scoop) */
-.modifier-option-qty {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: default;
+/* Multi-select modifier: whole tile taps to add; corner − removes one; a badge
+   shows the quantity. Reserve right padding so the name never runs under them. */
+.modifier-option-multi {
+  cursor: pointer;
+  padding-right: 92px; /* room for the badge + − button */
 }
 
-.modifier-option-qty .modifier-name {
-  flex: 1;
-  text-align: left;
+.modifier-option-multi.dimmed {
+  opacity: 0.45;
 }
 
-.modifier-qty-stepper {
+.modifier-qty-badge {
+  position: absolute;
+  top: 50%;
+  right: 52px;
+  transform: translateY(-50%);
+  min-width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--grid-primary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.modifier-qty-stepper button {
-  width: 40px;
-  height: 40px;
+.modifier-dec {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--grid-border);
-  border-radius: 10px;
+  border-radius: var(--r-pill);
   background: var(--grid-surface);
-  color: var(--grid-text);
+  color: var(--grid-error);
 }
 
-.modifier-qty-stepper button:disabled {
-  opacity: 0.4;
-}
-
-.modifier-qty-stepper button:active:not(:disabled) {
+.modifier-dec:active {
   background: var(--grid-focus);
-}
-
-.modifier-qty-stepper span {
-  min-width: 18px;
-  text-align: center;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Quick charge dialog */
