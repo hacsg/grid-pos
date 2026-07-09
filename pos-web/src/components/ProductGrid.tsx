@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, LogOut, Package, Search, X } from 'lucide-react';
+import { Check, LogOut, Minus, Package, Plus, Search, X } from 'lucide-react';
 import type { Category, Modifier, ModifierGroup, Product } from '@/api/client';
 import { formatCurrency, money } from '@/api/client';
 import type { CartModifier } from '@/types';
@@ -206,6 +206,29 @@ export default function ProductGrid({
     });
   }
 
+  // Multi-select groups (max_select > 1) use quantity steppers so the same
+  // option can be chosen more than once (e.g. a double scoop of one flavour).
+  function changeModifierQty(group: ModifierGroup, modifierId: string, delta: 1 | -1) {
+    tapFeedback();
+    setSelections((current) => {
+      const existing = current[group.id] ?? [];
+      if (delta === 1) {
+        if (existing.length >= group.max_select) {
+          return current;
+        }
+        return { ...current, [group.id]: [...existing, modifierId] };
+      }
+      // Remove one occurrence.
+      const idx = existing.indexOf(modifierId);
+      if (idx === -1) {
+        return current;
+      }
+      const next = [...existing];
+      next.splice(idx, 1);
+      return { ...current, [group.id]: next };
+    });
+  }
+
   function validateModifierSelection(product: Product): boolean {
     for (const group of product.modifier_groups) {
       const selectedCount = selections[group.id]?.length ?? 0;
@@ -227,15 +250,22 @@ export default function ProductGrid({
     if (!modifierProduct || !validateModifierSelection(modifierProduct)) {
       return;
     }
+    // One CartModifier per selected occurrence (a flavour chosen twice yields
+    // two lines). The occurrence index keeps ids unique; edit-reload only reads
+    // the first two ':' segments (group:modifier), so the suffix is harmless.
     const selectedModifiers = modifierProduct.modifier_groups.flatMap((group) => {
       const selectedIds = selections[group.id] ?? [];
-      return group.modifiers
-        .filter((modifier) => selectedIds.includes(modifier.id))
-        .map<CartModifier>((modifier) => ({
-          id: `${group.id}:${modifier.id}`,
-          modifier_name: `${group.name}: ${modifier.name}`,
-          price_adjustment: money(modifier.price_adjustment),
-        }));
+      return selectedIds
+        .map<CartModifier | null>((modifierId, occurrence) => {
+          const modifier = group.modifiers.find((m) => m.id === modifierId);
+          if (!modifier) return null;
+          return {
+            id: `${group.id}:${modifier.id}:${occurrence}`,
+            modifier_name: `${group.name}: ${modifier.name}`,
+            price_adjustment: money(modifier.price_adjustment),
+          };
+        })
+        .filter((m): m is CartModifier => m !== null);
     });
     if (isEditing && editItem) {
       onEditProduct(editItem.lineId, selectedModifiers);
@@ -378,22 +408,55 @@ export default function ProductGrid({
                     </legend>
                     <div className="modifier-options">
                       {group.modifiers.map((modifier) => {
-                        const checked = selected.includes(modifier.id);
                         const priceLabel = modifierPrice(modifier);
-                        const maxReached = atMax && !checked;
+                        // Single-select: toggle. Multi-select: quantity stepper
+                        // so the same option can be chosen more than once.
+                        if (group.max_select === 1) {
+                          const checked = selected.includes(modifier.id);
+                          const maxReached = atMax && !checked;
+                          return (
+                            <button
+                              type="button"
+                              key={modifier.id}
+                              className={`modifier-option ${checked ? 'selected' : ''} ${maxReached ? 'max-reached' : ''}`}
+                              disabled={maxReached}
+                              onPointerDown={() => tapFeedback()}
+                              onClick={() => toggleModifier(group, modifier.id)}
+                            >
+                              <span className="modifier-name">{modifier.name}</span>
+                              {priceLabel && <span className="modifier-price">{priceLabel}</span>}
+                              {checked && <Check className="modifier-check" size={20} aria-hidden="true" />}
+                            </button>
+                          );
+                        }
+                        const count = selected.filter((id) => id === modifier.id).length;
                         return (
-                          <button
-                            type="button"
+                          <div
                             key={modifier.id}
-                            className={`modifier-option ${checked ? 'selected' : ''} ${maxReached ? 'max-reached' : ''}`}
-                            disabled={maxReached}
-                            onPointerDown={() => tapFeedback()}
-                            onClick={() => toggleModifier(group, modifier.id)}
+                            className={`modifier-option modifier-option-qty ${count > 0 ? 'selected' : ''}`}
                           >
                             <span className="modifier-name">{modifier.name}</span>
                             {priceLabel && <span className="modifier-price">{priceLabel}</span>}
-                            {checked && <Check className="modifier-check" size={20} aria-hidden="true" />}
-                          </button>
+                            <div className="modifier-qty-stepper">
+                              <button
+                                type="button"
+                                aria-label={`Remove ${modifier.name}`}
+                                disabled={count === 0}
+                                onClick={() => changeModifierQty(group, modifier.id, -1)}
+                              >
+                                <Minus size={16} aria-hidden="true" />
+                              </button>
+                              <span>{count}</span>
+                              <button
+                                type="button"
+                                aria-label={`Add ${modifier.name}`}
+                                disabled={atMax}
+                                onClick={() => changeModifierQty(group, modifier.id, 1)}
+                              >
+                                <Plus size={16} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>

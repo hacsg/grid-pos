@@ -4144,3 +4144,50 @@ html.display-active #root {
 .till-mv.out { color: var(--grid-error); }
 .till-mv.nosale { color: var(--grid-muted); }
 .till-mv-reason { color: var(--grid-muted); }
+
+/* Modifier quantity stepper (multi-select groups, e.g. double scoop) */
+.modifier-option-qty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: default;
+}
+
+.modifier-option-qty .modifier-name {
+  flex: 1;
+  text-align: left;
+}
+
+.modifier-qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.modifier-qty-stepper button {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--grid-border);
+  border-radius: 10px;
+  background: var(--grid-surface);
+  color: var(--grid-text);
+}
+
+.modifier-qty-stepper button:disabled {
+  opacity: 0.4;
+}
+
+.modifier-qty-stepper button:active:not(:disabled) {
+  background: var(--grid-focus);
+}
+
+.modifier-qty-stepper span {
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
