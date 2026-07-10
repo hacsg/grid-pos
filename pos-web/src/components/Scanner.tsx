@@ -357,15 +357,16 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
     setScannerPaused(false);
   }
 
-  // One scan, two possibilities: a voucher code or a membership QR (which
-  // encodes the Plotholders customer id). Try the voucher first; a definitive
-  // voucher error (already redeemed) stops there, otherwise fall through to
-  // the member lookup. A recognised member gets one visit moment on the spot
-  // and their active vouchers are shown for redemption.
+  // One scan, two possibilities: a voucher code or a membership QR. The
+  // membership QR is the Plotholders customer id — a UUID — while voucher QRs
+  // encode human-readable codes, so the shape of the scan picks the order:
+  // UUIDs go straight to the member lookup (one fast request), everything
+  // else is tried as a voucher first. A recognised member gets one visit
+  // moment on the spot and their active vouchers are shown for redemption.
   const resolveScan = useCallback(async (scanned: string) => {
-    setLoading(true);
-    try {
-      // 1) Voucher? (silent — a miss falls through to the member lookup)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scanned);
+
+    const tryVoucher = async (): Promise<boolean> => {
       try {
         const res = await validateVoucher(scanned, { silent: true });
         const amount = res.amount != null ? Number(res.amount) : 0;
@@ -376,20 +377,25 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
           id: res.id,
         });
         setJustRedeemed(null);
-        return; // keep scanner paused while showing the voucher card
+        return true; // keep scanner paused while showing the voucher card
       } catch (err: any) {
-        const status = err?.response?.status;
-        if (status === 409) {
+        if (err?.response?.status === 409) {
           toast.error('Voucher has already been redeemed');
           setScannerPaused(false);
           setCode('');
-          return;
+          return true; // definitively a voucher — stop here
         }
-        // Not a voucher — try the member path.
+        return false;
       }
+    };
 
-      // 2) Loyalty member? (silent — we show one "not recognised" error ourselves)
-      const found = await getCustomerWithVouchers(scanned, { silent: true });
+    const tryMember = async (): Promise<boolean> => {
+      let found: MemberWithVouchers;
+      try {
+        found = await getCustomerWithVouchers(scanned, { silent: true });
+      } catch {
+        return false;
+      }
       let awarded = false;
       try {
         await recordVisitMoment(String(found.customer_id || found.member_id), session.outlet.name);
@@ -402,10 +408,19 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
       setMomentAwarded(awarded);
       setRedeemedMemberCodes([]);
       if (awarded) toast.success(`+1 moment for ${found.name || 'member'}`);
-    } catch {
-      toast.error('Code not recognised — not a voucher or member QR');
-      setScannerPaused(false);
-      setCode('');
+      return true;
+    };
+
+    setLoading(true);
+    try {
+      const resolved = isUuid
+        ? (await tryMember()) || (await tryVoucher())
+        : (await tryVoucher()) || (await tryMember());
+      if (!resolved) {
+        toast.error('Code not recognised — not a voucher or member QR');
+        setScannerPaused(false);
+        setCode('');
+      }
     } finally {
       setLoading(false);
     }
@@ -597,6 +612,13 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
               onRequestResume={requestScannerResume}
             />
 
+            {loading && (
+              <div className="qr-checking" role="status" aria-live="polite">
+                <span className="qr-checking-spinner" aria-hidden="true" />
+                Checking code…
+              </div>
+            )}
+
             {/* Scan manually / photo fallback */}
             <div className="qr-actions">
               <button
@@ -679,7 +701,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
                 <div className="voucher-result-amount" style={{ fontSize: '1.5rem' }}>
                   {member.name || 'Member'}
                 </div>
-                <div className="voucher-result-code">
+                <div className="voucher-result-code member-checkin-meta">
                   {momentAwarded
                     ? `+1 moment recorded · ${(member.points ?? 0) + 1} total`
                     : 'Moment could not be recorded — scan again to retry'}

@@ -4281,3 +4281,71 @@ html.display-active #root {
 .quick-charge-keys button:active {
   background: var(--grid-focus);
 }
+
+/* Scanner resolve-in-progress pill — the camera pauses while a code is being
+   checked, so this keeps the UI visibly alive instead of looking frozen. */
+.qr-checking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--grid-surface);
+  border: 1px solid var(--grid-border);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--grid-text);
+}
+
+.qr-checking-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid var(--grid-border);
+  border-top-color: var(--grid-text);
+  animation: qr-checking-spin 0.8s linear infinite;
+}
+
+@keyframes qr-checking-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Staff top bar on phones: compact tabs, session pill shows just the staff
+   name (the outlet is obvious in-store) so nothing clips off-screen. */
+@media (max-width: 640px) {
+  .staff-topbar {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .staff-tabs {
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+    padding: 3px;
+  }
+  .staff-tab {
+    flex: 1;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+  .staff-session-info {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 0 10px;
+  }
+  .staff-session-outlet,
+  .staff-session-divider {
+    display: none;
+  }
+}
+
+/* Member check-in meta line reuses the result-code slot but is prose, not a
+   code — no monospace/letter-spacing/mid-word breaks. */
+.member-checkin-meta {
+  font-family: inherit;
+  letter-spacing: 0;
+  word-break: normal;
+  font-size: 15px;
+}

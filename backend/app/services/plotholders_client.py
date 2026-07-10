@@ -213,7 +213,10 @@ class PlotholdersClient:
                 return v
             if v.get("id") == ref:
                 return v
-        return vouchers[0] if vouchers else None
+        # No match means no voucher. (Returning vouchers[0] here used to make a
+        # scanned member QR "validate" as whatever voucher the upstream list
+        # happened to return first.)
+        return None
 
     async def redeem_reward(self, reward_id: str) -> dict[str, Any]:
         """Redeem a Plotholders reward."""

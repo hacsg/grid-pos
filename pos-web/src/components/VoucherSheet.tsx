@@ -94,8 +94,11 @@ export default function VoucherSheet({
       return;
     }
 
-    setLoading(true);
-    try {
+    // Membership QRs are UUIDs (the Plotholders customer id); voucher QRs are
+    // human-readable codes. The shape picks the lookup order.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+
+    const tryVoucher = async (): Promise<boolean> => {
       try {
         const res = await validateVoucher(trimmed, { silent: true });
         const amount = res.amount != null ? Number(res.amount) : 0;
@@ -111,22 +114,37 @@ export default function VoucherSheet({
             ? `${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher S$${amount.toFixed(2)} applied`
             : `${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher applied (no discount)`
         );
-        return;
+        return true;
       } catch (err: any) {
         if (err?.response?.status === 409) {
           toast.error('Voucher has already been redeemed');
-          return;
+          return true; // definitively a voucher — stop here
         }
-        // Not a voucher — try it as a membership QR.
+        return false;
       }
+    };
 
-      const found = await getCustomerWithVouchers(trimmed, { silent: true });
-      const { vouchers: _v, ...memberOnly } = found;
-      onSelectCustomer(memberOnly as LoyaltyMember);
-      setCode('');
-      toast.success(`${found.name || 'Member'} attached — their vouchers are listed below`);
-    } catch {
-      toast.error('Not a valid voucher code or member QR');
+    const tryMember = async (): Promise<boolean> => {
+      try {
+        const found = await getCustomerWithVouchers(trimmed, { silent: true });
+        const { vouchers: _v, ...memberOnly } = found;
+        onSelectCustomer(memberOnly as LoyaltyMember);
+        setCode('');
+        toast.success(`${found.name || 'Member'} attached — their vouchers are listed below`);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    setLoading(true);
+    try {
+      const resolved = isUuid
+        ? (await tryMember()) || (await tryVoucher())
+        : (await tryVoucher()) || (await tryMember());
+      if (!resolved) {
+        toast.error('Not a valid voucher code or member QR');
+      }
     } finally {
       setLoading(false);
     }
