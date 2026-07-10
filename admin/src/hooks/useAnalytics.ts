@@ -1,5 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { getAnalyticsDashboard, getFlavorAnalysis, getFlavorRankings } from '@/api/client';
+import {
+  getAnalyticsDashboard,
+  getFlavorAnalysis,
+  getFlavorRankings,
+  getStaffLeaderboard,
+} from '@/api/client';
 import type { AnalyticsDashboardParams, FlavorAnalysisParams } from '@/types/analytics';
 
 export function useAnalyticsDashboard(params?: AnalyticsDashboardParams) {
@@ -24,6 +29,19 @@ export function useFlavorRankings(params?: { outlet_id?: string }) {
   return useQuery({
     queryKey: ['analytics', 'flavor-rankings', params],
     queryFn: () => getFlavorRankings(params),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useStaffLeaderboard(params?: {
+  date_from: string;
+  date_to: string;
+  outlet_id?: string;
+}) {
+  return useQuery({
+    queryKey: ['analytics', 'staff-leaderboard', params],
+    queryFn: () => getStaffLeaderboard(params!),
+    enabled: !!params,
     placeholderData: (prev) => prev,
   });
 }

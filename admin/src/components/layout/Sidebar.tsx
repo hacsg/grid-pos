@@ -20,9 +20,7 @@ import {
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/analytics', icon: TrendingUp, label: 'Analytics' },
   { to: '/flavours', icon: IceCream, label: 'Flavours' },
-  { to: '/insights', icon: Lightbulb, label: 'Insights' },
   { to: '/products', icon: Package, label: 'Products' },
   { to: '/modifiers', icon: SlidersHorizontal, label: 'Modifiers' },
   { to: '/categories', icon: Tags, label: 'Categories' },
@@ -30,7 +28,6 @@ const navItems = [
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/outlets', icon: Store, label: 'Outlets' },
   { to: '/discounts', icon: BadgePercent, label: 'Discounts' },
-  { to: '/reports', icon: BarChart3, label: 'Reports' },
 ];
 
 interface SidebarProps {

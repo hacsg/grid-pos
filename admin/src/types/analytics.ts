@@ -86,6 +86,15 @@ export interface AnalyticsDashboardParams {
   to_date?: string;
 }
 
+// Staff leaderboard, mapped from GET /reports/staff.
+export interface StaffLeaderboardEntry {
+  staff_id: string;
+  name: string;
+  transactions: number;
+  revenue: number;
+  average_ticket: number;
+}
+
 // ── Flavour analytics (GET /analytics/flavors, /analytics/flavor-rankings) ──
 
 export type FlavorClassification = 'hero' | 'rising' | 'stable' | 'rotate_out';

@@ -57,6 +57,7 @@ import type {
   FlavorAnalysis,
   FlavorAnalysisParams,
   FlavorRankings,
+  StaffLeaderboardEntry,
 } from '@/types/analytics';
 
 const api = axios.create({
@@ -501,6 +502,21 @@ export const getFlavorRankings = async (params?: {
 }): Promise<FlavorRankings> => {
   const { data } = await api.get('/analytics/flavor-rankings', { params });
   return data;
+};
+
+export const getStaffLeaderboard = async (params: {
+  date_from: string;
+  date_to: string;
+  outlet_id?: string;
+}): Promise<StaffLeaderboardEntry[]> => {
+  const { data } = await api.get('/reports/staff', { params });
+  return (data?.staff ?? []).map((s: any) => ({
+    staff_id: s.staff_id,
+    name: s.name,
+    transactions: toNumber(s.transactions),
+    revenue: toNumber(s.revenue),
+    average_ticket: toNumber(s.average_ticket),
+  }));
 };
 
 export const exportReportCSV = async (params?: CsvExportParams): Promise<Blob> => {

@@ -3,16 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import Layout from '@/components/layout/Layout';
 import Dashboard from '@/pages/Dashboard';
-import Analytics from '@/pages/Analytics';
 import Flavours from '@/pages/Flavours';
-import Insights from '@/pages/Insights';
 import Products from '@/pages/Products';
 import Categories from '@/pages/Categories';
 import Modifiers from '@/pages/Modifiers';
 import Orders from '@/pages/Orders';
 import Staff from '@/pages/Staff';
 import Outlets from '@/pages/Outlets';
-import Reports from '@/pages/Reports';
 import Discounts from '@/pages/Discounts';
 import Login from '@/pages/Login';
 
@@ -49,16 +46,17 @@ export default function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="analytics" element={<Analytics />} />
+            {/* Old bookmarks for the merged tabs land on the Dashboard */}
+            <Route path="analytics" element={<Navigate to="/" replace />} />
+            <Route path="insights" element={<Navigate to="/" replace />} />
+            <Route path="reports" element={<Navigate to="/" replace />} />
             <Route path="flavours" element={<Flavours />} />
-            <Route path="insights" element={<Insights />} />
             <Route path="products" element={<Products />} />
             <Route path="modifiers" element={<Modifiers />} />
             <Route path="categories" element={<Categories />} />
             <Route path="orders" element={<Orders />} />
             <Route path="staff" element={<Staff />} />
             <Route path="outlets" element={<Outlets />} />
-            <Route path="reports" element={<Reports />} />
             <Route path="discounts" element={<Discounts />} />
           </Route>
         </Routes>
