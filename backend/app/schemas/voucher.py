@@ -71,9 +71,14 @@ class VoucherValidateRequest(BaseModel):
 
 
 class VoucherValidateRead(BaseModel):
-    """Response for a successful validation (voucher is available)."""
+    """Response for a successful validation (voucher is available).
 
-    id: UUID
+    ``id`` is a plain string: Plotholders is the source of truth and its
+    voucher ids are not guaranteed to be UUIDs (the router even falls back to
+    the code itself when the upstream record has no id).
+    """
+
+    id: str
     code: str
     type: VoucherType
     amount: Money | None = None

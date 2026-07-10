@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
 import { ChevronDown, LogOut, WifiOff, X } from 'lucide-react';
@@ -10,7 +10,7 @@ import PaymentModal, { manualTerminalEnabled } from '@/components/PaymentModal';
 import TillControls from '@/components/TillControls';
 import QuickChargeDialog from '@/components/QuickChargeDialog';
 import ProductGrid from '@/components/ProductGrid';
-import VoucherRedemption from '@/components/VoucherRedemption';
+import Scanner from '@/components/Scanner';
 import TransactionsPage from '@/components/TransactionsPage';
 import DiscountSheet from '@/components/DiscountSheet';
 import VoucherSheet from '@/components/VoucherSheet';
@@ -721,7 +721,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   );
 }
 
-function StaffTabs({ active }: { active: 'pos' | 'vouchers' | 'transactions' }) {
+function StaffTabs({ active }: { active: 'pos' | 'scanner' | 'transactions' }) {
   return (
     <div className="staff-tabs">
       <Link
@@ -732,11 +732,11 @@ function StaffTabs({ active }: { active: 'pos' | 'vouchers' | 'transactions' }) 
         POS
       </Link>
       <Link
-        to="/vouchers"
-        className={`staff-tab ${active === 'vouchers' ? 'active' : ''}`}
+        to="/scanner"
+        className={`staff-tab ${active === 'scanner' ? 'active' : ''}`}
         onPointerDown={() => tapFeedback()}
       >
-        Vouchers
+        Scanner
       </Link>
       <Link
         to="/transactions"
@@ -789,10 +789,10 @@ function StaffShell() {
     setPrinterName(null);
   }
 
-  const activeTab: 'pos' | 'vouchers' | 'transactions' = location.pathname.startsWith('/transactions')
+  const activeTab: 'pos' | 'scanner' | 'transactions' = location.pathname.startsWith('/transactions')
     ? 'transactions'
-    : location.pathname.startsWith('/vouchers')
-      ? 'vouchers'
+    : location.pathname.startsWith('/scanner') || location.pathname.startsWith('/vouchers')
+      ? 'scanner'
       : 'pos';
 
   function handleLogin(nextSession: StaffSession) {
@@ -855,7 +855,8 @@ function StaffShell() {
 
       <div className="staff-content">
         <Routes>
-          <Route path="/vouchers" element={<VoucherRedemption session={session} onLogout={handleLogout} />} />
+          <Route path="/scanner" element={<Scanner session={session} onLogout={handleLogout} />} />
+          <Route path="/vouchers" element={<Navigate to="/scanner" replace />} />
           <Route path="/transactions" element={<TransactionsPage session={session} />} />
           <Route path="/*" element={<PosWorkspace session={session} onLogout={handleLogout} />} />
         </Routes>

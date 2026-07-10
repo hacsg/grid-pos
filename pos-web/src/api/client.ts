@@ -670,12 +670,27 @@ export interface MemberWithVouchers extends Omit<LoyaltyMember, 'vouchers'> {
 
 // Checkout scan path: the membership QR encodes the customer id. Returns the
 // member plus their active (redeemable) vouchers in one call.
-export async function getCustomerWithVouchers(customerId: string): Promise<MemberWithVouchers> {
-  const { data } = await api.get<MemberWithVouchers>(`/loyalty/customer/${encodeURIComponent(customerId.trim())}`);
+export async function getCustomerWithVouchers(
+  customerId: string,
+  options?: { silent?: boolean }
+): Promise<MemberWithVouchers> {
+  const { data } = await api.get<MemberWithVouchers>(
+    `/loyalty/customer/${encodeURIComponent(customerId.trim())}`,
+    { silent: options?.silent } as SilentRequestConfig
+  );
   if (!data || !data.member_id) {
     throw new Error('Member not found');
   }
   return data;
+}
+
+// Standalone scanner check-in: award exactly one "visit" moment (no order).
+export async function recordVisitMoment(customerId: string, outlet: string): Promise<void> {
+  await api.post('/loyalty/earn', {
+    customer_id: customerId,
+    amount_spent: 0,
+    outlet,
+  });
 }
 
 export async function redeemLoyalty(
@@ -728,8 +743,15 @@ export interface VoucherApplyPayload {
   codes: string[];
 }
 
-export async function validateVoucher(code: string): Promise<VoucherValidateResponse> {
-  const { data } = await api.post<VoucherValidateResponse>('/vouchers/validate', { code: code.trim() });
+export async function validateVoucher(
+  code: string,
+  options?: { silent?: boolean }
+): Promise<VoucherValidateResponse> {
+  const { data } = await api.post<VoucherValidateResponse>(
+    '/vouchers/validate',
+    { code: code.trim() },
+    { silent: options?.silent } as SilentRequestConfig
+  );
   return data;
 }
 

@@ -1,8 +1,17 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle, ChevronDown, ChevronUp, Clock, X } from 'lucide-react';
+import { Camera, CheckCircle, ChevronDown, ChevronUp, Clock, Ticket, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import toast from 'react-hot-toast';
-import { formatCurrency, redeemVoucher, validateVoucher } from '@/api/client';
+import {
+  formatCurrency,
+  getCustomerWithVouchers,
+  money,
+  recordVisitMoment,
+  redeemVoucher,
+  validateVoucher,
+  type MemberWithVouchers,
+  type PlotholdersVoucher,
+} from '@/api/client';
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { useScannerWedge } from '@/utils/useScannerWedge';
@@ -37,7 +46,7 @@ function saveRecent(list: RecentRedemption[]) {
   }
 }
 
-interface VoucherRedemptionProps {
+interface ScannerProps {
   session: StaffSession;
   onLogout?: () => void;
 }
@@ -307,11 +316,15 @@ function QrScanner({ onDetected, paused, onRequestResume }: QrScannerProps) {
   );
 }
 
-export default function VoucherRedemption({ session, onLogout }: VoucherRedemptionProps) {
+export default function Scanner({ session, onLogout }: ScannerProps) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [validated, setValidated] = useState<ValidatedVoucher | null>(null);
   const [justRedeemed, setJustRedeemed] = useState<ValidatedVoucher | null>(null);
+  const [member, setMember] = useState<MemberWithVouchers | null>(null);
+  const [momentAwarded, setMomentAwarded] = useState(false);
+  const [redeemedMemberCodes, setRedeemedMemberCodes] = useState<string[]>([]);
+  const [redeemingCode, setRedeemingCode] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentRedemption[]>(() => loadRecent());
   const [now, setNow] = useState(() => new Date());
   const [scannerPaused, setScannerPaused] = useState(false);
@@ -336,42 +349,75 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
   function resetForNext() {
     setValidated(null);
     setJustRedeemed(null);
+    setMember(null);
+    setMomentAwarded(false);
+    setRedeemedMemberCodes([]);
     setCode('');
     setManualOpen(false);
     setScannerPaused(false);
   }
 
-  // Called by QR scanner when a code is decoded
-  const handleQrDetected = useCallback(async (detectedCode: string) => {
-    if (loading || validated || justRedeemed) return;
-
-    setCode(detectedCode);
-    setScannerPaused(true);
-
+  // One scan, two possibilities: a voucher code or a membership QR (which
+  // encodes the Plotholders customer id). Try the voucher first; a definitive
+  // voucher error (already redeemed) stops there, otherwise fall through to
+  // the member lookup. A recognised member gets one visit moment on the spot
+  // and their active vouchers are shown for redemption.
+  const resolveScan = useCallback(async (scanned: string) => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await validateVoucher(detectedCode);
-      const amount = res.amount != null ? Number(res.amount) : 0;
+      // 1) Voucher? (silent — a miss falls through to the member lookup)
+      try {
+        const res = await validateVoucher(scanned, { silent: true });
+        const amount = res.amount != null ? Number(res.amount) : 0;
+        setValidated({
+          code: res.code,
+          type: res.type,
+          amount: amount > 0 ? amount : undefined,
+          id: res.id,
+        });
+        setJustRedeemed(null);
+        return; // keep scanner paused while showing the voucher card
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 409) {
+          toast.error('Voucher has already been redeemed');
+          setScannerPaused(false);
+          setCode('');
+          return;
+        }
+        // Not a voucher — try the member path.
+      }
 
-      const v: ValidatedVoucher = {
-        code: res.code,
-        type: res.type,
-        amount: amount > 0 ? amount : undefined,
-        id: res.id,
-      };
-      setValidated(v);
-      setJustRedeemed(null);
-      // Keep scanner paused while showing result
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Invalid or already redeemed';
-      toast.error(typeof msg === 'string' ? msg : 'Could not validate voucher');
-      // Keep camera active for next attempt
+      // 2) Loyalty member? (silent — we show one "not recognised" error ourselves)
+      const found = await getCustomerWithVouchers(scanned, { silent: true });
+      let awarded = false;
+      try {
+        await recordVisitMoment(String(found.customer_id || found.member_id), session.outlet.name);
+        awarded = true;
+      } catch {
+        // The check-in still shows the member and vouchers; the moment can be
+        // retried by scanning again.
+      }
+      setMember(found);
+      setMomentAwarded(awarded);
+      setRedeemedMemberCodes([]);
+      if (awarded) toast.success(`+1 moment for ${found.name || 'member'}`);
+    } catch {
+      toast.error('Code not recognised — not a voucher or member QR');
       setScannerPaused(false);
       setCode('');
     } finally {
       setLoading(false);
     }
-  }, [loading, validated, justRedeemed]);
+  }, [session.outlet.name]);
+
+  // Called by QR scanner when a code is decoded
+  const handleQrDetected = useCallback(async (detectedCode: string) => {
+    if (loading || validated || justRedeemed || member) return;
+    setCode(detectedCode);
+    setScannerPaused(true);
+    await resolveScan(detectedCode);
+  }, [loading, validated, justRedeemed, member, resolveScan]);
 
   const requestScannerResume = useCallback(() => {
     setScannerPaused(false);
@@ -381,7 +427,7 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
   // whose client-facing scanner is not a camera. Disabled while the manual code
   // field is open so typed input isn't double-handled.
   useScannerWedge({
-    enabled: !manualOpen && !loading && !validated && !justRedeemed,
+    enabled: !manualOpen && !loading && !validated && !justRedeemed && !member,
     onScan: (scanned) => { void handleQrDetected(scanned); },
   });
 
@@ -389,29 +435,8 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
     event?.preventDefault();
     const trimmed = code.trim();
     if (!trimmed) return;
-
     setScannerPaused(true);
-
-    try {
-      setLoading(true);
-      const res = await validateVoucher(trimmed);
-      const amount = res.amount != null ? Number(res.amount) : 0;
-      const v: ValidatedVoucher = {
-        code: res.code,
-        type: res.type,
-        amount: amount > 0 ? amount : undefined,
-        id: res.id,
-      };
-      setValidated(v);
-      setJustRedeemed(null);
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Invalid or already redeemed';
-      toast.error(typeof msg === 'string' ? msg : 'Could not validate voucher');
-      setValidated(null);
-      setScannerPaused(false);
-    } finally {
-      setLoading(false);
-    }
+    await resolveScan(trimmed);
   }
 
   async function handleRedeem() {
@@ -464,6 +489,36 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
     setScannerPaused(false);
   }
 
+  // Redeem one of the member's own vouchers, straight from the check-in card.
+  async function handleRedeemMemberVoucher(v: PlotholdersVoucher) {
+    tapFeedback();
+    setRedeemingCode(v.code);
+    try {
+      await redeemVoucher({
+        code: v.code,
+        staff_id: session.staff.id,
+        outlet: session.outlet.name,
+      });
+      const amount = v.amount != null ? money(v.amount) : v.discount_cents != null ? v.discount_cents / 100 : 0;
+      const redeemed: RecentRedemption = {
+        code: v.code,
+        title: v.title || 'Member Voucher',
+        amount: amount > 0 ? amount : undefined,
+        redeemedAt: new Date().toISOString(),
+      };
+      const nextRecent = [redeemed, ...recent.filter((r) => r.code.toUpperCase() !== redeemed.code.toUpperCase())].slice(0, MAX_RECENT);
+      setRecent(nextRecent);
+      saveRecent(nextRecent);
+      setRedeemedMemberCodes((prev) => [...prev, v.code.toUpperCase()]);
+      toast.success('Voucher redeemed');
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Redemption failed';
+      toast.error(typeof msg === 'string' ? msg : 'Could not redeem voucher');
+    } finally {
+      setRedeemingCode(null);
+    }
+  }
+
   function openManualFilePicker() {
     tapFeedback();
     fileInputRef.current?.click();
@@ -496,7 +551,8 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
     }
   }
 
-  const hasActiveResult = !!validated || !!justRedeemed;
+  const hasActiveResult = !!validated || !!justRedeemed || !!member;
+  const memberVouchers = member?.vouchers ?? [];
 
   return (
     <div className="voucher-redemption">
@@ -529,8 +585,8 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
       <main className="voucher-main">
         <div className="voucher-center">
           <div className="voucher-title-row">
-            <h1 className="voucher-title">Voucher Redemption</h1>
-            <p className="voucher-subtitle">Show QR code to camera</p>
+            <h1 className="voucher-title">Scanner</h1>
+            <p className="voucher-subtitle">Scan a voucher or member QR — members check in for a moment</p>
           </div>
 
           {/* AUTO QR CAMERA */}
@@ -606,6 +662,69 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
             </div>
           )}
 
+          {/* MEMBER CHECK-IN — moment awarded + their vouchers */}
+          {member && (
+            <div className="voucher-result-sheet">
+              <div className="voucher-result-card">
+                <button
+                  type="button"
+                  className="voucher-result-close"
+                  onClick={handleNewScan}
+                  aria-label="Done"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="voucher-result-type">Member Check-in</div>
+                <div className="voucher-result-amount" style={{ fontSize: '1.5rem' }}>
+                  {member.name || 'Member'}
+                </div>
+                <div className="voucher-result-code">
+                  {momentAwarded
+                    ? `+1 moment recorded · ${(member.points ?? 0) + 1} total`
+                    : 'Moment could not be recorded — scan again to retry'}
+                </div>
+
+                <div className="loyalty-vouchers" style={{ textAlign: 'left', width: '100%' }}>
+                  <p className="loyalty-vouchers-title">
+                    <Ticket size={16} aria-hidden="true" /> Active vouchers
+                  </p>
+                  {memberVouchers.length === 0 && (
+                    <p className="loyalty-vouchers-empty">No active vouchers.</p>
+                  )}
+                  {memberVouchers.map((v) => {
+                    const amount = v.amount != null ? money(v.amount) : v.discount_cents != null ? v.discount_cents / 100 : 0;
+                    const isRedeemed = redeemedMemberCodes.includes(v.code.toUpperCase());
+                    return (
+                      <div className="loyalty-voucher-row" key={v.id || v.code}>
+                        <div>
+                          <strong>{v.title || v.code}</strong>
+                          <span>{amount > 0 ? formatCurrency(amount) : v.description || v.code}</span>
+                        </div>
+                        <button
+                          className={isRedeemed ? 'secondary-button' : 'primary-button'}
+                          type="button"
+                          disabled={isRedeemed || redeemingCode === v.code}
+                          onClick={() => void handleRedeemMemberVoucher(v)}
+                        >
+                          {isRedeemed ? 'Redeemed' : redeemingCode === v.code ? 'Redeeming…' : 'Redeem'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  className="primary-button voucher-redeem-btn-large"
+                  onClick={handleNewScan}
+                >
+                  Done — next scan
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Success state */}
           {justRedeemed && (
             <div className="voucher-success">
@@ -645,12 +764,12 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                     type="text"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    placeholder="Enter voucher code"
+                    placeholder="Enter voucher code or member ID"
                     autoComplete="off"
                     autoCorrect="off"
                     spellCheck={false}
                     enterKeyHint="search"
-                    disabled={loading || !!validated}
+                    disabled={loading || !!validated || !!member}
                     className="manual-input"
                   />
                 </div>
@@ -658,7 +777,7 @@ export default function VoucherRedemption({ session, onLogout }: VoucherRedempti
                   <button
                     type="submit"
                     className="primary-button manual-validate-btn"
-                    disabled={loading || !code.trim() || !!validated}
+                    disabled={loading || !code.trim() || !!validated || !!member}
                   >
                     {loading ? 'Validating…' : 'Validate'}
                   </button>
