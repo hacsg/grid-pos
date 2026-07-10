@@ -532,6 +532,8 @@ export interface TillSession {
   business_date: string;
   status: 'open' | 'closed';
   opening_float: number | string;
+  expected_opening_float?: number | string | null;
+  opening_variance?: number | string | null;
   opened_at: string;
   counted_cash?: number | string | null;
   closed_at?: string | null;
@@ -554,6 +556,18 @@ export async function openTill(outletId: string, openingFloat: number): Promise<
 
 export async function closeTill(sessionId: string, countedCash: number): Promise<TillSession> {
   const { data } = await api.post<TillSession>('/till/close', { session_id: sessionId, counted_cash: countedCash });
+  return data;
+}
+
+export interface TillCarryOver {
+  expected_opening_float: number | string | null;
+  previous_business_date: string | null;
+  previous_counted_cash: number | string | null;
+  previous_closed_at: string | null;
+}
+
+export async function getTillCarryOver(outletId: string): Promise<TillCarryOver> {
+  const { data } = await api.get<TillCarryOver>('/till/carry-over', { params: { outlet_id: outletId } });
   return data;
 }
 

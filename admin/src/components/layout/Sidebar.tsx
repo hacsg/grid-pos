@@ -15,12 +15,14 @@ import {
   Ticket,
   UserRound,
   BadgePercent,
+  Wallet,
   X,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/flavours', icon: IceCream, label: 'Flavours' },
+  { to: '/tills', icon: Wallet, label: 'Tills' },
   { to: '/products', icon: Package, label: 'Products' },
   { to: '/modifiers', icon: SlidersHorizontal, label: 'Modifiers' },
   { to: '/categories', icon: Tags, label: 'Categories' },

@@ -61,18 +61,46 @@ async def cash_kept_today(db: AsyncSession, outlet_id: UUID, since: datetime) ->
     return _q(Decimal(str(await db.scalar(stmt) or 0)))
 
 
+async def last_closed_session(db: AsyncSession, outlet_id: UUID) -> TillSession | None:
+    """The outlet's most recently closed till session, if any."""
+    return await db.scalar(
+        select(TillSession)
+        .where(TillSession.outlet_id == outlet_id, TillSession.status == "closed")
+        .order_by(TillSession.closed_at.desc())
+        .limit(1)
+    )
+
+
+async def carry_over_float(db: AsyncSession, outlet_id: UUID) -> tuple[TillSession | None, Decimal | None]:
+    """(previous closed session, cash expected in the drawer at the next open).
+
+    With no overnight cash-out/in, whatever was counted at close is still in
+    the drawer the next morning — so the carry-over is the previous session's
+    counted cash (falling back to its expected cash if it was never counted).
+    """
+    previous = await last_closed_session(db, outlet_id)
+    if previous is None:
+        return None, None
+    amount = previous.counted_cash if previous.counted_cash is not None else previous.expected_cash
+    return previous, (_q(Decimal(str(amount))) if amount is not None else None)
+
+
 async def open_till(
     db: AsyncSession, outlet_id: UUID, opening_float: Decimal, staff_id: UUID
 ) -> TillSession:
     existing = await get_open_till(db, outlet_id)
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A till is already open for this outlet")
+    _previous, expected_opening = await carry_over_float(db, outlet_id)
+    opening = _q(opening_float)
     business_date = datetime.now(SGT_TZ).date()
     session = TillSession(
         outlet_id=outlet_id,
         business_date=business_date,
         status="open",
-        opening_float=_q(opening_float),
+        opening_float=opening,
+        expected_opening_float=expected_opening,
+        opening_variance=_q(opening - expected_opening) if expected_opening is not None else None,
         opened_by_staff_id=staff_id,
     )
     db.add(session)

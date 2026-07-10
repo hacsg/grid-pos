@@ -25,6 +25,10 @@ class TillSession(UUIDPrimaryKeyMixin, Base):
     business_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="open")
     opening_float: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    # Carry-over from the previous close: what the drawer should hold at open
+    # (previous counted cash), and declared float − that expectation.
+    expected_opening_float: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    opening_variance: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     opened_by_staff_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("staff.id", ondelete="SET NULL"), nullable=True
     )

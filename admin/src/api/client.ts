@@ -59,6 +59,7 @@ import type {
   FlavorRankings,
   StaffLeaderboardEntry,
 } from '@/types/analytics';
+import type { TillCarryOver, TillMovement, TillSession } from '@/types/till';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
@@ -501,6 +502,27 @@ export const getFlavorRankings = async (params?: {
   outlet_id?: string;
 }): Promise<FlavorRankings> => {
   const { data } = await api.get('/analytics/flavor-rankings', { params });
+  return data;
+};
+
+// Tills (manager view)
+export const getTillCurrent = async (outletId: string): Promise<TillSession | null> => {
+  const { data } = await api.get('/till/current', { params: { outlet_id: outletId } });
+  return data;
+};
+
+export const getTillSessions = async (outletId: string): Promise<TillSession[]> => {
+  const { data } = await api.get('/till/sessions', { params: { outlet_id: outletId } });
+  return Array.isArray(data) ? data : [];
+};
+
+export const getTillMovements = async (sessionId: string): Promise<TillMovement[]> => {
+  const { data } = await api.get(`/till/${sessionId}/movements`);
+  return Array.isArray(data) ? data : [];
+};
+
+export const getTillCarryOver = async (outletId: string): Promise<TillCarryOver> => {
+  const { data } = await api.get('/till/carry-over', { params: { outlet_id: outletId } });
   return data;
 };
 

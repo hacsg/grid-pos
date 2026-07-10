@@ -7,6 +7,7 @@ import {
   closeTill,
   formatCurrency,
   getCurrentTill,
+  getTillCarryOver,
   getTillMovements,
   getTillSessions,
   money,
@@ -42,6 +43,15 @@ export default function TillControls({ session }: { session: StaffSession }) {
   const tillQuery = useQuery({ queryKey: ['till', outletId], queryFn: () => getCurrentTill(outletId) });
   const till = tillQuery.data ?? null;
 
+  // Overnight carry-over: what the previous close left in the drawer.
+  const carryOverQuery = useQuery({
+    queryKey: ['till-carry-over', outletId],
+    queryFn: () => getTillCarryOver(outletId),
+    enabled: !tillQuery.isLoading && till === null,
+  });
+  const carryOver = carryOverQuery.data ?? null;
+  const expectedFloat = carryOver?.expected_opening_float != null ? money(carryOver.expected_opening_float) : null;
+
   const [floatInput, setFloatInput] = useState('');
   const [countInput, setCountInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -67,10 +77,19 @@ export default function TillControls({ session }: { session: StaffSession }) {
     if (!floatInput.trim() || amount < 0) { toast.error('Enter the opening float'); return; }
     setBusy(true);
     try {
-      await openTill(outletId, amount);
-      toast.success('Till opened');
+      const opened = await openTill(outletId, amount);
+      const openingVariance = opened.opening_variance != null ? money(opened.opening_variance) : null;
+      if (openingVariance != null && openingVariance !== 0) {
+        toast(
+          `Till opened — drawer is ${formatCurrency(Math.abs(openingVariance))} ${openingVariance > 0 ? 'over' : 'short of'} the ${formatCurrency(money(opened.expected_opening_float ?? 0))} carried over`,
+          { icon: '⚠️', duration: 6000 },
+        );
+      } else {
+        toast.success('Till opened');
+      }
       setFloatInput('');
       await qc.invalidateQueries({ queryKey: ['till', outletId] });
+      await qc.invalidateQueries({ queryKey: ['till-carry-over', outletId] });
     } catch (err) { toast.error(getErrorDetail(err, 'Could not open till')); }
     finally { setBusy(false); }
   }
@@ -82,9 +101,10 @@ export default function TillControls({ session }: { session: StaffSession }) {
     setBusy(true);
     try {
       await closeTill(till.id, amount);
-      toast.success('Till closed — counted cash recorded');
+      toast.success(`Till closed — ${formatCurrency(amount)} stays in the drawer as tomorrow's float`);
       setCountInput('');
       await qc.invalidateQueries({ queryKey: ['till', outletId] });
+      await qc.invalidateQueries({ queryKey: ['till-carry-over', outletId] });
     } catch (err) { toast.error(getErrorDetail(err, 'Could not close till')); }
     finally { setBusy(false); }
   }
@@ -133,6 +153,11 @@ export default function TillControls({ session }: { session: StaffSession }) {
           <p className="till-status">
             <span className="till-badge open">Open</span>
             Float {formatCurrency(till.opening_float)} · since {sgtDate(till.opened_at)}
+            {till.opening_variance != null && money(till.opening_variance) !== 0 && (
+              <span className={`till-variance ${money(till.opening_variance) > 0 ? 'over' : 'short'}`}>
+                {' '}opened {money(till.opening_variance) > 0 ? '+' : ''}{formatCurrency(money(till.opening_variance))} vs carry-over
+              </span>
+            )}
           </p>
 
           <div className="till-action-row">
@@ -153,6 +178,12 @@ export default function TillControls({ session }: { session: StaffSession }) {
       ) : (
         <>
           <p className="till-muted">No till open for today. Open the drawer, count the cash, then enter it as the opening float.</p>
+          {expectedFloat != null && (
+            <p className="till-status">
+              Expected in drawer: <strong>{formatCurrency(expectedFloat)}</strong>
+              {carryOver?.previous_business_date && <> · carried over from {carryOver.previous_business_date} close</>}
+            </p>
+          )}
           <button className="secondary-button" type="button" disabled={busy} onClick={() => void handleCountDrawer()}>
             1. Open drawer to count
           </button>
@@ -161,6 +192,12 @@ export default function TillControls({ session }: { session: StaffSession }) {
             <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="$0.00"
               value={floatInput} onChange={(e) => setFloatInput(e.target.value)} disabled={busy} />
           </label>
+          {expectedFloat != null && (
+            <button className="secondary-button" type="button" disabled={busy}
+              onClick={() => { tapFeedback(); setFloatInput(expectedFloat.toFixed(2)); }}>
+              Count matches — use {formatCurrency(expectedFloat)}
+            </button>
+          )}
           <button className="primary-button" type="button" disabled={busy} onClick={() => void handleOpen()}>
             {busy ? 'Opening…' : '3. Open till'}
           </button>
@@ -229,6 +266,11 @@ function TillHistory({ outletId }: { outletId: string }) {
             <div className="till-history-date">{s.business_date}</div>
             <div className="till-history-figs">
               <span>Float {formatCurrency(s.opening_float)}</span>
+              {s.opening_variance != null && money(s.opening_variance) !== 0 && (
+                <span className={`till-variance ${money(s.opening_variance) > 0 ? 'over' : 'short'}`}>
+                  open {money(s.opening_variance) > 0 ? '+' : ''}{formatCurrency(money(s.opening_variance))}
+                </span>
+              )}
               {s.status === 'closed' ? (
                 <>
                   <span>Expected {s.expected_cash != null ? formatCurrency(s.expected_cash) : '—'}</span>

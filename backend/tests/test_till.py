@@ -116,3 +116,67 @@ async def test_movements_and_drawer_open(
     hist = (await client.get("/api/till/sessions", params={"outlet_id": str(outlet.id)}, headers=mh)).json()[0]
     assert hist["expected_cash"] == "90.00"
     assert hist["variance"] == "-2.00"
+
+
+@pytest.mark.asyncio
+async def test_carry_over_links_close_to_next_open(
+    client: AsyncClient, db_session, outlet, cashier_staff, cashier_token
+):
+    """The counted cash at close becomes the expected opening float next time."""
+    headers = {"Authorization": f"Bearer {cashier_token}"}
+
+    # First-ever open: no history, so no carry-over expectation.
+    resp = await client.get("/api/till/carry-over", params={"outlet_id": str(outlet.id)}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["expected_opening_float"] is None
+
+    resp = await client.post(
+        "/api/till/open", json={"outlet_id": str(outlet.id), "opening_float": "100.00"}, headers=headers
+    )
+    assert resp.status_code == 200
+    first = resp.json()
+    assert first["expected_opening_float"] is None
+    assert first["opening_variance"] is None
+
+    # Close counting $150 — that cash stays in the drawer overnight.
+    resp = await client.post(
+        "/api/till/close", json={"session_id": first["id"], "counted_cash": "150.00"}, headers=headers
+    )
+    assert resp.status_code == 200
+
+    # Carry-over now reports $150 expected at the next open.
+    resp = await client.get("/api/till/carry-over", params={"outlet_id": str(outlet.id)}, headers=headers)
+    body = resp.json()
+    assert body["expected_opening_float"] == "150.00"
+    assert body["previous_counted_cash"] == "150.00"
+    assert body["previous_business_date"] is not None
+
+    # Next open declares $148 → the $2 shortfall is recorded as opening variance.
+    resp = await client.post(
+        "/api/till/open", json={"outlet_id": str(outlet.id), "opening_float": "148.00"}, headers=headers
+    )
+    assert resp.status_code == 200
+    second = resp.json()
+    assert second["expected_opening_float"] == "150.00"
+    assert second["opening_variance"] == "-2.00"
+
+
+@pytest.mark.asyncio
+async def test_carry_over_uses_latest_close(
+    client: AsyncClient, db_session, outlet, cashier_token
+):
+    """With several closed sessions, the carry-over comes from the newest one."""
+    headers = {"Authorization": f"Bearer {cashier_token}"}
+
+    for counted in ("80.00", "95.00"):
+        resp = await client.post(
+            "/api/till/open", json={"outlet_id": str(outlet.id), "opening_float": "50.00"}, headers=headers
+        )
+        assert resp.status_code == 200
+        resp = await client.post(
+            "/api/till/close", json={"session_id": resp.json()["id"], "counted_cash": counted}, headers=headers
+        )
+        assert resp.status_code == 200
+
+    resp = await client.get("/api/till/carry-over", params={"outlet_id": str(outlet.id)}, headers=headers)
+    assert resp.json()["expected_opening_float"] == "95.00"

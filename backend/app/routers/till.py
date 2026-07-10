@@ -44,13 +44,17 @@ async def _authorize_manager(db: AsyncSession, current_staff: Staff, manager_pin
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid manager PIN")
 
 
-# Blind view — what the counting cashier sees. No expected/variance.
+# Blind view — what the counting cashier sees. No expected/variance for the
+# close count; the opening expectation is deliberately visible (it is the
+# handover figure the cashier verifies against).
 class TillRead(BaseModel):
     id: UUID
     outlet_id: UUID
     business_date: date
     status: str
     opening_float: Decimal
+    expected_opening_float: Decimal | None = None
+    opening_variance: Decimal | None = None
     opened_at: datetime
     counted_cash: Decimal | None = None
     closed_at: datetime | None = None
@@ -67,6 +71,15 @@ class TillManagerRead(TillRead):
 class OpenTillRequest(BaseModel):
     outlet_id: UUID
     opening_float: Decimal = Field(ge=0)
+
+
+class CarryOverRead(BaseModel):
+    """What the drawer should hold before the next open, per the last close."""
+
+    expected_opening_float: Decimal | None = None
+    previous_business_date: date | None = None
+    previous_counted_cash: Decimal | None = None
+    previous_closed_at: datetime | None = None
 
 
 class CloseTillRequest(BaseModel):
@@ -98,6 +111,26 @@ async def current_till(
         full.expected_cash = await till_service.expected_cash_now(db, session)
         return full
     return _full(session).model_copy(update={"expected_cash": None, "variance": None})
+
+
+@router.get("/carry-over", response_model=CarryOverRead)
+async def carry_over(
+    outlet_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> CarryOverRead:
+    """Cash expected in the drawer at the next open — the previous close's
+    counted cash, assuming no overnight cash-out/in. Used to prefill the
+    opening-float step and surface an opening variance."""
+    previous, expected = await till_service.carry_over_float(db, outlet_id)
+    if previous is None:
+        return CarryOverRead()
+    return CarryOverRead(
+        expected_opening_float=expected,
+        previous_business_date=previous.business_date,
+        previous_counted_cash=previous.counted_cash,
+        previous_closed_at=previous.closed_at,
+    )
 
 
 @router.post("/open", response_model=TillRead)

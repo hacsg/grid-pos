@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import Layout from '@/components/layout/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Flavours from '@/pages/Flavours';
+import Tills from '@/pages/Tills';
 import Products from '@/pages/Products';
 import Categories from '@/pages/Categories';
 import Modifiers from '@/pages/Modifiers';
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="insights" element={<Navigate to="/" replace />} />
             <Route path="reports" element={<Navigate to="/" replace />} />
             <Route path="flavours" element={<Flavours />} />
+            <Route path="tills" element={<Tills />} />
             <Route path="products" element={<Products />} />
             <Route path="modifiers" element={<Modifiers />} />
             <Route path="categories" element={<Categories />} />
