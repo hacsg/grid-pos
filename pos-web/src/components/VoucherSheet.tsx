@@ -1,30 +1,63 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Ticket, X } from 'lucide-react';
+import { Ticket, UserRound, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { formatCurrency, validateVoucher } from '@/api/client';
-import type { AppliedVoucher } from '@/types';
+import {
+  formatCurrency,
+  getCustomerWithVouchers,
+  money,
+  validateVoucher,
+  type LoyaltyMember,
+  type PlotholdersVoucher,
+} from '@/api/client';
+import type { AppliedVoucher, LoyaltySelection } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 
 interface VoucherSheetProps {
   open: boolean;
   applied: AppliedVoucher[];
+  loyalty: LoyaltySelection | null;
   onClose: () => void;
   onApply: (voucher: AppliedVoucher) => void;
   onRemove: (code: string) => void;
+  onSelectCustomer: (customer: LoyaltyMember) => void;
   onContinue: () => void;
+}
+
+/** Map a Plotholders voucher to the order's AppliedVoucher shape. */
+function toAppliedVoucher(v: PlotholdersVoucher): AppliedVoucher {
+  const amount =
+    v.amount != null ? money(v.amount) : v.discount_cents != null ? v.discount_cents / 100 : 0;
+  const type = (v.type || '').toLowerCase() === 'cdc' ? 'cdc' : 'acre_group';
+  return { code: v.code, type, amount, id: v.id };
 }
 
 export default function VoucherSheet({
   open,
   applied,
+  loyalty,
   onClose,
   onApply,
   onRemove,
+  onSelectCustomer,
   onContinue,
 }: VoucherSheetProps) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const memberId = loyalty?.customer
+    ? String(loyalty.customer.customer_id || loyalty.customer.member_id)
+    : null;
+
+  // The attached member's active vouchers — "you have these, want to use them?"
+  const memberVouchersQuery = useQuery({
+    queryKey: ['member-vouchers', memberId],
+    queryFn: () => getCustomerWithVouchers(memberId!, { silent: true }),
+    enabled: open && !!memberId,
+    staleTime: 30_000,
+  });
+  const memberVouchers = memberVouchersQuery.data?.vouchers ?? [];
 
   useEffect(() => {
     if (open) {
@@ -36,40 +69,64 @@ export default function VoucherSheet({
     return null;
   }
 
+  const appliedCodes = new Set(applied.map((v) => v.code.toUpperCase()));
   const totalApplied = applied.reduce((sum, v) => sum + v.amount, 0);
 
+  function applyPlotholdersVoucher(v: PlotholdersVoucher) {
+    tapFeedback();
+    const av = toAppliedVoucher(v);
+    onApply(av);
+    toast.success(
+      av.amount > 0 ? `Voucher ${formatCurrency(av.amount)} applied` : 'Voucher applied'
+    );
+  }
+
+  // One field, two possibilities: a voucher code applies directly; a scanned
+  // membership QR (the Plotholders customer id) attaches the member to the
+  // sale and lists their vouchers below for easy redemption.
   async function submitApply(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     const trimmed = code.trim();
     if (!trimmed) return;
 
-    // Prevent duplicates in current session
-    if (applied.some((v) => v.code.toUpperCase() === trimmed.toUpperCase())) {
+    if (appliedCodes.has(trimmed.toUpperCase())) {
       toast.error('Voucher already applied');
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await validateVoucher(trimmed);
-      const amount = res.amount != null ? Number(res.amount) : 0;
-      const voucher: AppliedVoucher = {
-        code: res.code,
-        type: res.type,
-        amount: amount > 0 ? amount : 0,
-        id: res.id,
-      };
-      onApply(voucher);
-      setCode('');
-      if (amount > 0) {
-        toast.success(`${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher S$${amount.toFixed(2)} applied`);
-      } else {
-        toast.success(`${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher applied (no discount)`);
+      try {
+        const res = await validateVoucher(trimmed, { silent: true });
+        const amount = res.amount != null ? Number(res.amount) : 0;
+        onApply({
+          code: res.code,
+          type: res.type,
+          amount: amount > 0 ? amount : 0,
+          id: res.id,
+        });
+        setCode('');
+        toast.success(
+          amount > 0
+            ? `${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher S$${amount.toFixed(2)} applied`
+            : `${res.type === 'cdc' ? 'CDC' : 'Acre Group'} voucher applied (no discount)`
+        );
+        return;
+      } catch (err: any) {
+        if (err?.response?.status === 409) {
+          toast.error('Voucher has already been redeemed');
+          return;
+        }
+        // Not a voucher — try it as a membership QR.
       }
-    } catch (err: any) {
-      // errors are toasted by interceptor, but we can be explicit
-      const msg = err?.response?.data?.detail || 'Invalid or already redeemed voucher';
-      toast.error(typeof msg === 'string' ? msg : 'Could not apply voucher');
+
+      const found = await getCustomerWithVouchers(trimmed, { silent: true });
+      const { vouchers: _v, ...memberOnly } = found;
+      onSelectCustomer(memberOnly as LoyaltyMember);
+      setCode('');
+      toast.success(`${found.name || 'Member'} attached — their vouchers are listed below`);
+    } catch {
+      toast.error('Not a valid voucher code or member QR');
     } finally {
       setLoading(false);
     }
@@ -102,7 +159,7 @@ export default function VoucherSheet({
 
         <form className="scanner-form" onSubmit={submitApply}>
           <label>
-            <span>Enter or scan voucher code</span>
+            <span>Enter or scan a voucher code — or the member's QR</span>
             <div className="scanner-input">
               <Ticket size={22} aria-hidden="true" />
               <input
@@ -113,15 +170,53 @@ export default function VoucherSheet({
                 inputMode="text"
                 autoComplete="off"
                 enterKeyHint="done"
-                placeholder="e.g. CDC-TEST001 or AG-XXXX"
+                placeholder="Voucher code or member QR"
                 disabled={loading}
               />
             </div>
           </label>
           <button className="primary-button" type="submit" disabled={loading || !code.trim()}>
-            {loading ? 'Applying…' : 'Apply'}
+            {loading ? 'Checking…' : 'Apply'}
           </button>
         </form>
+
+        {/* Attached member's vouchers — the "you have these, want to use them?" list */}
+        {loyalty?.customer ? (
+          <div className="loyalty-vouchers" style={{ padding: '0 4px' }}>
+            <p className="loyalty-vouchers-title">
+              <UserRound size={16} aria-hidden="true" />
+              {loyalty.customer.name || 'Member'}&rsquo;s vouchers
+            </p>
+            {memberVouchersQuery.isLoading && <p className="loyalty-vouchers-empty">Loading vouchers…</p>}
+            {!memberVouchersQuery.isLoading && memberVouchers.length === 0 && (
+              <p className="loyalty-vouchers-empty">No active vouchers on this account.</p>
+            )}
+            {memberVouchers.map((v) => {
+              const av = toAppliedVoucher(v);
+              const isApplied = appliedCodes.has(v.code.toUpperCase());
+              return (
+                <div className="loyalty-voucher-row" key={v.id || v.code}>
+                  <div>
+                    <strong>{v.title || v.code}</strong>
+                    <span>{av.amount > 0 ? formatCurrency(av.amount) : v.description || v.code}</span>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={isApplied}
+                    onClick={() => applyPlotholdersVoucher(v)}
+                  >
+                    {isApplied ? 'Applied' : 'Apply'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="loyalty-vouchers-empty" style={{ padding: '0 4px' }}>
+            Scan the member&rsquo;s QR (or add them via Loyalty) to see the vouchers on their account.
+          </p>
+        )}
 
         {applied.length > 0 && (
           <div className="loyalty-content">

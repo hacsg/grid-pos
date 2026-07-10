@@ -671,9 +671,11 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       <VoucherSheet
         open={voucherOpen}
         applied={vouchers}
+        loyalty={loyalty}
         onClose={() => setVoucherOpen(false)}
         onApply={handleApplyVoucher}
         onRemove={handleRemoveVoucher}
+        onSelectCustomer={handleCustomerSelect}
         onContinue={() => setVoucherOpen(false)}
       />
       <DiscountSheet
