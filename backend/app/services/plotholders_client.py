@@ -128,22 +128,22 @@ class PlotholdersClient:
         # moment amount and does not affect tiering.
         dollar_total = float(amount) if amount is not None else float(order_total or 0)
         # source_id=order id gives one-moment-per-order idempotency. Without an
-        # order id we send null (Postgres treats NULLs as distinct, so the
-        # unique(channel, source_id) constraint won't reject a second visit).
-        return await self._request(
-            "POST",
-            "/api/moments",
-            json={
-                "customer_id": customer_id,
-                "channel": "grid",
-                "source_id": str(order_id) if order_id is not None else None,
-                "amount": 1,
-                "order_total": dollar_total,
-                "reason": "visit",
-                "outlet": outlet,
-                "brand": "hundred-acre",
-            },
-        )
+        # order id the key is omitted entirely — the upstream zod schema
+        # declares source_id as an optional *string* and 400s on null, and a
+        # missing source_id keeps repeat visits allowed (Postgres treats NULLs
+        # as distinct under the unique(channel, source_id) constraint).
+        payload: dict[str, Any] = {
+            "customer_id": customer_id,
+            "channel": "grid",
+            "amount": 1,
+            "order_total": dollar_total,
+            "reason": "visit",
+            "outlet": outlet,
+            "brand": "hundred-acre",
+        }
+        if order_id is not None:
+            payload["source_id"] = str(order_id)
+        return await self._request("POST", "/api/moments", json=payload)
 
     async def sync_order(self, order_data: dict) -> dict[str, Any]:
         """Sync completed order to Plotholders."""

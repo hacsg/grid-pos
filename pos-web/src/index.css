@@ -3050,9 +3050,32 @@ html.display-active #root {
 
 /* ========== RESULT SHEET (slides up / bottom prominent) ========== */
 
+/* Result sheet is a fixed overlay: with a live camera feed the in-flow card
+   used to land below the fold, so a successful scan looked like nothing
+   happened. Bottom-sheet on phones, centered dialog on larger screens. */
 .voucher-result-sheet {
-  position: relative;
-  z-index: 2;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(22, 22, 20, 0.45);
+}
+
+.voucher-result-sheet .voucher-result-card,
+.voucher-result-sheet .voucher-success {
+  width: 100%;
+  max-width: 520px;
+  max-height: 86dvh;
+  overflow-y: auto;
+}
+
+@media (min-width: 700px) {
+  .voucher-result-sheet {
+    align-items: center;
+  }
 }
 
 .voucher-result-card {

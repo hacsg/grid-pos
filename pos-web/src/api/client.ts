@@ -685,12 +685,18 @@ export async function getCustomerWithVouchers(
 }
 
 // Standalone scanner check-in: award exactly one "visit" moment (no order).
+// Silent — the Scanner shows its own "moment could not be recorded" state
+// instead of the interceptor's generic error toast.
 export async function recordVisitMoment(customerId: string, outlet: string): Promise<void> {
-  await api.post('/loyalty/earn', {
-    customer_id: customerId,
-    amount_spent: 0,
-    outlet,
-  });
+  await api.post(
+    '/loyalty/earn',
+    {
+      customer_id: customerId,
+      amount_spent: 0,
+      outlet,
+    },
+    { silent: true } as SilentRequestConfig
+  );
 }
 
 export async function redeemLoyalty(

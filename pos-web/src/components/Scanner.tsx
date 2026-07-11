@@ -749,6 +749,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
 
           {/* Success state */}
           {justRedeemed && (
+            <div className="voucher-result-sheet">
             <div className="voucher-success">
               <div className="voucher-success-icon">
                 <CheckCircle size={52} aria-hidden="true" />
@@ -763,6 +764,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
               <button type="button" className="primary-button voucher-next-btn" onClick={handleNewScan}>
                 Redeem next voucher
               </button>
+            </div>
             </div>
           )}
 
