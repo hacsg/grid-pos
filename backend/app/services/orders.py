@@ -287,6 +287,11 @@ async def create_order(db: AsyncSession, payload: OrderCreate) -> Order:
         customer_id=payload.customer_id,
         loyalty_points_redeemed=payload.loyalty_points_redeemed,
         loyalty_discount=payload.loyalty_discount,
+        applied_discounts=(
+            [d.model_dump(mode="json") for d in payload.applied_discounts]
+            if payload.applied_discounts
+            else None
+        ),
     )
 
     subtotal = Decimal("0.00")

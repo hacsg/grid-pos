@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, Numeric, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -64,6 +64,9 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     loyalty_points_earned: Mapped[int | None] = mapped_column(Integer, nullable=True)
     loyalty_points_redeemed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     loyalty_discount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Snapshot of discounts applied at checkout: [{name, scope, amount_off}].
+    # Kept for receipts/reporting even after the underlying rule changes.
+    applied_discounts: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
 
     outlet = relationship("Outlet", back_populates="orders")
     staff = relationship("Staff", back_populates="orders")

@@ -15,6 +15,12 @@ class DiscountBase(BaseModel):
     is_active: bool = True
     outlet_id: UUID | None = None
     sort_order: int = Field(default=0, ge=0)
+    # Targeting.
+    scope: str = Field(default="cart", pattern="^(cart|targeted)$")
+    min_quantity: int = Field(default=1, ge=1)
+    threshold_mode: str = Field(default="gate", pattern="^(gate|bundle)$")
+    target_category_ids: list[UUID] = Field(default_factory=list)
+    target_product_ids: list[UUID] = Field(default_factory=list)
 
 
 class DiscountCreate(DiscountBase):
@@ -30,6 +36,11 @@ class DiscountUpdate(BaseModel):
     is_active: bool | None = None
     outlet_id: UUID | None = None
     sort_order: int | None = Field(default=None, ge=0)
+    scope: str | None = Field(default=None, pattern="^(cart|targeted)$")
+    min_quantity: int | None = Field(default=None, ge=1)
+    threshold_mode: str | None = Field(default=None, pattern="^(gate|bundle)$")
+    target_category_ids: list[UUID] | None = None
+    target_product_ids: list[UUID] | None = None
 
 
 class DiscountRead(DiscountBase, TimestampSchema):

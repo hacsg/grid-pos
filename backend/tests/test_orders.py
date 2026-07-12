@@ -150,6 +150,28 @@ class TestCreateOrder:
         assert recorded["order_id"] == UUID(data["id"])
         assert recorded["outlet"] == outlet.name
 
+    async def test_create_order_persists_applied_discounts(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """The applied-discount snapshot round-trips for receipts/reporting."""
+        payload = {
+            "outlet_id": str(outlet.id),
+            "staff_id": str(cashier_staff.id),
+            "items": [{"product_id": str(product.id), "quantity": 3}],
+            "loyalty_discount": "3.00",
+            "applied_discounts": [
+                {"name": "3 Pints 10% Off", "scope": "targeted", "amount_off": "3.00"},
+            ],
+        }
+        resp = await client.post("/api/orders", json=payload)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["applied_discounts"] == [
+            {"name": "3 Pints 10% Off", "scope": "targeted", "amount_off": "3.00"},
+        ]
+        # Discount is subtracted from the total (3 * 9.99 - 3.00).
+        assert data["total"] == "26.97"
+
     async def test_create_order_ignores_client_status(
         self, client: AsyncClient, outlet, cashier_staff, product
     ) -> None:

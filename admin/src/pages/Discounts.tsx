@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, Trash2, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -13,22 +13,46 @@ import {
   useReorderDiscounts,
 } from '@/hooks/useDiscounts';
 import { useOutlets } from '@/hooks/useOutlets';
-import type { Discount, DiscountFormData } from '@/types';
+import { useCategories } from '@/hooks/useCategories';
+import { useProducts } from '@/hooks/useProducts';
+import type { Discount, DiscountFormData, DiscountScope, DiscountThresholdMode } from '@/types';
 
 interface DiscountFormProps {
   discount: Discount | null;
   outlets: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string }>;
+  products: Array<{ id: string; name: string; category_id?: string }>;
   onSubmit: (data: DiscountFormData) => void;
   onCancel: () => void;
   isSubmitting: boolean;
 }
 
-function DiscountForm({ discount, outlets, onSubmit, onCancel, isSubmitting }: DiscountFormProps) {
+function toggleId(list: string[], id: string): string[] {
+  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+}
+
+function DiscountForm({ discount, outlets, categories, products, onSubmit, onCancel, isSubmitting }: DiscountFormProps) {
   const [name, setName] = useState(discount?.name ?? '');
   const [kind, setKind] = useState<'percent' | 'fixed'>(discount?.kind ?? 'percent');
   const [amount, setAmount] = useState<string>(discount ? String(discount.amount) : '10');
   const [outletId, setOutletId] = useState<string | null>(discount?.outlet_id ?? null);
   const [isActive, setIsActive] = useState<boolean>(discount?.is_active ?? true);
+  const [scope, setScope] = useState<DiscountScope>(discount?.scope ?? 'cart');
+  const [minQuantity, setMinQuantity] = useState<string>(
+    discount ? String(discount.min_quantity ?? 1) : '1',
+  );
+  const [thresholdMode, setThresholdMode] = useState<DiscountThresholdMode>(
+    discount?.threshold_mode ?? 'gate',
+  );
+  const [categoryIds, setCategoryIds] = useState<string[]>(discount?.target_category_ids ?? []);
+  const [productIds, setProductIds] = useState<string[]>(discount?.target_product_ids ?? []);
+  const [productFilter, setProductFilter] = useState('');
+
+  const filteredProducts = useMemo(() => {
+    const q = productFilter.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => p.name.toLowerCase().includes(q));
+  }, [products, productFilter]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,14 +62,28 @@ function DiscountForm({ discount, outlets, onSubmit, onCancel, isSubmitting }: D
     const amt = Number.isFinite(parsed) ? parsed : 0;
     if (amt < 0) return;
 
+    if (scope === 'targeted' && categoryIds.length === 0 && productIds.length === 0) {
+      // A targeted rule needs at least one category or product to act on.
+      return;
+    }
+    const minQ = Math.max(1, parseInt(minQuantity, 10) || 1);
+
     onSubmit({
       name: trimmed,
       kind,
       amount: amt,
       is_active: isActive,
       outlet_id: outletId,
+      scope,
+      min_quantity: scope === 'targeted' ? minQ : 1,
+      threshold_mode: scope === 'targeted' ? thresholdMode : 'gate',
+      target_category_ids: scope === 'targeted' ? categoryIds : [],
+      target_product_ids: scope === 'targeted' ? productIds : [],
     });
   };
+
+  const targetingInvalid =
+    scope === 'targeted' && categoryIds.length === 0 && productIds.length === 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -93,6 +131,133 @@ function DiscountForm({ discount, outlets, onSubmit, onCancel, isSubmitting }: D
         required
       />
 
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-text">Applies to</label>
+        <div className="flex flex-wrap gap-3">
+          <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm">
+            <input
+              type="radio"
+              name="scope"
+              value="cart"
+              checked={scope === 'cart'}
+              onChange={() => setScope('cart')}
+            />
+            Whole cart
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm">
+            <input
+              type="radio"
+              name="scope"
+              value="targeted"
+              checked={scope === 'targeted'}
+              onChange={() => setScope('targeted')}
+            />
+            Specific products
+          </label>
+        </div>
+        {scope === 'cart' && (
+          <p className="mt-1.5 text-xs text-text-muted">
+            Discounts the entire cart. Excludes any items already covered by a targeted rule.
+          </p>
+        )}
+      </div>
+
+      {scope === 'targeted' && (
+        <div className="space-y-4 rounded-lg border border-gray-100 bg-surface/40 p-3">
+          <Input
+            label="Minimum quantity"
+            type="number"
+            min="1"
+            step="1"
+            value={minQuantity}
+            onChange={(e) => setMinQuantity(e.target.value)}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-text">When threshold is met</label>
+            <div className="flex flex-col gap-2">
+              <label className="inline-flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="threshold_mode"
+                  value="gate"
+                  checked={thresholdMode === 'gate'}
+                  onChange={() => setThresholdMode('gate')}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Minimum quantity</strong> — once {minQuantity || 'N'}+ qualifying items are in the
+                  cart, discount <em>all</em> of them.
+                </span>
+              </label>
+              <label className="inline-flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="threshold_mode"
+                  value="bundle"
+                  checked={thresholdMode === 'bundle'}
+                  onChange={() => setThresholdMode('bundle')}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Per bundle</strong> — discount every complete group of {minQuantity || 'N'};
+                  the remainder stays full price.
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-text">
+              Categories {categoryIds.length > 0 && `(${categoryIds.length})`}
+            </label>
+            <div className="max-h-32 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+              {categories.length === 0 && <p className="p-1 text-xs text-text-muted">No categories</p>}
+              {categories.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-surface/60">
+                  <input
+                    type="checkbox"
+                    checked={categoryIds.includes(c.id)}
+                    onChange={() => setCategoryIds((prev) => toggleId(prev, c.id))}
+                  />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-text">
+              Products {productIds.length > 0 && `(${productIds.length})`}
+            </label>
+            <input
+              type="text"
+              placeholder="Search products…"
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              className="mb-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+              {filteredProducts.length === 0 && <p className="p-1 text-xs text-text-muted">No products</p>}
+              {filteredProducts.map((p) => (
+                <label key={p.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-surface/60">
+                  <input
+                    type="checkbox"
+                    checked={productIds.includes(p.id)}
+                    onChange={() => setProductIds((prev) => toggleId(prev, p.id))}
+                  />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {targetingInvalid && (
+            <p className="text-xs text-error">Pick at least one category or product.</p>
+          )}
+        </div>
+      )}
+
       {outlets.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-text">Outlet Scope (optional)</label>
@@ -124,7 +289,7 @@ function DiscountForm({ discount, outlets, onSubmit, onCancel, isSubmitting }: D
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting || !name.trim()}>
+        <Button type="submit" disabled={isSubmitting || !name.trim() || targetingInvalid}>
           {discount ? 'Update' : 'Create'}
         </Button>
       </div>
@@ -138,6 +303,8 @@ export default function Discounts() {
 
   const { data: discountsData, isLoading } = useDiscounts();
   const { data: outletsData } = useOutlets();
+  const { data: categoriesData } = useCategories();
+  const { data: productsData } = useProducts();
 
   const createDiscount = useCreateDiscount();
   const updateDiscount = useUpdateDiscount();
@@ -147,6 +314,8 @@ export default function Discounts() {
 
   const discounts = discountsData || [];
   const outlets = outletsData?.data || [];
+  const categories = categoriesData?.data || [];
+  const products = productsData?.data || [];
 
   const closeForm = () => {
     setIsFormOpen(false);
@@ -200,6 +369,21 @@ export default function Discounts() {
     return `S$${Number(d.amount).toFixed(2)}`;
   };
 
+  const describeScope = (d: Discount): string => {
+    if (d.scope !== 'targeted') return 'Whole cart';
+    const parts: string[] = [];
+    if (d.target_category_ids.length) parts.push(`${d.target_category_ids.length} cat.`);
+    if (d.target_product_ids.length) parts.push(`${d.target_product_ids.length} prod.`);
+    const target = parts.join(' + ') || 'targeted';
+    const rule =
+      d.threshold_mode === 'bundle'
+        ? `every ${d.min_quantity}`
+        : d.min_quantity > 1
+          ? `min ${d.min_quantity}`
+          : 'any qty';
+    return `${target} · ${rule}`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -222,6 +406,7 @@ export default function Discounts() {
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Applies to</th>
                 <th className="px-4 py-3">Active</th>
                 <th className="px-4 py-3">Outlet</th>
                 <th className="w-20 px-3 py-3" />
@@ -230,12 +415,12 @@ export default function Discounts() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-text-muted">Loading…</td>
+                  <td colSpan={8} className="px-4 py-8 text-center text-text-muted">Loading…</td>
                 </tr>
               )}
               {!isLoading && discounts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-text-muted">No discounts yet</td>
+                  <td colSpan={8} className="px-4 py-8 text-center text-text-muted">No discounts yet</td>
                 </tr>
               )}
               {discounts.map((d, index) => (
@@ -271,6 +456,13 @@ export default function Discounts() {
                     </span>
                   </td>
                   <td className="px-4 py-3 font-medium">{formatAmount(d)}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded px-2 py-0.5 text-xs ${d.scope === 'targeted' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-text-muted'}`}
+                    >
+                      {describeScope(d)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={(e) => handleToggle(d.id, e)}
@@ -318,6 +510,8 @@ export default function Discounts() {
         <DiscountForm
           discount={editingDiscount}
           outlets={outlets}
+          categories={categories}
+          products={products}
           onSubmit={handleFormSubmit}
           onCancel={closeForm}
           isSubmitting={createDiscount.isPending || updateDiscount.isPending}

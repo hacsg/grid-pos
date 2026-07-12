@@ -2,6 +2,7 @@ import { formatCurrency, money, type OrderRead } from '@/api/client';
 import type { KitchenChit } from '@/utils/printer';
 import { MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import type { AppliedVoucher, CartItem, StaffSession, Totals } from '@/types';
+import type { AppliedDiscountLine } from '@/utils/discounts';
 
 export interface PrintableOrderItem {
   quantity: number;
@@ -36,6 +37,9 @@ export interface PrintableOrder {
   usePrintTime?: boolean;
   items: PrintableOrderItem[];
   totals: { total: number; discount: number; voucherDiscount: number };
+  /** Itemised discount lines (targeted rules, cart discount, loyalty). When
+   * present these are printed instead of the single collapsed Discount row. */
+  discounts?: { name: string; amountOff: number }[];
   payment: PrintableOrderPayment | null;
   outlet: { name: string; brandName?: string | null; companyDetails?: string | null };
   vouchers?: PrintableVoucher[];
@@ -48,6 +52,7 @@ export interface ReceiptSnapshotLike {
   order: Pick<OrderRead, 'order_number'>;
   items: CartItem[];
   totals: Totals;
+  appliedDiscounts?: AppliedDiscountLine[];
   vouchers: AppliedVoucher[];
   paymentMode: PaymentMode;
   terminalPaymentMethod?: TerminalPaymentMethod;
@@ -209,7 +214,13 @@ export function buildReceiptText(order: PrintableOrder): string {
     RECEIPT_DIVIDER,
     ...rows,
     RECEIPT_DIVIDER,
-    ...(order.totals.discount > 0 ? [receiptRow('Discount', `-${formatCurrency(order.totals.discount)}`)] : []),
+    ...(order.discounts && order.discounts.length > 0
+      ? order.discounts
+          .filter((d) => d.amountOff > 0)
+          .map((d) => receiptRow(d.name, `-${formatCurrency(d.amountOff)}`))
+      : order.totals.discount > 0
+        ? [receiptRow('Discount', `-${formatCurrency(order.totals.discount)}`)]
+        : []),
     ...(order.totals.voucherDiscount > 0 ? [receiptRow('Vouchers', `-${formatCurrency(order.totals.voucherDiscount)}`)] : []),
     receiptRow('TOTAL', formatCurrency(order.totals.total)),
     ...receiptPaymentLines(order),
@@ -251,9 +262,16 @@ export function receiptSnapshotToPrintableOrder(receipt: ReceiptSnapshotLike, se
     })),
     totals: {
       total: receipt.totals.total,
-      discount: receipt.totals.discount + receipt.totals.loyaltyDiscount,
+      discount:
+        receipt.totals.discount + receipt.totals.targetedDiscount + receipt.totals.loyaltyDiscount,
       voucherDiscount: receipt.totals.voucherDiscount,
     },
+    discounts: [
+      ...(receipt.appliedDiscounts ?? []).map((d) => ({ name: d.name, amountOff: d.amountOff })),
+      ...(receipt.totals.loyaltyDiscount > 0
+        ? [{ name: 'Loyalty', amountOff: receipt.totals.loyaltyDiscount }]
+        : []),
+    ],
     payment: {
       method: receipt.paymentMode,
       cashAmount: receipt.cashAmount,

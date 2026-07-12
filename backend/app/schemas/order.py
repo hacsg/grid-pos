@@ -44,6 +44,14 @@ class OrderItemRead(UUIDSchema):
     created_at: datetime
 
 
+class AppliedDiscount(BaseModel):
+    """A single discount applied to an order, snapshotted for receipts/reporting."""
+
+    name: str = Field(max_length=120)
+    scope: str = Field(pattern="^(cart|targeted)$")
+    amount_off: Money = Field(ge=0)
+
+
 class OrderCreate(BaseModel):
     """Payload for creating an order."""
 
@@ -58,6 +66,8 @@ class OrderCreate(BaseModel):
     customer_id: str | None = Field(default=None, max_length=120)
     # Voucher codes to apply atomically at order creation time
     voucher_codes: list[str] | None = Field(default=None, max_length=20)
+    # Snapshot of discounts applied at checkout (targeted rules + cart discount).
+    applied_discounts: list[AppliedDiscount] | None = Field(default=None, max_length=50)
 
 
 class OrderStatusUpdate(BaseModel):
@@ -97,6 +107,7 @@ class OrderRead(TimestampSchema):
     loyalty_points_earned: int | None = None
     loyalty_points_redeemed: int | None = None
     loyalty_discount: Money | None = None
+    applied_discounts: list[AppliedDiscount] | None = None
     items: list[OrderItemRead] = []
     # Applied vouchers (populated when present)
     applied_vouchers: list[OrderVoucherRead] | None = None

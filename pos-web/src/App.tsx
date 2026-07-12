@@ -28,6 +28,7 @@ import {
 import type { AppliedVoucher, CartItem, CartModifier, Discount, LoyaltySelection, ParkedCart, StaffSession, Totals } from '@/types';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { lineLabel, lineTotal } from '@/utils/cart';
+import { computeCartDiscounts, type AppliedDiscountLine } from '@/utils/discounts';
 import { tapFeedback } from '@/utils/haptics';
 import { connectPrinter, forgetPrinter, getSavedPrinter, isPrintingSupported } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
@@ -137,7 +138,9 @@ function buildDisplaySnapshot(
   return {
     items: displayItems,
     subtotal: totals.subtotal,
-    discount: totals.discount,
+    // Targeted rule discounts fold into the single line the display shows so
+    // subtotal − discount − loyalty − vouchers still equals the total.
+    discount: totals.discount + totals.targetedDiscount,
     loyaltyDiscount: totals.loyaltyDiscount,
     voucherDiscount,
     total: totals.total,
@@ -268,22 +271,38 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
     enabled: Boolean(session),
   });
 
+  // Auto-applied targeted rules + the manual whole-cart discount. Computed once
+  // here so totals, the cart summary, the receipt, and the order payload agree.
+  const cartDiscounts = useMemo(
+    () => computeCartDiscounts(cartItems, discount, discountsQuery.data ?? [], session?.outlet.id),
+    [cartItems, discount, discountsQuery.data, session],
+  );
+  const appliedDiscountLines = useMemo<AppliedDiscountLine[]>(
+    () => [...cartDiscounts.targeted, ...(cartDiscounts.cart ? [cartDiscounts.cart] : [])],
+    [cartDiscounts],
+  );
+
   const totals = useMemo<Totals>(() => {
     const subtotal = cartItems.reduce((sum, item) => sum + lineTotal(item), 0);
     const tax = 0;
-    const cartDiscount = discount?.kind === 'percent' ? subtotal * (discount.amount / 100) : discount?.amount ?? 0;
+    const cartDiscount = cartDiscounts.cartTotal;
+    const targetedDiscount = cartDiscounts.targetedTotal;
     const loyaltyDiscount = loyalty?.reward?.discount_amount ?? 0;
     const voucherDiscount = vouchers.reduce((s, v) => s + v.amount, 0);
-    const total = Math.max(0, subtotal + tax - cartDiscount - loyaltyDiscount - voucherDiscount);
+    const total = Math.max(
+      0,
+      subtotal + tax - cartDiscount - targetedDiscount - loyaltyDiscount - voucherDiscount,
+    );
     return {
       subtotal,
       tax,
       discount: cartDiscount,
+      targetedDiscount,
       loyaltyDiscount,
       voucherDiscount,
       total,
     };
-  }, [cartItems, discount, loyalty, vouchers]);
+  }, [cartItems, cartDiscounts, loyalty, vouchers]);
 
   const editItem = useMemo(() => {
     if (!editingLineId) {
@@ -622,6 +641,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
           items={cartItems}
           totals={totals}
           discount={discount}
+          appliedDiscounts={appliedDiscountLines}
           loyalty={loyalty}
           vouchers={vouchers}
           isOpen={cartOpen}
@@ -680,7 +700,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
       />
       <DiscountSheet
         open={discountPickerOpen}
-        discounts={discountsQuery.data ?? []}
+        discounts={(discountsQuery.data ?? []).filter((d) => d.scope === 'cart')}
         current={discount}
         onClose={() => setDiscountPickerOpen(false)}
         onApply={applyDiscount}
@@ -693,6 +713,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
         items={cartItems}
         totals={totals}
         discount={discount}
+        appliedDiscounts={appliedDiscountLines}
         loyalty={loyalty}
         vouchers={vouchers}
         onClose={() => {

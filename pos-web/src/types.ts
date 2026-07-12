@@ -53,7 +53,10 @@ export interface ParkedCart {
 export interface Totals {
   subtotal: number;
   tax: number;
+  /** Manual whole-cart discount (excludes lines claimed by a targeted rule). */
   discount: number;
+  /** Sum of auto-applied product-targeted rule discounts. */
+  targetedDiscount: number;
   loyaltyDiscount: number;
   voucherDiscount: number;
   total: number;

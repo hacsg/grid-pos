@@ -744,7 +744,11 @@ export const unassignModifierGroup = unassignModifierGroupFromProduct;
 export const getDiscounts = async (): Promise<Discount[]> => {
   const { data } = await api.get('/discounts');
   const list = Array.isArray(data) ? data : [];
-  return list.map((d: any) => ({
+  return list.map(normalizeDiscount);
+};
+
+function normalizeDiscount(d: any): Discount {
+  return {
     id: d.id,
     name: d.name,
     kind: d.kind,
@@ -752,31 +756,26 @@ export const getDiscounts = async (): Promise<Discount[]> => {
     is_active: toBoolean(d.is_active, true),
     outlet_id: d.outlet_id ?? null,
     sort_order: toNumber(d.sort_order, 0),
+    scope: d.scope === 'targeted' ? 'targeted' : 'cart',
+    min_quantity: toNumber(d.min_quantity, 1),
+    threshold_mode: d.threshold_mode === 'bundle' ? 'bundle' : 'gate',
+    target_category_ids: Array.isArray(d.target_category_ids) ? d.target_category_ids : [],
+    target_product_ids: Array.isArray(d.target_product_ids) ? d.target_product_ids : [],
     created_at: d.created_at,
     updated_at: d.updated_at,
-  }));
-};
+  };
+}
 
 export const createDiscount = async (payload: DiscountFormData): Promise<Discount> => {
   const { data } = await api.post('/discounts', payload);
   toast.success('Discount created');
-  return {
-    ...data,
-    amount: toNumber(data.amount, 0),
-    is_active: toBoolean(data.is_active, true),
-    sort_order: toNumber(data.sort_order, 0),
-  };
+  return normalizeDiscount(data);
 };
 
 export const updateDiscount = async (id: string, payload: Partial<DiscountFormData>): Promise<Discount> => {
   const { data } = await api.put(`/discounts/${id}`, payload);
   toast.success('Discount updated');
-  return {
-    ...data,
-    amount: toNumber(data.amount, 0),
-    is_active: toBoolean(data.is_active, true),
-    sort_order: toNumber(data.sort_order, 0),
-  };
+  return normalizeDiscount(data);
 };
 
 export const deleteDiscount = async (id: string): Promise<void> => {
@@ -787,12 +786,7 @@ export const deleteDiscount = async (id: string): Promise<void> => {
 export const toggleDiscountActive = async (id: string): Promise<Discount> => {
   const { data } = await api.patch(`/discounts/${id}/toggle`);
   toast.success('Discount status updated');
-  return {
-    ...data,
-    amount: toNumber(data.amount, 0),
-    is_active: toBoolean(data.is_active, true),
-    sort_order: toNumber(data.sort_order, 0),
-  };
+  return normalizeDiscount(data);
 };
 
 export const reorderDiscounts = async (ids: string[]): Promise<void> => {

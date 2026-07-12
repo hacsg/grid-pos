@@ -20,6 +20,7 @@ import {
   type PaymentIntent,
 } from '@/api/kpayClient';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, StaffSession, Totals } from '@/types';
+import type { AppliedDiscountLine } from '@/utils/discounts';
 import QRCode from 'qrcode';
 import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
@@ -40,6 +41,7 @@ interface PaymentModalProps {
   items: CartItem[];
   totals: Totals;
   discount: Discount | null;
+  appliedDiscounts: AppliedDiscountLine[];
   loyalty: LoyaltySelection | null;
   vouchers: AppliedVoucher[];
   onClose: () => void;
@@ -59,6 +61,7 @@ interface ReceiptSnapshot {
   order: OrderRead;
   items: CartItem[];
   totals: Totals;
+  appliedDiscounts: AppliedDiscountLine[];
   vouchers: AppliedVoucher[];
   paymentMode: PaymentMode;
   terminalPaymentMethod?: TerminalPaymentMethod;
@@ -162,6 +165,7 @@ export default function PaymentModal({
   items,
   totals,
   discount,
+  appliedDiscounts,
   loyalty,
   vouchers,
   onClose,
@@ -480,7 +484,17 @@ export default function PaymentModal({
         payment_reference: paymentReference,
         loyalty_member_id: loyalty?.customer.member_id ?? null,
         loyalty_points_redeemed: loyalty?.reward?.points ?? null,
-        loyalty_discount: totals.discount + totals.loyaltyDiscount > 0 ? totals.discount + totals.loyaltyDiscount : null,
+        // Targeted + manual cart + loyalty discounts are folded into the single
+        // order-level discount the backend subtracts; applied_discounts keeps the
+        // itemised breakdown for receipts/reporting.
+        loyalty_discount:
+          totals.discount + totals.targetedDiscount + totals.loyaltyDiscount > 0
+            ? totals.discount + totals.targetedDiscount + totals.loyaltyDiscount
+            : null,
+        applied_discounts:
+          appliedDiscounts.length > 0
+            ? appliedDiscounts.map((d) => ({ name: d.name, scope: d.scope, amount_off: d.amountOff }))
+            : null,
         customer_id: loyalty?.customer.customer_id ?? null,
         voucher_codes: voucherCodes,
         items: items.map((item) => ({
@@ -530,6 +544,7 @@ export default function PaymentModal({
       order: paidOrder,
       items,
       totals,
+      appliedDiscounts,
       vouchers,
       paymentMode: paidMode,
       terminalPaymentMethod:
@@ -1270,6 +1285,14 @@ export default function PaymentModal({
                   <span>Subtotal</span>
                   <strong>{formatCurrency(totals.subtotal)}</strong>
                 </div>
+                {appliedDiscounts
+                  .filter((d) => d.scope === 'targeted')
+                  .map((d) => (
+                    <div key={d.id ?? d.name}>
+                      <span>{d.name}</span>
+                      <strong>-{formatCurrency(d.amountOff)}</strong>
+                    </div>
+                  ))}
                 {discount && (
                   <div>
                     <span>{discount.label}</span>

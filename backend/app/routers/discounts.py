@@ -5,20 +5,33 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.category import Category
 from app.models.discount import Discount
 from app.models.outlet import Outlet
+from app.models.product import Product
 from app.models.staff import Staff
 from app.schemas.discount import DiscountCreate, DiscountRead, DiscountUpdate
 from app.utils.auth import get_current_staff
 
 router = APIRouter(prefix="/discounts", tags=["discounts"])
 
+# Targeting relationships must be eager-loaded: DiscountRead serializes the
+# target id lists, and lazy-loading them would fail under the async session.
+_TARGET_LOADS = (
+    selectinload(Discount.target_categories),
+    selectinload(Discount.target_products),
+)
+
 
 async def _load_discount_or_404(db: AsyncSession, discount_id: UUID) -> Discount:
-    """Load a discount by id or raise a 404 response."""
-    discount = await db.get(Discount, discount_id)
+    """Load a discount (with targets eager-loaded) by id or raise a 404."""
+    result = await db.execute(
+        select(Discount).where(Discount.id == discount_id).options(*_TARGET_LOADS)
+    )
+    discount = result.scalar_one_or_none()
     if discount is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount not found")
     return discount
@@ -33,6 +46,28 @@ async def _ensure_outlet_exists(db: AsyncSession, outlet_id: UUID | None) -> Non
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outlet not found")
 
 
+async def _resolve_categories(db: AsyncSession, category_ids: list[UUID]) -> list[Category]:
+    """Load the given categories, 404-ing if any id is unknown."""
+    if not category_ids:
+        return []
+    result = await db.execute(select(Category).where(Category.id.in_(category_ids)))
+    categories = list(result.scalars().all())
+    if len(categories) != len(set(category_ids)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more categories not found")
+    return categories
+
+
+async def _resolve_products(db: AsyncSession, product_ids: list[UUID]) -> list[Product]:
+    """Load the given products, 404-ing if any id is unknown."""
+    if not product_ids:
+        return []
+    result = await db.execute(select(Product).where(Product.id.in_(product_ids)))
+    products = list(result.scalars().all())
+    if len(products) != len(set(product_ids)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more products not found")
+    return products
+
+
 @router.post("", response_model=DiscountRead, status_code=status.HTTP_201_CREATED)
 async def create_discount(
     payload: DiscountCreate,
@@ -41,11 +76,15 @@ async def create_discount(
 ) -> Discount:
     """Create a new discount."""
     await _ensure_outlet_exists(db, payload.outlet_id)
-    discount = Discount(**payload.model_dump())
+    data = payload.model_dump()
+    category_ids = data.pop("target_category_ids", [])
+    product_ids = data.pop("target_product_ids", [])
+    discount = Discount(**data)
+    discount.target_categories = await _resolve_categories(db, category_ids)
+    discount.target_products = await _resolve_products(db, product_ids)
     db.add(discount)
     await db.commit()
-    await db.refresh(discount)
-    return discount
+    return await _load_discount_or_404(db, discount.id)
 
 
 @router.get("", response_model=list[DiscountRead])
@@ -55,7 +94,7 @@ async def list_discounts(
     current_staff: Staff = Depends(get_current_staff),
 ) -> list[Discount]:
     """List all discounts. Optionally filter by is_active=true/false."""
-    statement = select(Discount)
+    statement = select(Discount).options(*_TARGET_LOADS)
     if is_active is not None:
         statement = statement.where(Discount.is_active == is_active)
     statement = statement.order_by(Discount.sort_order, Discount.name)
@@ -84,11 +123,16 @@ async def update_discount(
     discount = await _load_discount_or_404(db, discount_id)
     update_data = payload.model_dump(exclude_unset=True)
     await _ensure_outlet_exists(db, update_data.get("outlet_id"))
+    category_ids = update_data.pop("target_category_ids", None)
+    product_ids = update_data.pop("target_product_ids", None)
     for field, value in update_data.items():
         setattr(discount, field, value)
+    if category_ids is not None:
+        discount.target_categories = await _resolve_categories(db, category_ids)
+    if product_ids is not None:
+        discount.target_products = await _resolve_products(db, product_ids)
     await db.commit()
-    await db.refresh(discount)
-    return discount
+    return await _load_discount_or_404(db, discount.id)
 
 
 @router.delete("/{discount_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -137,8 +181,8 @@ async def reorder_discounts(
         updated.append(discount)
 
     await db.commit()
-    for d in updated:
-        await db.refresh(d)
+    # expire_on_commit=False keeps the eager-loaded targets and updated
+    # sort_order intact, so no refresh (which would lazy-load) is needed.
     updated.sort(key=lambda d: d.sort_order)
     return updated
 
@@ -153,5 +197,4 @@ async def toggle_discount_active(
     discount = await _load_discount_or_404(db, discount_id)
     discount.is_active = not bool(discount.is_active)
     await db.commit()
-    await db.refresh(discount)
     return discount

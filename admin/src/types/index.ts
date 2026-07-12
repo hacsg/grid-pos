@@ -479,6 +479,9 @@ export interface Customer {
 }
 
 // --- Discounts ---
+export type DiscountScope = 'cart' | 'targeted';
+export type DiscountThresholdMode = 'gate' | 'bundle';
+
 export interface Discount {
   id: string;
   name: string;
@@ -487,6 +490,11 @@ export interface Discount {
   is_active: boolean;
   outlet_id: string | null;
   sort_order: number;
+  scope: DiscountScope;
+  min_quantity: number;
+  threshold_mode: DiscountThresholdMode;
+  target_category_ids: string[];
+  target_product_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -498,4 +506,9 @@ export interface DiscountFormData {
   is_active?: boolean;
   outlet_id?: string | null;
   sort_order?: number;
+  scope?: DiscountScope;
+  min_quantity?: number;
+  threshold_mode?: DiscountThresholdMode;
+  target_category_ids?: string[];
+  target_product_ids?: string[];
 }

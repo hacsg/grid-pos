@@ -107,6 +107,7 @@ export interface OrderCreate {
   loyalty_discount?: number | null;
   customer_id?: string | null;
   voucher_codes?: string[] | null;
+  applied_discounts?: Array<{ name: string; scope: 'cart' | 'targeted'; amount_off: number }> | null;
 }
 
 export interface OrderRead extends Timestamped {
@@ -796,6 +797,13 @@ export interface Discount {
   amount: number;
   is_active: boolean;
   sort_order: number;
+  outlet_id?: string | null;
+  // Targeting: 'cart' (whole cart) or 'targeted' (specific products/categories).
+  scope: 'cart' | 'targeted';
+  min_quantity: number;
+  threshold_mode: 'gate' | 'bundle';
+  target_category_ids: string[];
+  target_product_ids: string[];
 }
 
 export async function getActiveDiscounts(): Promise<Discount[]> {
@@ -807,6 +815,12 @@ export async function getActiveDiscounts(): Promise<Discount[]> {
     amount: Number(d.amount) || 0,
     is_active: d.is_active,
     sort_order: d.sort_order ?? 0,
+    outlet_id: d.outlet_id ?? null,
+    scope: d.scope === 'targeted' ? 'targeted' : 'cart',
+    min_quantity: Number(d.min_quantity) || 1,
+    threshold_mode: d.threshold_mode === 'bundle' ? 'bundle' : 'gate',
+    target_category_ids: Array.isArray(d.target_category_ids) ? d.target_category_ids : [],
+    target_product_ids: Array.isArray(d.target_product_ids) ? d.target_product_ids : [],
   }));
 }
 

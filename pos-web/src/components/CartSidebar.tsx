@@ -18,12 +18,14 @@ import {
 import { formatCurrency } from '@/api/client';
 import type { AppliedVoucher, CartItem, Discount, LoyaltySelection, Totals } from '@/types';
 import { lineLabel, lineTotal } from '@/utils/cart';
+import type { AppliedDiscountLine } from '@/utils/discounts';
 import { tapFeedback } from '@/utils/haptics';
 
 interface CartSidebarProps {
   items: CartItem[];
   totals: Totals;
   discount: Discount | null;
+  appliedDiscounts: AppliedDiscountLine[];
   loyalty: LoyaltySelection | null;
   vouchers: AppliedVoucher[];
   isOpen: boolean;
@@ -49,6 +51,7 @@ export default function CartSidebar({
   items,
   totals,
   discount,
+  appliedDiscounts,
   loyalty,
   vouchers,
   isOpen,
@@ -130,6 +133,14 @@ export default function CartSidebar({
       </header>
 
       <div className="cart-chips" aria-live="polite">
+        {appliedDiscounts
+          .filter((d) => d.scope === 'targeted')
+          .map((d) => (
+            <span className="cart-chip" key={d.id ?? d.name}>
+              <BadgePercent size={15} aria-hidden="true" />
+              {d.name}
+            </span>
+          ))}
         {discount && (
           <span className="cart-chip">
             <BadgePercent size={15} aria-hidden="true" />
@@ -233,6 +244,14 @@ export default function CartSidebar({
       </div>
 
       <section className="cart-totals" aria-label="Totals">
+        {appliedDiscounts
+          .filter((d) => d.scope === 'targeted')
+          .map((d) => (
+            <div key={d.id ?? d.name}>
+              <span>{d.name}</span>
+              <strong>-{formatCurrency(d.amountOff)}</strong>
+            </div>
+          ))}
         {totals.discount > 0 && (
           <div>
             <span>Discount</span>
