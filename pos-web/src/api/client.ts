@@ -182,9 +182,26 @@ export interface LoyaltyRedeemResponse {
   new_points: number;
 }
 
+export interface PrintablePrintTemplate {
+  id: string;
+  outlet_id: string | null;
+  document_type: 'receipt' | 'kitchen_chit';
+  name: string;
+  is_active: boolean;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 type SilentRequestConfig = AxiosRequestConfig & {
   silent?: boolean;
 };
+
+const STAFF_SESSION_KEY = 'grid_pos_staff_session';
+
+/** Dispatched when an authenticated request is rejected with 401 (token expired
+ * or invalid). StaffShell listens for this and returns to the login screen. */
+export const SESSION_EXPIRED_EVENT = 'grid-pos:session-expired';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -205,6 +222,24 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const config = error.config as SilentRequestConfig | undefined;
+
+    // A 401 on a request that carried a session means the token expired or is
+    // otherwise invalid. Tear down the ENTIRE session — not just auth_token — so
+    // the app returns to the login screen. Clearing only the token leaves a
+    // zombie session that still looks logged in but sends headerless requests,
+    // which the backend rejects with "Not authenticated" (e.g. at checkout).
+    // Guarding on a stored session keeps a bad-PIN 401 on the login screen from
+    // firing the expiry flow.
+    if (error.response?.status === 401 && localStorage.getItem(STAFF_SESSION_KEY)) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem(STAFF_SESSION_KEY);
+      if (!config?.silent) {
+        toast.error('Session expired — please sign in again');
+      }
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      return Promise.reject(error);
+    }
+
     const message =
       error.response?.data?.detail?.detail ||
       error.response?.data?.detail ||
@@ -213,9 +248,6 @@ api.interceptors.response.use(
       'An unexpected error occurred';
 
     if (!config?.silent) {
-      if (error.response?.status === 401) {
-        localStorage.removeItem('auth_token');
-      }
       toast.error(typeof message === 'string' ? message : 'Request failed');
     }
 
@@ -226,8 +258,6 @@ api.interceptors.response.use(
 type RequestConfig = AxiosRequestConfig & {
   body?: BodyInit | null;
 };
-
-const STAFF_SESSION_KEY = 'grid_pos_staff_session';
 
 function currentOutletId(): string | null {
   try {

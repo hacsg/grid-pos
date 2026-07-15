@@ -21,6 +21,7 @@ import {
   getCategories,
   getCurrentTill,
   getProducts,
+  SESSION_EXPIRED_EVENT,
   type LoyaltyMember,
   type LoyaltyReward,
   type Product,
@@ -778,6 +779,15 @@ function StaffShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
   const [manualTerminal, setManualTerminal] = useState(() => manualTerminalEnabled(loadSession()));
+
+  // The axios interceptor clears the stored session on a 401 and fires this
+  // event; drop the in-memory session too so StaffShell re-renders to the login
+  // screen instead of keeping a zombie session that can no longer authenticate.
+  useEffect(() => {
+    const onExpired = () => setSession(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
   function toggleManualTerminal() {
     tapFeedback();
