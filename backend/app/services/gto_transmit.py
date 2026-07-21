@@ -12,6 +12,7 @@ import asyncio
 from ftplib import FTP
 from io import BytesIO
 import logging
+from pathlib import PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,13 +35,25 @@ def _require_transfer_config() -> None:
 def _upload_ftp(filename: str, content: str) -> None:
     """Upload using the vendor's legacy plain-FTP endpoint."""
     _require_transfer_config()
+    payload = content.encode("utf-8")
     with FTP() as ftp:
         ftp.connect(settings.gto_sftp_host, settings.gto_sftp_port, timeout=30)
         ftp.login(settings.gto_sftp_username, settings.gto_sftp_password)
         remote_dir = settings.gto_sftp_remote_dir or "."
         if remote_dir not in ("", "."):
             ftp.cwd(remote_dir)
-        ftp.storbinary(f"STOR {filename}", BytesIO(content.encode("utf-8")))
+
+        # This FTP server rejects overwrites. Treat an exact remote copy as a
+        # successful idempotent retry, but never hide a same-name mismatch.
+        remote_names = {PurePosixPath(name).name for name in ftp.nlst()}
+        if filename in remote_names:
+            existing = BytesIO()
+            ftp.retrbinary(f"RETR {filename}", existing.write)
+            if existing.getvalue() == payload:
+                return
+            raise FileExistsError(f"Remote GTO file differs: {filename}")
+
+        ftp.storbinary(f"STOR {filename}", BytesIO(payload))
 
 
 def _upload_sftp(filename: str, content: str) -> None:
