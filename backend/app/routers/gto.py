@@ -40,12 +40,15 @@ def _yesterday_sgt() -> date:
 async def _generate(db, sales_date: date):
     if not settings.gto_machine_id:
         raise HTTPException(status_code=503, detail="GTO_MACHINE_ID not configured")
+    if settings.gto_outlet_id is None:
+        raise HTTPException(status_code=503, detail="GTO_OUTLET_ID not configured")
     return await gto_service.generate_and_store(
         db,
         sales_date,
         machine_id=settings.gto_machine_id,
         gst_registered=settings.gto_gst_registered,
         gst_rate=Decimal(str(settings.gto_gst_rate)),
+        outlet_id=settings.gto_outlet_id,
     )
 
 

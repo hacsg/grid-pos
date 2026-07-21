@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 import logging
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
 
     # --- Landlord/mall GTO file feed --------------------------------------
     gto_machine_id: str = Field(default="", alias="GTO_MACHINE_ID", description="Tenant Machine ID assigned by mall management")
+    gto_outlet_id: UUID | None = Field(default=None, alias="GTO_OUTLET_ID")
     gto_gst_registered: bool = Field(default=False, alias="GTO_GST_REGISTERED")
     gto_gst_rate: float = Field(default=0.09, alias="GTO_GST_RATE")
     gto_cron_secret: str = Field(default="", alias="GTO_CRON_SECRET", description="Shared secret for the day-close cron trigger")

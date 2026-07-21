@@ -1,6 +1,6 @@
 """GTO file-format tests, checked against the mall spec's sample files."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -123,6 +123,7 @@ def test_all_payment_columns_present_and_ordered():
 import pytest
 from datetime import datetime as _dt, timezone as _tz
 from app.models.order import Order, OrderStatus
+from app.models.outlet import Outlet
 from app.services.gto import generate_and_store
 
 
@@ -140,6 +141,41 @@ async def _paid_order(db, outlet, staff, *, total, subtotal, method, when_utc):
     db.add(o)
     await db.commit()
     return o
+
+
+@pytest.mark.asyncio
+async def test_generate_and_store_filters_to_configured_outlet(
+    db_session, outlet, cashier_staff
+):
+    from datetime import date as _date
+    from decimal import Decimal as D
+
+    other_outlet = Outlet(name="Other Outlet", address="Elsewhere")
+    db_session.add(other_outlet)
+    await db_session.commit()
+    await db_session.refresh(other_outlet)
+
+    when = _dt(2026, 7, 20, 2, 5, tzinfo=_tz.utc)
+    await _paid_order(
+        db_session, outlet, cashier_staff,
+        total=D("9.35"), subtotal=D("9.35"), method="cash", when_utc=when,
+    )
+    await _paid_order(
+        db_session, other_outlet, cashier_staff,
+        total=D("50.00"), subtotal=D("50.00"), method="cash",
+        when_utc=when + timedelta(seconds=1),
+    )
+
+    record = await generate_and_store(
+        db_session,
+        _date(2026, 7, 20),
+        machine_id="12345678",
+        outlet_id=outlet.id,
+    )
+
+    hour = record.content.split("\r\n")[10].split("|")
+    assert hour[4] == "1"
+    assert hour[5] == "9.35"
 
 
 @pytest.mark.asyncio
