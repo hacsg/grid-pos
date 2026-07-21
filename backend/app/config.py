@@ -58,11 +58,12 @@ class Settings(BaseSettings):
         description="How long the backend waits for the daemon's sale_result",
     )
 
-    # --- Landlord/mall GTO SFTP feed --------------------------------------
+    # --- Landlord/mall GTO file feed --------------------------------------
     gto_machine_id: str = Field(default="", alias="GTO_MACHINE_ID", description="Tenant Machine ID assigned by mall management")
     gto_gst_registered: bool = Field(default=False, alias="GTO_GST_REGISTERED")
     gto_gst_rate: float = Field(default=0.09, alias="GTO_GST_RATE")
     gto_cron_secret: str = Field(default="", alias="GTO_CRON_SECRET", description="Shared secret for the day-close cron trigger")
+    gto_transfer_protocol: str = Field(default="sftp", alias="GTO_TRANSFER_PROTOCOL")
     gto_sftp_host: str = Field(default="", alias="GTO_SFTP_HOST")
     gto_sftp_port: int = Field(default=22, alias="GTO_SFTP_PORT")
     gto_sftp_username: str = Field(default="", alias="GTO_SFTP_USERNAME")

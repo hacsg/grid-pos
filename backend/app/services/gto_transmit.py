@@ -1,14 +1,16 @@
-"""SFTP transmission of GTO files, with retry of any unsent backlog.
+"""FTP/SFTP transmission of GTO files, with retry of any unsent backlog.
 
-Paramiko is synchronous, so uploads run in a worker thread. Every generated
-file is persisted (gto_files.content) before upload is attempted, so a failed
-transmission never loses data — the file is retried on the next run (mall spec:
-store pending/missed data and resend once the connection is restored).
+The vendor endpoint determines which transport is used. Transfers run in a
+worker thread because both ftplib and Paramiko are synchronous. Every generated
+file is persisted before upload is attempted, so a failed transmission never
+loses data and is retried on the next run.
 """
 
 from __future__ import annotations
 
 import asyncio
+from ftplib import FTP
+from io import BytesIO
 import logging
 
 from sqlalchemy import select
@@ -20,17 +22,32 @@ from app.models.gto_file import GtoFile
 logger = logging.getLogger(__name__)
 
 
-class SftpNotConfigured(RuntimeError):
+class TransferNotConfigured(RuntimeError):
     pass
 
 
-def _upload_blocking(filename: str, content: str) -> None:
-    """Open an SFTP session and write one file. Runs in a worker thread."""
+def _require_transfer_config() -> None:
+    if not settings.gto_sftp_host or not settings.gto_sftp_username:
+        raise TransferNotConfigured("GTO transfer host/username not configured")
+
+
+def _upload_ftp(filename: str, content: str) -> None:
+    """Upload using the vendor's legacy plain-FTP endpoint."""
+    _require_transfer_config()
+    with FTP() as ftp:
+        ftp.connect(settings.gto_sftp_host, settings.gto_sftp_port, timeout=30)
+        ftp.login(settings.gto_sftp_username, settings.gto_sftp_password)
+        remote_dir = settings.gto_sftp_remote_dir or "."
+        if remote_dir not in ("", "."):
+            ftp.cwd(remote_dir)
+        ftp.storbinary(f"STOR {filename}", BytesIO(content.encode("utf-8")))
+
+
+def _upload_sftp(filename: str, content: str) -> None:
+    """Upload using SFTP."""
     import paramiko  # imported lazily so the app boots without paramiko in dev
 
-    if not settings.gto_sftp_host or not settings.gto_sftp_username:
-        raise SftpNotConfigured("GTO SFTP host/username not configured")
-
+    _require_transfer_config()
     transport = paramiko.Transport((settings.gto_sftp_host, settings.gto_sftp_port))
     try:
         transport.connect(username=settings.gto_sftp_username, password=settings.gto_sftp_password)
@@ -43,6 +60,17 @@ def _upload_blocking(filename: str, content: str) -> None:
         sftp.close()
     finally:
         transport.close()
+
+
+def _upload_blocking(filename: str, content: str) -> None:
+    """Open the configured transfer session and write one file."""
+    protocol = settings.gto_transfer_protocol.strip().lower()
+    if protocol == "ftp":
+        _upload_ftp(filename, content)
+    elif protocol == "sftp":
+        _upload_sftp(filename, content)
+    else:
+        raise TransferNotConfigured(f"Unsupported GTO transfer protocol: {protocol}")
 
 
 async def upload_file(db: AsyncSession, record: GtoFile) -> bool:
