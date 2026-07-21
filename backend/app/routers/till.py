@@ -165,11 +165,20 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> list[TillManagerRead]:
-    """Manager-only: till history with expected cash and variance."""
-    if not _is_manager(current_staff):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    """Till history for reconciliation.
+
+    Cashiers can review their outlet's declared opening and closing counts, but
+    expected cash and variance remain manager-only to preserve blind counting.
+    """
+    if not _is_manager(current_staff) and outlet_id != current_staff.outlet_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot view another outlet's till")
     sessions = await till_service.list_sessions(db, outlet_id)
-    return [_full(s) for s in sessions]
+    if _is_manager(current_staff):
+        return [_full(s) for s in sessions]
+    return [
+        TillManagerRead(**_blind(s).model_dump(), expected_cash=None, variance=None)
+        for s in sessions
+    ]
 
 
 class TillMovementRequest(BaseModel):
@@ -185,6 +194,10 @@ class TillMovementRead(BaseModel):
     direction: str
     amount: Decimal
     reason: str | None = None
+    staff_id: UUID | None = None
+    staff_name: str | None = None
+    authorized_by_staff_id: UUID | None = None
+    authorized_by_name: str | None = None
     created_at: datetime
 
 
@@ -241,8 +254,29 @@ async def session_movements(
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> list[TillMovementRead]:
-    """Manager-only: the cash movements recorded on a till session."""
-    if not _is_manager(current_staff):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    """Cash movement audit trail for managers and same-outlet cashiers."""
+    session = await db.get(TillSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Till session not found")
+    if not _is_manager(current_staff) and session.outlet_id != current_staff.outlet_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot view another outlet's till")
     movements = await till_service.list_movements(db, session_id)
-    return [TillMovementRead.model_validate(m, from_attributes=True) for m in movements]
+    staff_ids = {
+        staff_id
+        for movement in movements
+        for staff_id in (movement.staff_id, movement.authorized_by_staff_id)
+        if staff_id is not None
+    }
+    staff_names: dict[UUID, str] = {}
+    if staff_ids:
+        result = await db.execute(select(Staff.id, Staff.name).where(Staff.id.in_(staff_ids)))
+        staff_names = dict(result.all())
+    return [
+        TillMovementRead.model_validate(movement, from_attributes=True).model_copy(
+            update={
+                "staff_name": staff_names.get(movement.staff_id),
+                "authorized_by_name": staff_names.get(movement.authorized_by_staff_id),
+            }
+        )
+        for movement in movements
+    ]

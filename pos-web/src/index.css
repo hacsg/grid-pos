@@ -4035,6 +4035,7 @@ html.display-active #root {
   font-weight: 600;
   text-align: center;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .till-controls {
@@ -4163,6 +4164,322 @@ html.display-active #root {
 }
 
 .till-mv { font-weight: 700; }
+
+/* Dedicated till workspace */
+.till-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px clamp(18px, 3vw, 46px) 48px;
+  background:
+    radial-gradient(circle at 94% 2%, rgba(47, 111, 62, 0.09), transparent 28%),
+    linear-gradient(180deg, #fbfaf6 0%, var(--grid-background) 38%);
+}
+
+.till-page-header {
+  max-width: 1440px;
+  margin: 0 auto 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.till-page-header h1,
+.till-panel h2,
+.till-section-title h2 {
+  margin: 0;
+  color: var(--grid-text);
+  letter-spacing: var(--track-tight);
+}
+
+.till-page-header h1 {
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1;
+}
+
+.till-page-header > div > p:last-child,
+.till-section-title > p {
+  margin: 9px 0 0;
+  color: var(--grid-muted);
+  font-size: var(--text-sm);
+}
+
+.till-eyebrow {
+  margin: 0 0 8px;
+  color: var(--grid-primary);
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.till-refresh {
+  min-height: 42px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--grid-border);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--grid-text);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.till-refresh .spin {
+  animation: spin 0.8s linear infinite;
+}
+
+.till-summary-strip {
+  max-width: 1440px;
+  margin: 0 auto 18px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #dfe3dc;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-sm);
+}
+
+.till-summary-item {
+  min-width: 0;
+  padding: 17px 20px;
+  display: grid;
+  gap: 4px;
+  border-right: 1px solid var(--grid-border);
+}
+
+.till-summary-item:last-child { border-right: 0; }
+.till-summary-item > span,
+.till-summary-item small {
+  overflow: hidden;
+  color: var(--grid-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.till-summary-item > span { font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }
+.till-summary-item strong { font-size: clamp(18px, 2vw, 24px); white-space: nowrap; }
+.till-summary-item.open strong,
+.till-summary-item.positive strong { color: var(--grid-success); }
+.till-summary-item.negative strong { color: var(--grid-error); }
+.till-summary-item.manager { background: #edf5ef; }
+
+.till-workspace {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(310px, 0.75fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.till-panel {
+  border: 1px solid #e2e4df;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 30px rgba(45, 52, 43, 0.05);
+}
+
+.till-panel-heading {
+  padding: 22px 24px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--grid-border);
+}
+
+.till-panel h2,
+.till-section-title h2 { font-size: 21px; }
+
+.till-page-actions {
+  display: flex;
+  grid-template-columns: none;
+}
+
+.till-page-actions button {
+  min-height: 40px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--grid-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--grid-text);
+  font-weight: var(--fw-semibold);
+}
+
+.till-page-actions button:hover { border-color: #bfc7bd; background: #f8faf7; }
+
+.till-ledger { display: grid; }
+
+.till-ledger-row {
+  min-height: 78px;
+  padding: 14px 24px;
+  display: grid;
+  grid-template-columns: 50px 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #f0f0ed;
+}
+
+.till-ledger-row:last-child { border-bottom: 0; }
+.till-ledger-row time { color: var(--grid-muted); font-size: var(--text-xs); }
+.till-ledger-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #f0f1ee; color: var(--grid-muted); }
+.till-ledger-row.in .till-ledger-icon { background: #e7f4ec; color: var(--grid-success); }
+.till-ledger-row.out .till-ledger-icon { background: #fbe9e5; color: var(--grid-error); }
+.till-ledger-copy { min-width: 0; display: grid; gap: 2px; }
+.till-ledger-copy strong { font-size: var(--text-sm); }
+.till-ledger-copy span,
+.till-ledger-copy small { overflow: hidden; color: var(--grid-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.till-ledger-row > b { font-size: var(--text-md); }
+.till-ledger-row.in > b { color: var(--grid-success); }
+.till-ledger-row.out > b { color: var(--grid-error); }
+
+.till-ledger-empty,
+.till-loading,
+.till-empty {
+  min-height: 150px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--grid-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.till-close-panel { padding: 23px; }
+.till-guidance { margin: 8px 0 18px; color: var(--grid-muted); font-size: var(--text-sm); line-height: 1.5; }
+
+.till-manager-breakdown {
+  margin: 0 0 18px;
+  padding: 14px 15px;
+  display: grid;
+  gap: 8px;
+  border-radius: 12px;
+  background: #f5f7f3;
+}
+
+.till-manager-breakdown > div { display: flex; justify-content: space-between; gap: 12px; color: var(--grid-muted); font-size: var(--text-xs); }
+.till-manager-breakdown strong { color: var(--grid-text); }
+.till-manager-breakdown .total { margin-top: 3px; padding-top: 10px; border-top: 1px solid #d8ddd5; font-size: var(--text-sm); font-weight: var(--fw-bold); }
+
+.till-blind-note {
+  margin-bottom: 18px;
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border-radius: 10px;
+  background: #f5f2e8;
+  color: #725c20;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.till-blind-note svg { flex: 0 0 auto; }
+.till-count-field input { min-height: 56px; font-size: 25px; font-weight: var(--fw-bold); }
+.till-close-button { width: 100%; margin-top: 12px; min-height: 50px; }
+
+.till-open-panel {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 42px);
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 44px;
+}
+
+.till-open-copy > p:not(.till-eyebrow) { color: var(--grid-muted); line-height: 1.55; }
+.till-open-steps { display: grid; align-content: start; gap: 12px; }
+.till-carry-over { margin-top: 22px; padding: 16px; display: grid; gap: 4px; border-left: 4px solid var(--grid-primary); border-radius: 3px 12px 12px 3px; background: #edf5ef; }
+.till-carry-over span,
+.till-carry-over small { color: var(--grid-muted); font-size: var(--text-xs); }
+.till-carry-over strong { font-size: 25px; }
+
+.till-history-section { max-width: 1440px; margin: 34px auto 0; }
+.till-section-title { margin-bottom: 13px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.till-section-title > p { max-width: 460px; text-align: right; }
+.till-session-list { display: grid; gap: 8px; }
+.till-session-record { overflow: hidden; border: 1px solid #e2e4df; border-radius: 13px; background: rgba(255, 255, 255, 0.9); }
+.till-session-record.expanded { border-color: #bdcabb; box-shadow: var(--shadow-sm); }
+
+.till-session-summary {
+  width: 100%;
+  min-height: 74px;
+  padding: 12px 18px;
+  display: grid;
+  grid-template-columns: 24px minmax(190px, 1.5fr) repeat(4, minmax(115px, 1fr));
+  align-items: center;
+  gap: 16px;
+  background: transparent;
+  text-align: left;
+}
+
+.till-session-summary:hover { background: #f7f8f5; }
+.till-session-summary > span:not(.till-session-chevron) { min-width: 0; display: grid; gap: 3px; }
+.till-session-summary small { overflow: hidden; color: var(--grid-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.till-session-summary strong { font-size: var(--text-sm); }
+.till-session-summary .balanced strong { color: var(--grid-success); }
+.till-session-summary .over strong { color: var(--grid-warning); }
+.till-session-summary .short strong { color: var(--grid-error); }
+.till-session-date small { font-weight: var(--fw-regular); }
+
+.till-session-details { padding: 18px 22px 4px; border-top: 1px solid var(--grid-border); background: #fafaf8; }
+.till-session-details .till-ledger { margin: 14px -22px -4px; border-top: 1px solid var(--grid-border); background: #fff; }
+.till-session-details .till-ledger-empty { min-height: 90px; }
+.till-history-equation { display: flex; align-items: center; justify-content: center; gap: 14px; overflow-x: auto; }
+.till-history-equation span { min-width: 92px; display: grid; gap: 4px; text-align: center; }
+.till-history-equation small { color: var(--grid-muted); font-size: 11px; }
+.till-history-equation strong { font-size: var(--text-base); }
+.till-history-equation i { color: var(--grid-muted); font-style: normal; font-weight: var(--fw-bold); }
+
+.till-close-confirm { text-align: center; }
+.till-close-confirm > p { margin: 0; color: var(--grid-muted); }
+.till-close-confirm > strong { display: block; margin: 8px 0; font-size: 38px; }
+.till-close-confirm > small { display: block; color: var(--grid-muted); line-height: 1.45; }
+.settings-till-link { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+
+@media (max-width: 1050px) {
+  .till-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .till-summary-item { border-bottom: 1px solid var(--grid-border); }
+  .till-workspace { grid-template-columns: 1fr; }
+  .till-session-summary { grid-template-columns: 24px minmax(180px, 1.4fr) repeat(2, minmax(110px, 1fr)); }
+  .till-session-summary > span:nth-last-child(-n + 2) { display: none; }
+}
+
+@media (max-width: 700px) {
+  .till-page { padding: 20px 12px 36px; }
+  .till-page-header { align-items: center; }
+  .till-page-header > div > p:last-child { display: none; }
+  .till-refresh { padding: 0 12px; }
+  .till-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .till-summary-item { padding: 13px; }
+  .till-summary-item strong { font-size: 18px; }
+  .till-panel-heading { padding: 18px; align-items: flex-start; flex-direction: column; }
+  .till-page-actions { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .till-page-actions button { padding: 0 7px; font-size: 12px; }
+  .till-ledger-row { padding: 12px 14px; grid-template-columns: 38px 30px minmax(0, 1fr) auto; gap: 7px; }
+  .till-ledger-row time { font-size: 10px; }
+  .till-ledger-icon { width: 29px; height: 29px; }
+  .till-ledger-copy small { display: none; }
+  .till-ledger-row > b { font-size: var(--text-sm); }
+  .till-open-panel { grid-template-columns: 1fr; gap: 24px; }
+  .till-section-title { align-items: flex-start; flex-direction: column; }
+  .till-section-title > p { margin: 0; text-align: left; }
+  .till-session-summary { grid-template-columns: 20px minmax(120px, 1fr) minmax(110px, 1fr); gap: 8px; padding: 10px; }
+  .till-session-summary > span:not(.till-session-chevron):not(.till-session-date):not(:nth-child(4)) { display: none; }
+  .till-history-equation { justify-content: flex-start; }
+}
 .till-mv.in { color: var(--grid-success); }
 .till-mv.out { color: var(--grid-error); }
 .till-mv.nosale { color: var(--grid-muted); }

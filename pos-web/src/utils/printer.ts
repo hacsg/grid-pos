@@ -56,6 +56,9 @@ export interface KitchenChit {
   orderNumber: string;
   time: string; // preformatted, e.g. "14:05"
   items: ChitItem[];
+  title?: string;
+  width?: number;
+  feedLines?: number;
 }
 
 const enc = new TextEncoder();
@@ -85,14 +88,24 @@ const ESC_CUT = [0x1d, 0x56, 0x00];
 
 /** Build the ESC/POS byte payload for a kitchen chit (58mm, 32 cols). */
 export function buildKitchenChitPayload(chit: KitchenChit): Uint8Array {
-  const rule = `${'-'.repeat(32)}\n`;
-  const parts: Array<number[] | Uint8Array | string> = [
-    ESC_INIT,
-    // Big, bold order number — the number the kitchen calls out.
-    ESC_CENTER, ESC_BOLD_ON, escSize(1, 1), `#${chit.orderNumber}\n`, escSize(0, 0),
-    'KITCHEN\n', ESC_BOLD_OFF, `${chit.time}\n`,
-    ESC_LEFT, rule,
-  ];
+  const width = Math.max(16, Math.min(64, Math.round(chit.width ?? 32)));
+  const title = chit.title === undefined ? 'KITCHEN' : chit.title;
+  const rule = `${'-'.repeat(width)}\n`;
+  const parts: Array<number[] | Uint8Array | string> = [ESC_INIT];
+  if (chit.orderNumber || title || chit.time) {
+    parts.push(ESC_CENTER, ESC_BOLD_ON);
+    if (chit.orderNumber) {
+      parts.push(escSize(1, 1), `#${chit.orderNumber}\n`, escSize(0, 0));
+    }
+    if (title) {
+      parts.push(`${title}\n`);
+    }
+    parts.push(ESC_BOLD_OFF);
+    if (chit.time) {
+      parts.push(`${chit.time}\n`);
+    }
+  }
+  parts.push(ESC_LEFT, rule);
   for (const item of chit.items) {
     // Double-height + bold keeps full 32-col width (long names don't wrap) but
     // is readable across the kitchen.
@@ -102,7 +115,8 @@ export function buildKitchenChitPayload(chit: KitchenChit): Uint8Array {
     }
     parts.push('\n');
   }
-  parts.push(rule, '\n\n\n', ESC_CUT);
+  const extraFeed = '\n'.repeat(Math.max(0, Math.min(10, Math.round(chit.feedLines ?? 0))));
+  parts.push(rule, extraFeed, '\n\n\n', ESC_CUT);
   return concatBytes(...parts);
 }
 

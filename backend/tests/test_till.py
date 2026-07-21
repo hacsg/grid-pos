@@ -70,13 +70,29 @@ async def test_open_close_blind_and_variance(
 
 
 @pytest.mark.asyncio
-async def test_cashier_cannot_list_sessions(client: AsyncClient, outlet, cashier_token):
+async def test_cashier_sees_blind_session_history(client: AsyncClient, outlet, cashier_token):
+    headers = {"Authorization": f"Bearer {cashier_token}"}
+    opened = await client.post(
+        "/api/till/open",
+        json={"outlet_id": str(outlet.id), "opening_float": "75.00"},
+        headers=headers,
+    )
+    await client.post(
+        "/api/till/close",
+        json={"session_id": opened.json()["id"], "counted_cash": "74.50"},
+        headers=headers,
+    )
     resp = await client.get(
         "/api/till/sessions",
         params={"outlet_id": str(outlet.id)},
-        headers={"Authorization": f"Bearer {cashier_token}"},
+        headers=headers,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    session = resp.json()[0]
+    assert session["opening_float"] == "75.00"
+    assert session["counted_cash"] == "74.50"
+    assert session["expected_cash"] is None
+    assert session["variance"] is None
 
 
 @pytest.mark.asyncio
@@ -105,10 +121,14 @@ async def test_movements_and_drawer_open(
     d = await client.post("/api/till/drawer-open", json={"outlet_id": str(outlet.id), "manager_pin": "1111"}, headers=ch)
     assert d.status_code == 200 and d.json()["ok"] is True
 
-    # Manager movements list has out, in, nosale.
-    mv = await client.get(f"/api/till/{sid}/movements", headers=mh)
+    # The cashier can audit what was manually entered, including who approved it.
+    mv = await client.get(f"/api/till/{sid}/movements", headers=ch)
+    assert mv.status_code == 200
     dirs = sorted(m["direction"] for m in mv.json())
     assert dirs == ["in", "nosale", "out"]
+    cash_out = next(m for m in mv.json() if m["direction"] == "out")
+    assert cash_out["staff_name"] == cashier_staff.name
+    assert cash_out["authorized_by_name"] == manager_staff.name
 
     # Blind close counting $88 → expected 90, variance -2 (manager-only).
     close = await client.post("/api/till/close", json={"session_id": sid, "counted_cash": "88"}, headers=ch)

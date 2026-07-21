@@ -512,3 +512,37 @@ export interface DiscountFormData {
   target_category_ids?: string[];
   target_product_ids?: string[];
 }
+
+export interface PrintTemplateBlock {
+  type: string;
+  visible: boolean;
+  fields: Record<string, unknown>;
+}
+
+export interface PrintTemplateConfig {
+  documentType?: 'receipt' | 'kitchen_chit';
+  pageSize: {
+    widthMM: number;
+    charWidth: number;
+  };
+  blocks: PrintTemplateBlock[];
+}
+
+export interface PrintTemplate {
+  id: string;
+  outlet_id: string | null;
+  document_type: 'receipt' | 'kitchen_chit';
+  name: string;
+  is_active: boolean;
+  config: PrintTemplateConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrintTemplateFormData {
+  outlet_id?: string | null;
+  document_type: 'receipt' | 'kitchen_chit';
+  name: string;
+  is_active?: boolean;
+  config: PrintTemplateConfig;
+}

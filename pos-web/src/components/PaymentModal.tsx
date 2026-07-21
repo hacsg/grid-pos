@@ -33,6 +33,7 @@ import {
   formatReceiptTime,
   receiptSnapshotToPrintableOrder,
 } from '@/utils/receipt';
+import { getCachedActivePrintTemplate, renderKitchenChitFromTemplate, renderReceiptFromTemplate } from '@/utils/renderFromTemplate';
 import { broadcast } from '@/display/channel';
 
 interface PaymentModalProps {
@@ -575,7 +576,18 @@ export default function PaymentModal({
       autoChit = true;
     }
     if (autoChit && snapshot.items.length > 0) {
-      void printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(snapshot, session)));
+      void (async () => {
+        try {
+          const printable = receiptSnapshotToPrintableOrder(snapshot, session);
+          const template = await getCachedActivePrintTemplate(session.outlet.id, 'kitchen_chit');
+          const text = renderKitchenChitFromTemplate(template?.config ?? null, printable);
+          await printKitchenChit(text);
+        } catch (err) {
+          // Kitchen chit is best-effort; don't block checkout flow
+          console.warn('[kitchen chit template] failed, falling back', err);
+          void printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(snapshot, session)));
+        }
+      })();
     }
     setStep('complete');
     setCardPayment(null);
@@ -1072,7 +1084,15 @@ export default function PaymentModal({
       return;
     }
     tapFeedback();
-    const text = buildReceiptText(receiptSnapshotToPrintableOrder(receipt, session));
+    let text: string;
+    try {
+      const printable = receiptSnapshotToPrintableOrder(receipt, session);
+      const template = await getCachedActivePrintTemplate(session.outlet.id, 'receipt');
+      text = renderReceiptFromTemplate(template?.config ?? null, printable);
+    } catch (err) {
+      console.warn('[receipt template] failed, falling back', err);
+      text = buildReceiptText(receiptSnapshotToPrintableOrder(receipt, session));
+    }
     const printed = await printReceiptUsb(text);
     if (printed) {
       toast.success('Receipt sent to printer');
@@ -1086,7 +1106,16 @@ export default function PaymentModal({
       return;
     }
     tapFeedback();
-    const printed = await printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(receipt, session)));
+    let printed: boolean;
+    try {
+      const printable = receiptSnapshotToPrintableOrder(receipt, session);
+      const template = await getCachedActivePrintTemplate(session.outlet.id, 'kitchen_chit');
+      const text = renderKitchenChitFromTemplate(template?.config ?? null, printable);
+      printed = await printKitchenChit(text);
+    } catch (err) {
+      console.warn('[chit template] failed, falling back', err);
+      printed = await printKitchenChit(buildChit(receiptSnapshotToPrintableOrder(receipt, session)));
+    }
     if (printed) {
       toast.success('Kitchen chit sent');
     } else {

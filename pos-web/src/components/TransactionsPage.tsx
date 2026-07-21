@@ -17,7 +17,8 @@ import {
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { printKitchenChit, printReceipt } from '@/utils/printer';
-import { buildChit, buildReceiptText, orderReadToPrintableOrder } from '@/utils/receipt';
+import { orderReadToPrintableOrder } from '@/utils/receipt';
+import { getCachedActivePrintTemplate, renderKitchenChitFromTemplate, renderReceiptFromTemplate } from '@/utils/renderFromTemplate';
 
 const MANAGER_ROLES: StaffRole[] = ['admin', 'manager', 'supervisor'];
 
@@ -164,7 +165,8 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
     tapFeedback();
     try {
       const printable = orderReadToPrintableOrder(detail, session);
-      const printed = await printKitchenChit(buildChit(printable));
+      const template = await getCachedActivePrintTemplate(session.outlet.id, 'kitchen_chit');
+      const printed = await printKitchenChit(renderKitchenChitFromTemplate(template?.config, printable));
       if (printed) {
         toast.success('Kitchen chit sent');
       } else {
@@ -179,7 +181,9 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
     if (!detail) return;
     tapFeedback();
     try {
-      const text = buildReceiptText(orderReadToPrintableOrder(detail, session));
+      const printable = orderReadToPrintableOrder(detail, session);
+      const template = await getCachedActivePrintTemplate(session.outlet.id, 'receipt');
+      const text = renderReceiptFromTemplate(template?.config, printable);
       const printed = await printReceipt(text);
       if (printed) {
         toast.success('Receipt sent to printer');

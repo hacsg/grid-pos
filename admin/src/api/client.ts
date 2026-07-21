@@ -50,6 +50,8 @@ import type {
   Customer,
   Discount,
   DiscountFormData,
+  PrintTemplate,
+  PrintTemplateFormData,
 } from '@/types';
 import type {
   AnalyticsDashboard,
@@ -429,6 +431,38 @@ export const uploadOutletLogo = async (id: string, file: File): Promise<OutletLo
 export const deleteOutletLogo = async (id: string): Promise<OutletLogoResponse> => {
   const { data } = await api.delete<OutletLogoResponse>(`/outlets/${id}/logo`);
   toast.success('Logo removed');
+  return data;
+};
+
+export const getPrintTemplates = async (params: {
+  outlet_id?: string | null;
+  document_type?: 'receipt' | 'kitchen_chit';
+}): Promise<PrintTemplate[]> => {
+  const { data } = await api.get('/print-templates', { params });
+  return Array.isArray(data) ? data : [];
+};
+
+export const createPrintTemplate = async (payload: PrintTemplateFormData): Promise<PrintTemplate> => {
+  const { data } = await api.post('/print-templates', payload);
+  return data;
+};
+
+export const updatePrintTemplate = async (id: string, payload: Partial<PrintTemplateFormData>): Promise<PrintTemplate> => {
+  const { data } = await api.put(`/print-templates/${id}`, payload);
+  return data;
+};
+
+export const deletePrintTemplate = async (id: string): Promise<void> => {
+  await api.delete(`/print-templates/${id}`);
+};
+
+export const activatePrintTemplate = async (id: string): Promise<PrintTemplate> => {
+  const { data } = await api.post(`/print-templates/${id}/activate`);
+  return data;
+};
+
+export const getPrintTemplatePreview = async (id: string, orderData?: Record<string, unknown>): Promise<{ text: string }> => {
+  const { data } = await api.post(`/print-templates/${id}/preview`, orderData ? { order_data: orderData } : {});
   return data;
 };
 

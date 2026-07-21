@@ -612,6 +612,10 @@ export interface TillMovement {
   direction: 'in' | 'out' | 'nosale';
   amount: number | string;
   reason?: string | null;
+  staff_id?: string | null;
+  staff_name?: string | null;
+  authorized_by_staff_id?: string | null;
+  authorized_by_name?: string | null;
   created_at: string;
 }
 

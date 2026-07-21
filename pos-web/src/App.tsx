@@ -7,7 +7,7 @@ import CartSidebar from '@/components/CartSidebar';
 import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
 import PaymentModal, { manualTerminalEnabled } from '@/components/PaymentModal';
-import TillControls from '@/components/TillControls';
+import TillPage from '@/components/TillPage';
 import QuickChargeDialog from '@/components/QuickChargeDialog';
 import ProductGrid from '@/components/ProductGrid';
 import Scanner from '@/components/Scanner';
@@ -745,7 +745,7 @@ function PosWorkspace(props: PosWorkspaceProps = {}) {
   );
 }
 
-function StaffTabs({ active }: { active: 'pos' | 'scanner' | 'transactions' }) {
+function StaffTabs({ active }: { active: 'pos' | 'scanner' | 'transactions' | 'till' }) {
   return (
     <div className="staff-tabs">
       <Link
@@ -768,6 +768,13 @@ function StaffTabs({ active }: { active: 'pos' | 'scanner' | 'transactions' }) {
         onPointerDown={() => tapFeedback()}
       >
         Transactions
+      </Link>
+      <Link
+        to="/till"
+        className={`staff-tab ${active === 'till' ? 'active' : ''}`}
+        onPointerDown={() => tapFeedback()}
+      >
+        Till
       </Link>
     </div>
   );
@@ -822,7 +829,9 @@ function StaffShell() {
     setPrinterName(null);
   }
 
-  const activeTab: 'pos' | 'scanner' | 'transactions' = location.pathname.startsWith('/transactions')
+  const activeTab: 'pos' | 'scanner' | 'transactions' | 'till' = location.pathname.startsWith('/till')
+    ? 'till'
+    : location.pathname.startsWith('/transactions')
     ? 'transactions'
     : location.pathname.startsWith('/scanner') || location.pathname.startsWith('/vouchers')
       ? 'scanner'
@@ -877,13 +886,13 @@ function StaffShell() {
       </div>
 
       {tillNotOpen && (
-        <button
+        <Link
           className="till-open-banner"
-          type="button"
-          onClick={() => { tapFeedback(); setSettingsOpen(true); }}
+          to="/till"
+          onPointerDown={() => tapFeedback()}
         >
-          Cash till not opened for today — tap to enter the opening float
-        </button>
+          Cash till not opened for today — tap to count and open
+        </Link>
       )}
 
       <div className="staff-content">
@@ -891,6 +900,7 @@ function StaffShell() {
           <Route path="/scanner" element={<Scanner session={session} onLogout={handleLogout} />} />
           <Route path="/vouchers" element={<Navigate to="/scanner" replace />} />
           <Route path="/transactions" element={<TransactionsPage session={session} />} />
+          <Route path="/till" element={<TillPage session={session} />} />
           <Route path="/*" element={<PosWorkspace session={session} onLogout={handleLogout} />} />
         </Routes>
       </div>
@@ -971,7 +981,9 @@ function StaffShell() {
                 </button>
               </div>
 
-              <TillControls session={session} />
+              <Link className="secondary-button settings-till-link" to="/till" onClick={() => setSettingsOpen(false)}>
+                Open cash till management
+              </Link>
 
               <div className="settings-build">
                 <div className="settings-build-title">Current build</div>

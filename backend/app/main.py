@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import check_database_connection
 from app.migrations import run_sql_migrations
-from app.routers import analytics, campaigns, customers, discounts, gto, kpay, loyalty, orders, outlets, products, reports, shift, staff, till, vouchers, ws_daemon
+from app.routers import analytics, campaigns, customers, discounts, gto, kpay, loyalty, orders, outlets, print_templates, products, reports, shift, staff, till, vouchers, ws_daemon
 from app.schemas.health import HealthRead
 
 
@@ -47,6 +47,7 @@ app.include_router(vouchers.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(discounts.router, prefix="/api")
+app.include_router(print_templates.router, prefix="/api")
 app.include_router(kpay.router, prefix="/api/kpay", tags=["kpay"])
 app.include_router(gto.router, prefix="/api")
 app.include_router(till.router, prefix="/api")

@@ -15,6 +15,7 @@ import {
   Ticket,
   UserRound,
   BadgePercent,
+  Printer,
   Wallet,
   X,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const navItems = [
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/outlets', icon: Store, label: 'Outlets' },
   { to: '/discounts', icon: BadgePercent, label: 'Discounts' },
+  { to: '/print-templates', icon: Printer, label: 'Print Templates' },
 ];
 
 interface SidebarProps {

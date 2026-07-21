@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDrawerPulsePayload,
+  buildKitchenChitPayload,
   buildPrintPayload,
   sanitizeAscii,
 } from './printer';
@@ -32,5 +33,24 @@ describe('buildDrawerPulsePayload', () => {
 
   it('builds pin 1 pulse', () => {
     expect(Array.from(buildDrawerPulsePayload(1))).toEqual([0x1b, 0x70, 0x01, 0x19, 0xfa]);
+  });
+});
+
+describe('buildKitchenChitPayload', () => {
+  it('uses the configured heading, paper width, and feed spacing', () => {
+    const payload = buildKitchenChitPayload({
+      orderNumber: '',
+      title: 'BAR',
+      time: '',
+      items: [],
+      width: 48,
+      feedLines: 2,
+    });
+    const printable = new TextDecoder().decode(payload);
+
+    expect(printable).toContain('BAR\n');
+    expect(printable).not.toContain('KITCHEN');
+    expect(printable).not.toContain('#\n');
+    expect(printable).toContain(`${'-'.repeat(48)}\n\n\n`);
   });
 });
