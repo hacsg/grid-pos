@@ -1,4 +1,5 @@
 import type { PrintTemplateConfig } from '@/types';
+import { formatSgtDateTime, formatSgtTime } from '@/utils/datetime';
 
 const RECEIPT_WIDTH = 32;
 
@@ -52,15 +53,11 @@ export const DEFAULT_SAMPLE_ORDER = {
 };
 
 function formatTime(value?: string | null): string {
-  const parsed = value ? new Date(value) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatSgtTime(value);
 }
 
 function formatTimestamp(value?: string | null): string {
-  const parsed = value ? new Date(value) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleString('en-SG');
+  return formatSgtDateTime(value);
 }
 
 function paymentLines(orderData: typeof DEFAULT_SAMPLE_ORDER): string[] {

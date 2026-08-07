@@ -3,6 +3,7 @@ import type { KitchenChit } from '@/utils/printer';
 import { MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import type { AppliedVoucher, CartItem, StaffSession, Totals } from '@/types';
 import type { AppliedDiscountLine } from '@/utils/discounts';
+import { formatSgtDateTime, formatSgtTime } from '@/utils/datetime';
 
 export interface PrintableOrderItem {
   quantity: number;
@@ -81,30 +82,15 @@ function terminalMethodLabel(method: TerminalPaymentMethod): string {
 }
 
 export function formatReceiptTime(value?: string | null): string {
-  const parsed = value ? new Date(value) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleTimeString('en-SG', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return formatSgtTime(value, { hour: 'numeric', minute: '2-digit' });
 }
 
 function receiptTimestamp(order: PrintableOrder): string {
-  if (order.usePrintTime) {
-    return new Date().toLocaleString('en-SG');
-  }
-  const parsed = order.createdAt ? new Date(order.createdAt) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleString('en-SG');
+  return formatSgtDateTime(order.usePrintTime ? null : order.createdAt);
 }
 
 function chitTimestamp(order: PrintableOrder): string {
-  if (order.usePrintTime) {
-    return new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false });
-  }
-  const parsed = order.createdAt ? new Date(order.createdAt) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatSgtTime(order.usePrintTime ? null : order.createdAt);
 }
 
 export function receiptCenter(text: string): string {

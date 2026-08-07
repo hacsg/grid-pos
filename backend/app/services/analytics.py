@@ -35,9 +35,7 @@ from app.schemas.analytics import (
     TopProductItem,
     TrendPoint,
 )
-from app.services.gto import SGT, sgt_day_bounds_utc
-
-UTC = ZoneInfo("UTC")
+from app.utils.timezone import SGT, UTC, sgt_day_bounds_utc
 
 # Display buckets for the payment-mix chart, in fixed order.
 PAYMENT_BUCKETS = ("Cash", "Card", "PayNow", "Voucher", "Other")

@@ -16,6 +16,7 @@ import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { useScannerWedge } from '@/utils/useScannerWedge';
 import { getScannerVoucherAffordance } from '@/utils/giftCards';
+import { formatSgtTime } from '@/utils/datetime';
 
 interface RecentRedemption {
   code: string;
@@ -351,7 +352,12 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
     return () => window.clearInterval(id);
   }, []);
 
-  const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const timeLabel = formatSgtTime(now.toISOString(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 
   function resetForNext() {
     setValidated(null);
@@ -574,8 +580,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
 
   function formatRedeemedTime(iso: string): string {
     try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return formatSgtTime(iso);
     } catch {
       return '';
     }

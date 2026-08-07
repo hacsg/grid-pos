@@ -24,7 +24,7 @@ from app.services import gto_transmit
 from app.utils.auth import get_current_staff
 
 router = APIRouter(prefix="/gto", tags=["gto"])
-SGT = ZoneInfo("Asia/Singapore")
+from app.utils.timezone import SGT
 
 
 def _require_cron_secret(x_cron_secret: str | None) -> None:

@@ -37,7 +37,7 @@ from app.schemas.flavor_analytics import (
     ParetoPoint,
 )
 from app.services.analytics import _to_sgt
-from app.services.gto import SGT, sgt_day_bounds_utc
+from app.utils.timezone import SGT, sgt_day_bounds_utc
 
 Granularity = Literal["daily", "weekly", "monthly"]
 

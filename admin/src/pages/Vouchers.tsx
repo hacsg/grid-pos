@@ -12,6 +12,7 @@ import {
   issueVoucher,
 } from '@/api/client';
 import type { Campaign, Customer, Voucher, VoucherType } from '@/types';
+import { formatSgtDate } from '@/utils/datetime';
 import toast from 'react-hot-toast';
 
 // --- Issue Voucher Modal (campaign-based) ---
@@ -359,7 +360,7 @@ export default function Vouchers() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3 text-xs text-text-muted">
-                      {new Date(v.created_at).toLocaleDateString('en-SG')}
+                      {formatSgtDate(v.created_at)}
                     </td>
                   </tr>
                 );

@@ -33,8 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gto_file import GtoFile
 from app.models.order import Order, OrderStatus
-
-SGT = ZoneInfo("Asia/Singapore")
+from app.utils.timezone import SGT, UTC, sgt_day_bounds_utc
 _CENTS = Decimal("0.01")
 
 # Payment buckets in file-column order (fields 11-17).
@@ -58,13 +57,6 @@ class HourRow:
     payments: dict[str, Decimal] = field(
         default_factory=lambda: {col: Decimal("0") for col in PAYMENT_COLUMNS}
     )
-
-
-def sgt_day_bounds_utc(sales_date: date) -> tuple[datetime, datetime]:
-    """UTC datetime range covering one SGT calendar day [start, end)."""
-    start_sgt = datetime.combine(sales_date, time.min, tzinfo=SGT)
-    end_sgt = start_sgt + timedelta(days=1)
-    return start_sgt.astimezone(ZoneInfo("UTC")), end_sgt.astimezone(ZoneInfo("UTC"))
 
 
 def _order_payment_split(order: Order) -> dict[str, Decimal]:

@@ -37,7 +37,7 @@ from app.services.orders import (
     update_order_status_service,
 )
 
-SGT_TZ = ZoneInfo("Asia/Singapore")
+from app.utils.timezone import SGT as SGT_TZ
 from app.services.vouchers import apply_vouchers_to_order, load_applied_vouchers_for_order
 from app.utils.auth import get_current_staff
 from app.utils.hashing import verify_pin

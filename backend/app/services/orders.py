@@ -23,20 +23,11 @@ from app.schemas.order import OrderCreate, OrderItemCreate
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 from app.services.vouchers import apply_vouchers_to_order
 
+from app.utils.timezone import SGT as SGT_TZ, business_day_bounds  # noqa: F401  (re-exported)
+
 CENT = Decimal("0.01")
-SGT_TZ = ZoneInfo("Asia/Singapore")
 logger = logging.getLogger(__name__)
 
-
-def business_day_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
-    """Return UTC bounds [start, end) for the current Singapore business day."""
-    current_utc = now or datetime.now(UTC)
-    if current_utc.tzinfo is None:
-        current_utc = current_utc.replace(tzinfo=UTC)
-    current_sgt = current_utc.astimezone(SGT_TZ)
-    day_start_sgt = datetime.combine(current_sgt.date(), time.min, tzinfo=SGT_TZ)
-    day_end_sgt = day_start_sgt + timedelta(days=1)
-    return day_start_sgt.astimezone(UTC), day_end_sgt.astimezone(UTC)
 
 # Valid status transitions: current -> set of allowed next statuses
 _ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {

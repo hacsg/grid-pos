@@ -1,7 +1,7 @@
 """Sales reporting services with efficient SQLAlchemy aggregations."""
 
 from collections import defaultdict
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from app.models.outlet import Outlet
 from app.models.product import Product
 from app.models.shift import Shift
 from app.models.staff import Staff
+from app.utils.timezone import sgt_day_bounds_utc
 from app.schemas.report import (
     CategoryBreakdown,
     DailyReportResponse,
@@ -38,26 +39,37 @@ from app.schemas.report import (
 # ---------------------------------------------------------------------------
 
 
+def _sgt_span_utc(start_day: date, end_day: date) -> tuple[datetime, datetime]:
+    """UTC bounds ``[start, end)`` spanning SGT days ``start_day`` .. ``end_day``.
+
+    Periods are SGT calendar periods. These used to be cut on UTC midnight —
+    08:00 to 08:00 SGT — which put a report eight hours out of step with the
+    till's Z-report, analytics, and the landlord GTO feed, all of which cut on
+    SGT midnight. Nothing had landed in the gap yet because the outlets do not
+    trade between midnight and 08:00, but a late close would have been counted
+    on the wrong day with nothing to show for it.
+    """
+    return sgt_day_bounds_utc(start_day)[0], sgt_day_bounds_utc(end_day)[1]
+
+
 def _day_bounds(report_date: date) -> tuple[datetime, datetime]:
-    """Return UTC datetime bounds for a single day."""
-    start = datetime.combine(report_date, time.min, tzinfo=UTC)
-    return start, start + timedelta(days=1)
+    """Return UTC datetime bounds for a single SGT day."""
+    return sgt_day_bounds_utc(report_date)
 
 
 def _week_bounds(week_str: str) -> tuple[datetime, datetime]:
-    """Return UTC datetime bounds for an ISO week string like '2026-W23'."""
+    """Return UTC datetime bounds for an ISO week string like '2026-W23' (SGT days)."""
     year, week_num = week_str.split("-W")
     # Use Python's isocalendar to get the Monday of that ISO week
     # Approach: Jan 4 is always in week 1, compute from there
     jan4 = date(int(year), 1, 4)
     start_of_week_1 = jan4 - timedelta(days=jan4.isoweekday() - 1)
     monday = start_of_week_1 + timedelta(weeks=int(week_num) - 1)
-    start = datetime.combine(monday, time.min, tzinfo=UTC)
-    return start, start + timedelta(weeks=1)
+    return _sgt_span_utc(monday, monday + timedelta(days=6))
 
 
 def _month_bounds(month_str: str) -> tuple[datetime, datetime]:
-    """Return UTC datetime bounds for a month string like '2026-06'."""
+    """Return UTC datetime bounds for a month string like '2026-06' (SGT days)."""
     year, mon = month_str.split("-")
     month_start = date(int(year), int(mon), 1)
     # Next month
@@ -65,9 +77,7 @@ def _month_bounds(month_str: str) -> tuple[datetime, datetime]:
         next_month = date(int(year) + 1, 1, 1)
     else:
         next_month = date(int(year), int(mon) + 1, 1)
-    start = datetime.combine(month_start, time.min, tzinfo=UTC)
-    end = datetime.combine(next_month, time.min, tzinfo=UTC)
-    return start, end
+    return _sgt_span_utc(month_start, next_month - timedelta(days=1))
 
 
 def _calc_change_percent(current: Decimal, previous: Decimal) -> float:
@@ -425,8 +435,7 @@ async def get_product_report(
     outlet_id: UUID | None = None,
 ) -> ProductReportResponse:
     """Aggregate product sales within a date range."""
-    start = datetime.combine(date_from, time.min, tzinfo=UTC)
-    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=UTC)
+    start, end = _sgt_span_utc(date_from, date_to)
 
     # Base: paid orders in range
     paid_order_ids = select(Order.id).where(
@@ -514,8 +523,7 @@ async def get_staff_report(
     outlet_id: UUID | None = None,
 ) -> StaffReportResponse:
     """Aggregate staff performance within a date range."""
-    start = datetime.combine(date_from, time.min, tzinfo=UTC)
-    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=UTC)
+    start, end = _sgt_span_utc(date_from, date_to)
 
     base = select(Order).where(
         Order.created_at >= start,
@@ -576,8 +584,7 @@ async def get_outlet_report(
     date_to: date,
 ) -> OutletReportResponse:
     """Compare sales across all outlets within a date range."""
-    start = datetime.combine(date_from, time.min, tzinfo=UTC)
-    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=UTC)
+    start, end = _sgt_span_utc(date_from, date_to)
 
     # Aggregate per outlet
     outlet_stmt = (

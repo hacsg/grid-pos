@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.order import Order, OrderStatus
 from app.models.till_movement import TillMovement
 from app.models.till_session import TillSession
-from app.services.orders import SGT_TZ, business_day_bounds
+from app.utils.timezone import SGT as SGT_TZ, business_day_bounds
 
 _CENT = Decimal("0.01")
 

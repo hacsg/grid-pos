@@ -1,6 +1,7 @@
 import { api, type PrintablePrintTemplate } from '@/api/client';
 import { buildChit, buildReceiptText, type PrintableOrder } from '@/utils/receipt';
 import type { KitchenChit } from '@/utils/printer';
+import { formatSgtDateTime, formatSgtTime } from '@/utils/datetime';
 
 const DEFAULT_RECEIPT_CONFIG = {
   documentType: 'receipt',
@@ -56,15 +57,11 @@ function currency(value: number): string {
 }
 
 function kitchenTime(order: PrintableOrder): string {
-  const parsed = order.createdAt ? new Date(order.createdAt) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatSgtTime(order.createdAt);
 }
 
 function receiptTime(order: PrintableOrder): string {
-  const parsed = order.createdAt ? new Date(order.createdAt) : new Date();
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  return date.toLocaleString('en-SG');
+  return formatSgtDateTime(order.createdAt);
 }
 
 export async function getCachedActivePrintTemplate(

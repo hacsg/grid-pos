@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from app.utils.timezone import now_utc, to_sgt
+
 RECEIPT_WIDTH = 32
 SUPPORTED_PAPER_WIDTHS = {58: 32, 80: 48}
 RECEIPT_BLOCK_TYPES = {"header", "orderMeta", "itemsTable", "totals", "payment", "footer", "text", "feedCut"}
@@ -152,10 +154,17 @@ def _row(left: str, right: str = "", width: int = RECEIPT_WIDTH) -> str:
 
 
 def _parse_dt(value: Any) -> datetime:
+    """Parse an order timestamp and return it in SGT.
+
+    ``createdAt`` arrives as a UTC instant. Formatting it as-is printed UTC on
+    the paper receipt while the till's own client-rendered copy printed local
+    time — the same sale, two times, eight hours apart.
+    """
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else datetime.now()
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else now_utc()
     except ValueError:
-        return datetime.now()
+        parsed = now_utc()
+    return to_sgt(parsed)
 
 
 def _receipt_timestamp(order_data: dict[str, Any]) -> str:

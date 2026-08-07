@@ -36,5 +36,10 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Run tests in a zone that is NOT Singapore. Anything that formats a time
+    // without pinning timeZone renders in the machine's zone, which silently
+    // looks correct on an SGT till or dev box and wrong everywhere else — the
+    // receipt printer shipped that way. UTC makes the mistake fail here first.
+    env: { TZ: 'UTC' },
   },
 });
