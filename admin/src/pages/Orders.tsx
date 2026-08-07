@@ -223,7 +223,7 @@ export default function Orders() {
                       className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
                     >
                       <div>
-                        <p className="text-sm font-medium text-text">Product {item.product_id.slice(0, 8)}…</p>
+                        <p className="text-sm font-medium text-text">{item.product_name}</p>
                         <p className="text-xs text-text-muted">
                           x{item.quantity} @ ${Number(item.unit_price).toFixed(2)}
                         </p>
@@ -238,10 +238,25 @@ export default function Orders() {
             </div>
 
             <div className="flex items-center justify-between border-t border-gray-100 pt-4">
-              <div>
+              <div className="space-y-0.5">
                 <p className="text-sm text-text-muted">
                   Subtotal: ${Number(detailOrder.subtotal).toFixed(2)}
                 </p>
+                {Number(detailOrder.loyalty_discount ?? 0) > 0 && (
+                  <p className="text-sm text-text-muted">
+                    Loyalty: −${Number(detailOrder.loyalty_discount).toFixed(2)}
+                  </p>
+                )}
+                {(detailOrder.applied_vouchers ?? []).map((voucher) => (
+                  <p key={voucher.id} className="text-sm text-text-muted">
+                    Voucher {voucher.code}: −${Number(voucher.amount_applied).toFixed(2)}
+                  </p>
+                ))}
+                {Number(detailOrder.cdc_amount ?? 0) > 0 && (
+                  <p className="text-sm text-text-muted">
+                    CDC: −${Number(detailOrder.cdc_amount).toFixed(2)}
+                  </p>
+                )}
                 <p className="text-lg font-bold text-text">
                   Total: ${Number(detailOrder.total).toFixed(2)}
                 </p>

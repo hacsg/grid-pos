@@ -272,6 +272,12 @@ async def apply_vouchers_to_order(
     if new_total < 0:
         new_total = Decimal("0.00")
     order.total = new_total
+    # Record what the vouchers took off, not just the discounted total. Without
+    # this the order carries a subtotal and a smaller total with nothing to
+    # explain the gap: reports, receipts and the GTO payment split all read
+    # voucher_amount and saw zero on a sale that used a voucher. Kept in step
+    # with the total above so subtotal - loyalty - voucher_amount == total.
+    order.voucher_amount = quantize_money(total_voucher_amount)
 
     try:
         await db.commit()

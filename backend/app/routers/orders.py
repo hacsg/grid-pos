@@ -191,8 +191,12 @@ async def get_order(
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> Order:
-    """Return one order with its items."""
-    return await load_order_or_404(db, order_id)
+    """Return one order with its items and any vouchers applied to it."""
+    order = await load_order_or_404(db, order_id)
+    # Enrich like the voucher-apply route does: without this the detail view has
+    # no way to show which vouchers were used, only an unexplained gap between
+    # subtotal and total.
+    return await _enrich_order_response(db, order)
 
 
 @router.put("/{order_id}/status", response_model=OrderRead)

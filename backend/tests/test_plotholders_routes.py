@@ -364,3 +364,111 @@ async def test_member_voucher_list_flags_gift_cards(client: AsyncClient) -> None
     assert vouchers["FREES-ABC123"]["is_gift_card"] is False
 
     app.dependency_overrides.pop(get_plotholders_client, None)
+
+
+async def test_applying_a_voucher_records_the_amount_on_the_order(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """The order must say what the voucher took off, not just carry a smaller total.
+
+    Regression: apply_vouchers_to_order discounted the total but left
+    voucher_amount at zero, so an order showed a subtotal and a smaller total
+    with nothing to explain the gap — and reports, receipts and the GTO payment
+    split all read voucher_amount.
+    """
+    product.price = Decimal("18.50")
+    await db_session.commit()
+    await db_session.refresh(product)
+
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+    assert order.voucher_amount == Decimal("0.00")
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-TEST01": {
+                "id": "v_gift",
+                "code": "SSCSIGNCCP-TEST01",
+                "kind": "amount_off",
+                "source": "gift",
+                "status": "active",
+                "value": 3.5,
+            }
+        }
+    )
+
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-TEST01"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.total == Decimal("15.00")
+    assert reloaded.voucher_amount == Decimal("3.50")
+    # The stated discount must always explain the gap between subtotal and total.
+    assert reloaded.subtotal - reloaded.voucher_amount == reloaded.total
+
+
+async def test_order_detail_reports_which_vouchers_were_used(
+    client: AsyncClient, db_session, outlet, cashier_staff, cashier_token, product
+) -> None:
+    """GET /orders/{id} must name the vouchers applied, not just a smaller total.
+
+    The route returned the bare order, leaving applied_vouchers null, so the
+    only trace of a voucher in the detail view was an unexplained gap between
+    subtotal and total.
+    """
+    product.price = Decimal("18.50")
+    await db_session.commit()
+    await db_session.refresh(product)
+
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-TEST02": {
+                "id": "v_gift2",
+                "code": "SSCSIGNCCP-TEST02",
+                "kind": "amount_off",
+                "source": "gift",
+                "status": "active",
+                "value": 3.5,
+            }
+        }
+    )
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-TEST02"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    resp = await client.get(
+        f"/api/orders/{order.id}",
+        headers={"Authorization": f"Bearer {cashier_token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert [v["code"] for v in body["applied_vouchers"]] == ["SSCSIGNCCP-TEST02"]
+    assert float(body["voucher_discount"]) == 3.5
+    assert float(body["voucher_amount"]) == 3.5
+    # The line items must be nameable without a second lookup.
+    assert body["items"][0]["product_name"] == product.name

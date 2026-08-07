@@ -132,13 +132,28 @@ export interface Order {
   created_at: string;
   updated_at: string;
   items?: OrderItem[];
+  voucher_amount?: number | null;
+  cdc_amount?: number | null;
+  loyalty_discount?: number | null;
+  applied_vouchers?: AppliedVoucher[] | null;
+  voucher_discount?: number | null;
   outlet_name?: string;
   staff_name?: string;
+}
+
+export interface AppliedVoucher {
+  id: string;
+  voucher_id: string;
+  code: string;
+  type: string;
+  amount_applied: number;
+  created_at?: string | null;
 }
 
 export interface OrderItem {
   id: string;
   product_id: string;
+  product_name: string;
   quantity: number;
   unit_price: number;
   modifiers: { modifier_name: string; price_adjustment: number }[];
