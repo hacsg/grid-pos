@@ -382,7 +382,11 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
         return true; // keep scanner paused while showing the voucher card
       } catch (err: any) {
         if (err?.response?.status === 409) {
-          toast.error('Voucher has already been redeemed');
+          // A 409 is no longer only "already redeemed" — an unactivated gift
+          // card lands here too, and the difference decides what the person at
+          // the counter does next, so show the server's own reason.
+          const msg = err?.response?.data?.detail;
+          toast.error(typeof msg === 'string' ? msg : 'Voucher has already been redeemed');
           setScannerPaused(false);
           setCode('');
           return true; // definitively a voucher — stop here

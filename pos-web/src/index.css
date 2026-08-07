@@ -2756,14 +2756,40 @@ html.display-active #root {
 }
 
 @media (max-width: 520px) {
+  /* This block used to set flex-direction: column, which stacked the outlet
+     block above the clock and made the header TALLER on the smallest screens —
+     113px on a 390px-wide phone, sitting under a 63px staff topbar. Together
+     with the title and subtitle that was 247px, 29% of the viewport, spent
+     before the camera even started, pushing manual entry and the recent list
+     off the fold. The scanner is a phone-first screen: the camera is the page.
+     Keep the header on one row and give the space back. */
   .voucher-header {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 8px 12px;
   }
   .voucher-header-right {
-    justify-content: space-between;
+    gap: 8px;
+  }
+  .voucher-header-left .brand-mark {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+  /* The staff topbar directly above already names the signed-in person. */
+  .voucher-staff {
+    display: none;
+  }
+  .voucher-time {
+    font-size: 13px;
+    padding: 4px 9px;
+    min-height: 32px;
+  }
+  .voucher-signout {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 }
 
@@ -3399,6 +3425,27 @@ html.display-active #root {
   .manual-input {
     min-height: 52px;
     font-size: 20px;
+  }
+}
+
+/* Phone sizing for the scanner title block.
+   This must sit AFTER the 640px block above, which also sets .voucher-title.
+   A media query adds no specificity, so whichever matching rule comes last in
+   the file wins — the same overrides placed earlier silently did nothing. */
+@media (max-width: 520px) {
+  .voucher-title {
+    font-size: 18px;
+  }
+  /* Onboarding copy — useful on day one, two wasted lines above the camera on
+     every scan after that. Delete this rule to bring it back on phones. */
+  .voucher-subtitle {
+    display: none;
+  }
+  .voucher-title-row {
+    margin-bottom: 0;
+  }
+  .voucher-main {
+    padding: 8px 10px 14px;
   }
 }
 
