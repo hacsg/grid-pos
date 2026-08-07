@@ -3946,6 +3946,23 @@ html.display-active #root {
   font-variant-numeric: tabular-nums;
 }
 
+/* The amount actually taken. Ruled off and weighted so it reads as the answer
+   to the discount lines above it, not as one more line among them. */
+.txn-breakdown-total {
+  border-top: 1px solid var(--grid-border, rgba(0, 0, 0, 0.12));
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+.txn-breakdown-total dt {
+  color: var(--grid-text, inherit);
+  font-weight: var(--fw-semibold);
+}
+
+.txn-breakdown-total dd {
+  font-size: 1.05rem;
+}
+
 .txn-refund-list {
   list-style: none;
   margin: 0;

@@ -293,7 +293,27 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
             <section className="txn-card">
               <h2>Payment</h2>
               <dl className="txn-breakdown">
-                <div><dt>Total</dt><dd>{formatCurrency(detail.total)}</dd></div>
+                {/* Items above are listed at their gross line price, so without
+                    these the sheet showed $18.50 of items next to a $15.00
+                    total and nothing to account for the difference. */}
+                {money(detail.subtotal) !== money(detail.total) && (
+                  <div><dt>Subtotal</dt><dd>{formatCurrency(detail.subtotal)}</dd></div>
+                )}
+                {money(detail.loyalty_discount) > 0 && (
+                  <div>
+                    <dt>Loyalty</dt>
+                    <dd>-{formatCurrency(detail.loyalty_discount)}</dd>
+                  </div>
+                )}
+                {(detail.applied_vouchers ?? []).map((voucher) => (
+                  <div key={voucher.id}>
+                    <dt>Voucher {voucher.code}</dt>
+                    <dd>-{formatCurrency(voucher.amount_applied)}</dd>
+                  </div>
+                ))}
+                <div className="txn-breakdown-total">
+                  <dt>Total collected</dt><dd>{formatCurrency(detail.total)}</dd>
+                </div>
                 {money(detail.cash_amount) > 0 && (
                   <div><dt>Cash</dt><dd>{formatCurrency(detail.cash_amount)}</dd></div>
                 )}
@@ -303,8 +323,11 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
                 {money(detail.cdc_amount) > 0 && (
                   <div><dt>CDC voucher</dt><dd>{formatCurrency(detail.cdc_amount)}</dd></div>
                 )}
-                {money(detail.voucher_amount) > 0 && (
-                  <div><dt>Voucher</dt><dd>{formatCurrency(detail.voucher_amount)}</dd></div>
+                {/* voucher_amount is the same money as the per-voucher lines
+                    above, so only fall back to it when the codes are missing
+                    (orders redeemed before applied_vouchers was returned). */}
+                {(detail.applied_vouchers ?? []).length === 0 && money(detail.voucher_amount) > 0 && (
+                  <div><dt>Voucher</dt><dd>-{formatCurrency(detail.voucher_amount)}</dd></div>
                 )}
                 {money(detail.cash_change) > 0 && (
                   <div><dt>Change</dt><dd>{formatCurrency(detail.cash_change)}</dd></div>
