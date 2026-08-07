@@ -20,6 +20,7 @@ class ProductBase(BaseModel):
     image_url: str | None = Field(default=None, max_length=500)
     is_available: bool = True
     is_open_price: bool = False
+    is_gift_card: bool = False
 
 
 class ProductCreate(ProductBase):
@@ -35,6 +36,7 @@ class ProductUpdate(BaseModel):
     category_id: UUID | None = None
     image_url: str | None = Field(default=None, max_length=500)
     is_available: bool | None = None
+    is_gift_card: bool | None = None
 
 
 class ProductRead(ProductBase, TimestampSchema):

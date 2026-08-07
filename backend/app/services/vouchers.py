@@ -20,6 +20,34 @@ from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClie
 CENT = Decimal("0.01")
 logger = logging.getLogger(__name__)
 
+# Plotholders statuses that may be spent at a till. Empty string covers older
+# non-gift vouchers that omit status entirely (treated as spendable when missing).
+SPENDABLE_VOUCHER_STATUSES = {"active", "available", ""}
+
+
+def _assert_spendable(external: dict, code: str) -> None:
+    """Reject a voucher that Plotholders does not consider spendable.
+
+    Physical gift cards are printed 'inactive' and are worth nothing until a till
+    activates them at the point of sale. Checking redeemed_at alone would let an
+    unactivated card off the print run be spent for its full face value.
+    """
+    status_raw = external.get("status")
+    if status_raw is None:
+        return
+    status_norm = str(status_raw).strip().lower()
+    if status_norm in SPENDABLE_VOUCHER_STATUSES:
+        return
+    if status_norm == "inactive":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Gift card has not been activated — it must be paid for first",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"Voucher {code} is not spendable (status: {status_raw})",
+    )
+
 
 def quantize_money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
@@ -181,6 +209,9 @@ async def apply_vouchers_to_order(
         redeemed = external.get("redeemed_at") or external.get("redeemed") or external.get("is_redeemed")
         if redeemed:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Voucher {normalized} has already been redeemed")
+
+        # Phase 1 guard: reject inactive / non-spendable before any local write.
+        _assert_spendable(external, normalized)
 
         amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
         amount = _parse_voucher_amount(amount_raw)

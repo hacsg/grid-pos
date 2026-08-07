@@ -58,6 +58,7 @@ export interface Product extends Timestamped {
   image_url: string | null;
   is_available: boolean;
   is_open_price?: boolean;
+  is_gift_card?: boolean;
   category?: Category;
   modifier_groups: ModifierGroup[];
   stock?: number | null;
@@ -697,6 +698,7 @@ export interface PlotholdersVoucher {
   discount_cents?: number | null;
   type?: string;
   expires_at?: string | null;
+  is_gift_card?: boolean;
 }
 
 export interface MemberWithVouchers extends Omit<LoyaltyMember, 'vouchers'> {
@@ -798,6 +800,20 @@ export async function validateVoucher(
 
 export async function applyVouchersToOrder(orderId: string, codes: string[]): Promise<OrderRead> {
   const { data } = await api.post<OrderRead>(`/orders/${orderId}/vouchers`, { codes });
+  return data;
+}
+
+export interface GiftCardActivateResponse {
+  code: string;
+  amount: number | string;
+  status: string;
+  expires_at?: string | null;
+}
+
+export async function activateGiftCard(code: string): Promise<GiftCardActivateResponse> {
+  const { data } = await api.post<GiftCardActivateResponse>('/vouchers/gift-cards/activate', {
+    code: code.trim(),
+  });
   return data;
 }
 

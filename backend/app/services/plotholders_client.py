@@ -166,6 +166,14 @@ class PlotholdersClient:
             json={"code": code, "staff_id": staff_id, "outlet": outlet},
         )
 
+    async def activate_gift_card(self, code: str, staff_id: str, outlet: str) -> dict[str, Any]:
+        """Activate a physical gift card at the point of sale."""
+        return await self._request(
+            "POST",
+            "/api/gifts/activate",
+            json={"code": code, "staff_id": staff_id, "outlet": outlet},
+        )
+
     async def get_voucher(self, voucher_ref: str) -> dict[str, Any] | None:
         """Return a Plotholders voucher by id or code.
 

@@ -170,3 +170,40 @@ async def test_redeem_voucher_and_reward_paths() -> None:
         "/api/vouchers/voucher_1/redeem",
         "/api/rewards/reward_1/redeem",
     ]
+
+
+@pytest.mark.asyncio
+async def test_activate_gift_card_posts_code_staff_and_outlet() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured
+        captured = {
+            "path": request.url.path,
+            "method": request.method,
+            "json": dict(__import__("json").loads(request.content.decode())),
+        }
+        return httpx.Response(
+            200,
+            json={
+                "code": "GIFT-50",
+                "value": 50,
+                "status": "active",
+            },
+        )
+
+    client = PlotholdersClient(
+        base_url="https://plotholders.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.activate_gift_card("GIFT-50", "staff-1", "Test Outlet")
+
+    assert result["status"] == "active"
+    assert captured["path"] == "/api/gifts/activate"
+    assert captured["method"] == "POST"
+    assert captured["json"] == {
+        "code": "GIFT-50",
+        "staff_id": "staff-1",
+        "outlet": "Test Outlet",
+    }

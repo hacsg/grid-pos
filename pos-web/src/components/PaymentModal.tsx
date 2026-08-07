@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Banknote, CheckCircle2, CreditCard, Loader2, Printer, QrCode, Receipt, Split, Undo2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
+  activateGiftCard,
   applyVouchersToOrder,
   createOrder,
   formatCurrency,
@@ -26,6 +27,7 @@ import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
 import { buildPayNowPayload, MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
 import { newIdempotencyKey } from '@/utils/idempotency';
+import { calculateRequiredGiftCards } from '@/utils/giftCards';
 import { isPrintingSupported, openCashDrawer, printKitchenChit, printReceipt as printReceiptUsb } from '@/utils/printer';
 import {
   buildChit,
@@ -51,7 +53,7 @@ interface PaymentModalProps {
 
 type PaymentMode = 'cash' | 'card' | 'paynow' | 'split';
 type TerminalPaymentMethod = 'card' | 'paynow';
-type PaymentStep = 'payment' | 'processing' | 'complete';
+type PaymentStep = 'payment' | 'processing' | 'activate' | 'complete';
 
 const CARD_POLL_INTERVAL_MS = 2000;
 const CARD_POLL_TIMEOUT_MS = 95000;
@@ -197,6 +199,24 @@ export default function PaymentModal({
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptSnapshot | null>(null);
   const [error, setError] = useState('');
+
+  // Gift card activation state
+  const [activationCode, setActivationCode] = useState('');
+  const [activatedCount, setActivatedCount] = useState(0);
+  const [activating, setActivating] = useState(false);
+  const [activationError, setActivationError] = useState('');
+  const [activationWarning, setActivationWarning] = useState('');
+  const activationInputRef = useRef<HTMLInputElement | null>(null);
+
+  const requiredGiftCards = items
+    .filter((i) => i.product.is_gift_card)
+    .flatMap((item) =>
+      Array.from({ length: item.quantity }, () => ({
+        price: money(item.customPrice ?? item.product.price),
+      }))
+    );
+  const totalGiftCardsToActivate = requiredGiftCards.length;
+
   const [terminalConnected, setTerminalConnected] = useState<boolean | null>(null);
   const [cardPayment, setCardPayment] = useState<CardPaymentSession | null>(null);
   // Lets the cashier abort a terminal payment (during the blocking /start call
@@ -589,7 +609,13 @@ export default function PaymentModal({
         }
       })();
     }
-    setStep('complete');
+    // Gift cards are activated only once payment has succeeded — activating
+    // earlier would leave live, spendable, unpaid cards behind on an abandoned sale.
+    if (totalGiftCardsToActivate > 0) {
+      setStep('activate');
+    } else {
+      setStep('complete');
+    }
     setCardPayment(null);
     setSubmitting(false);
     setCanAbortTerminal(false);
@@ -1079,6 +1105,60 @@ export default function PaymentModal({
     }
   }
 
+  async function handleActivateSubmit(event?: React.FormEvent) {
+    event?.preventDefault();
+    const code = activationCode.trim();
+    if (!code) return;
+
+    setActivating(true);
+    setActivationError('');
+    setActivationWarning('');
+
+    try {
+      const res = await activateGiftCard(code);
+      const returnedAmount = Number(res.amount);
+      const expectedPrice = requiredGiftCards[activatedCount].price;
+      
+      let warning = '';
+      if (returnedAmount !== expectedPrice) {
+        warning = `This card is worth ${formatCurrency(returnedAmount)} but the customer paid ${formatCurrency(expectedPrice)}.`;
+        setActivationWarning(warning);
+        // It doesn't block, so we just show the warning if it happens, but still count it as activated
+      }
+
+      setActivationCode('');
+      
+      const newCount = activatedCount + 1;
+      setActivatedCount(newCount);
+      
+      if (!warning) {
+        toast.success(`Activated card ${newCount} of ${totalGiftCardsToActivate}`);
+      } else {
+        toast.success(`Activated card ${newCount} of ${totalGiftCardsToActivate} (with warning)`);
+      }
+
+      if (newCount >= totalGiftCardsToActivate) {
+        setStep('complete');
+      } else {
+        window.setTimeout(() => activationInputRef.current?.focus(), 80);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err.message || 'Activation failed';
+      setActivationError(typeof msg === 'string' ? msg : 'Could not activate card');
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  function handleSkipActivation() {
+    tapFeedback();
+    const countRemaining = totalGiftCardsToActivate - activatedCount;
+    if (window.confirm(`The customer has paid for ${countRemaining} card(s) that will not work. Note the codes and activate them from the Acre Club admin panel.`)) {
+      console.warn(`[Gift Cards] Skipped activation of ${countRemaining} card(s) for order ${receipt?.order?.id}`);
+      setStep('complete');
+    }
+  }
+
   async function printReceipt() {
     if (!receipt) {
       return;
@@ -1140,16 +1220,20 @@ export default function PaymentModal({
             <p>
               {step === 'complete'
                 ? 'Complete'
-                : step === 'processing'
-                  ? `${terminalMethodLabel(cardPayment?.terminalPaymentMethod ?? 'card')} payment`
-                  : 'Payment'}
+                : step === 'activate'
+                  ? 'Activation'
+                  : step === 'processing'
+                    ? `${terminalMethodLabel(cardPayment?.terminalPaymentMethod ?? 'card')} payment`
+                    : 'Payment'}
             </p>
             <h2 id="payment-title">
               {step === 'complete'
                 ? 'Order complete'
-                : step === 'processing'
-                  ? 'Processing payment'
-                  : formatCurrency(totals.total)}
+                : step === 'activate'
+                  ? `Activate ${totalGiftCardsToActivate} gift card(s)`
+                  : step === 'processing'
+                    ? 'Processing payment'
+                    : formatCurrency(totals.total)}
             </h2>
           </div>
           <button
@@ -1457,6 +1541,57 @@ export default function PaymentModal({
               </button>
               <button className="primary-button" type="button" disabled>
                 Processing payment…
+              </button>
+            </footer>
+          </>
+        ) : step === 'activate' ? (
+          <>
+            <div className="payment-body">
+              <form className="scanner-form" onSubmit={handleActivateSubmit} style={{ marginTop: '1rem' }}>
+                <label>
+                  <span>Scan or enter gift card QR</span>
+                  <div className="scanner-input">
+                    <QrCode size={22} aria-hidden="true" />
+                    <input
+                      ref={activationInputRef}
+                      value={activationCode}
+                      onChange={(e) => { setActivationCode(e.target.value); setActivationError(''); setActivationWarning(''); }}
+                      autoFocus
+                      inputMode="text"
+                      autoComplete="off"
+                      enterKeyHint="done"
+                      placeholder="Gift card code"
+                      disabled={activating}
+                    />
+                  </div>
+                </label>
+                <button className="primary-button" type="submit" disabled={activating || !activationCode.trim()}>
+                  {activating ? 'Activating…' : 'Activate'}
+                </button>
+              </form>
+              
+              <div style={{ textAlign: 'center', marginTop: '1rem', color: '#4b5563' }}>
+                Card {activatedCount + 1} of {totalGiftCardsToActivate}
+              </div>
+
+              {activationError && (
+                <div className="payment-error" style={{ marginTop: '1rem' }}>{activationError}</div>
+              )}
+              {activationWarning && (
+                <div style={{ padding: '0.75rem', backgroundColor: '#fffbeb', color: '#92400e', borderRadius: '8px', marginTop: '1rem', border: '1px solid #fcd34d' }}>
+                  {activationWarning}
+                </div>
+              )}
+            </div>
+
+            <footer className="sheet-actions">
+              <button 
+                className="secondary-button danger-text" 
+                type="button" 
+                onClick={handleSkipActivation}
+                disabled={activating}
+              >
+                Can't activate now
               </button>
             </footer>
           </>

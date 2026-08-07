@@ -83,6 +83,25 @@ class VoucherValidateRead(BaseModel):
     type: VoucherType
     amount: Money | None = None
     is_valid: bool = True
+    kind: str | None = None  # free_item | amount_off | percent_off
+    source: str | None = None  # gift | birthday | tier | ...
+    status: str | None = None  # active | inactive | redeemed | ...
+    is_gift_card: bool = False  # source == 'gift'
+
+
+class GiftCardActivateRequest(BaseModel):
+    """Activate a physical gift card at the till after payment."""
+
+    code: str = Field(min_length=1, max_length=64)
+
+
+class GiftCardActivateRead(BaseModel):
+    """Activated gift card returned to the POS."""
+
+    code: str
+    amount: Money
+    status: str
+    expires_at: datetime | None = None
 
 
 class VoucherApplyRequest(BaseModel):

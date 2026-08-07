@@ -13,7 +13,10 @@ from app.models.customer import Customer
 from app.models.staff import Staff, StaffRole
 from app.models.voucher import Voucher, VoucherType
 from app.schemas.order import OrderRead
+from app.models.outlet import Outlet
 from app.schemas.voucher import (
+    GiftCardActivateRead,
+    GiftCardActivateRequest,
     VoucherApplyRequest,
     VoucherBulkIssueRequest,
     VoucherBulkIssueResponse,
@@ -28,6 +31,7 @@ from app.services.customers import load_customer_or_404
 from app.services.orders import load_order_or_404
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
 from app.services.vouchers import (
+    _assert_spendable,
     apply_vouchers_to_order,
     create_voucher,
     issue_voucher,
@@ -97,6 +101,43 @@ async def redeem_voucher(
         return await plotholders.redeem_voucher_by_code(code, staff_id, outlet)
     except PlotholdersAPIError as exc:
         raise _plotholders_http_exception(exc) from exc
+
+
+@router.post("/gift-cards/activate", response_model=GiftCardActivateRead)
+async def activate_gift_card(
+    payload: GiftCardActivateRequest,
+    db: AsyncSession = Depends(get_db),
+    plotholders: PlotholdersClient = Depends(get_plotholders_client),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Any:
+    """Activate a physical gift card after it has been paid for at the till."""
+    outlet = await db.get(Outlet, current_staff.outlet_id)
+    outlet_name = outlet.name if outlet else str(current_staff.outlet_id)
+
+    try:
+        external = await plotholders.activate_gift_card(
+            payload.code.strip(),
+            str(current_staff.id),
+            outlet_name,
+        )
+    except PlotholdersAPIError as exc:
+        raise _plotholders_http_exception(exc) from exc
+
+    code = str(external.get("code") or payload.code)
+    amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
+    try:
+        amount = float(amount_raw)
+    except Exception:
+        amount = 0.0
+    status_val = str(external.get("status") or "active")
+    expires_at = external.get("expires_at")
+
+    return GiftCardActivateRead(
+        code=code,
+        amount=amount,
+        status=status_val,
+        expires_at=expires_at,
+    )
 
 
 @router.post("", response_model=VoucherRead, status_code=status.HTTP_201_CREATED)
@@ -208,6 +249,8 @@ async def validate_voucher(
     if redeemed:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voucher has already been redeemed")
 
+    _assert_spendable(external, payload.code)
+
     amount_raw = external.get("amount") or external.get("value") or external.get("discount") or 0
     try:
         amount = float(amount_raw)
@@ -217,12 +260,22 @@ async def validate_voucher(
     # Return minimal validate response; id may be code for external
     vid = external.get("id") or payload.code
     vtype = external.get("type") or "acre_group"
+    source = external.get("source")
+    source_str = str(source) if source is not None else None
+    kind = external.get("kind")
+    kind_str = str(kind) if kind is not None else None
+    status_raw = external.get("status")
+    status_str = str(status_raw) if status_raw is not None else None
     return VoucherValidateRead(
         id=str(vid),
         code=payload.code,
         type=vtype if vtype in ("cdc", "acre_group") else "acre_group",
         amount=amount,
         is_valid=True,
+        kind=kind_str,
+        source=source_str,
+        status=status_str,
+        is_gift_card=source_str == "gift",
     )
 
 

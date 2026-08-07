@@ -29,6 +29,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     # Open-price: the order line supplies the amount (ad-hoc upcharges).
     is_open_price: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Selling this rings up a physical gift card: the POS must scan a card and
+    # activate it for the product's price before the sale can complete.
+    is_gift_card: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     category = relationship("Category", back_populates="products")
     modifier_group_assignments = relationship(

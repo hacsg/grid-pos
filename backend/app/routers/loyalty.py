@@ -163,7 +163,16 @@ async def get_customer_with_vouchers(
         vouchers = []
 
     member = _adapt_customer(customer)
-    member["vouchers"] = vouchers
+    # Plotholders returns raw voucher rows, which carry `source` but no
+    # `is_gift_card`. The POS keys its "don't burn this, apply it at checkout"
+    # guard off that flag, so compute it here too — otherwise the flag is simply
+    # absent at runtime, reads as false, and the Scanner offers a one-tap Redeem
+    # that consumes a cash-value gift card with no sale attached.
+    member["vouchers"] = [
+        {**voucher, "is_gift_card": str(voucher.get("source") or "").lower() == "gift"}
+        for voucher in vouchers
+        if isinstance(voucher, dict)
+    ]
     return member
 
 

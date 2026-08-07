@@ -15,6 +15,7 @@ import {
 import type { StaffSession } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
 import { useScannerWedge } from '@/utils/useScannerWedge';
+import { getScannerVoucherAffordance } from '@/utils/giftCards';
 
 interface RecentRedemption {
   code: string;
@@ -56,6 +57,7 @@ interface ValidatedVoucher {
   type: 'cdc' | 'acre_group';
   amount?: number;
   id?: string;
+  is_gift_card?: boolean;
 }
 
 interface QrScannerProps {
@@ -664,14 +666,20 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
                 )}
                 <div className="voucher-result-code">{validated.code}</div>
 
-                <button
-                  type="button"
-                  className="primary-button voucher-redeem-btn-large"
-                  onClick={handleRedeem}
-                  disabled={loading}
-                >
-                  {loading ? 'Redeeming…' : 'Redeem Voucher'}
-                </button>
+                {validated.is_gift_card ? (
+                  <div className="voucher-result-instruction" style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
+                    <p style={{ margin: 0, fontWeight: 500, color: '#374151' }}>Add items to the sale and apply this at checkout.</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary-button voucher-redeem-btn-large"
+                    onClick={handleRedeem}
+                    disabled={loading}
+                  >
+                    {loading ? 'Redeeming…' : 'Redeem Voucher'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="voucher-cancel-link"
@@ -723,14 +731,20 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
                           <strong>{v.title || v.code}</strong>
                           <span>{amount > 0 ? formatCurrency(amount) : v.description || v.code}</span>
                         </div>
-                        <button
-                          className={isRedeemed ? 'secondary-button' : 'primary-button'}
-                          type="button"
-                          disabled={isRedeemed || redeemingCode === v.code}
-                          onClick={() => void handleRedeemMemberVoucher(v)}
-                        >
-                          {isRedeemed ? 'Redeemed' : redeemingCode === v.code ? 'Redeeming…' : 'Redeem'}
-                        </button>
+                        {v.is_gift_card ? (
+                          <div style={{ fontSize: '0.85rem', color: '#6b7280', textAlign: 'right' }}>
+                            Add items to the sale and<br/>apply this at checkout.
+                          </div>
+                        ) : (
+                          <button
+                            className={isRedeemed ? 'secondary-button' : 'primary-button'}
+                            type="button"
+                            disabled={isRedeemed || redeemingCode === v.code}
+                            onClick={() => void handleRedeemMemberVoucher(v)}
+                          >
+                            {isRedeemed ? 'Redeemed' : redeemingCode === v.code ? 'Redeeming…' : 'Redeem'}
+                          </button>
+                        )}
                       </div>
                     );
                   })}

@@ -117,7 +117,8 @@ export default function VoucherSheet({
         return true;
       } catch (err: any) {
         if (err?.response?.status === 409) {
-          toast.error('Voucher has already been redeemed');
+          const msg = err?.response?.data?.detail;
+          toast.error(typeof msg === 'string' ? msg : 'Voucher has already been redeemed');
           return true; // definitively a voucher — stop here
         }
         return false;
