@@ -12,6 +12,7 @@ import {
 } from '@/api/client';
 import type { AppliedVoucher, LoyaltySelection } from '@/types';
 import { tapFeedback } from '@/utils/haptics';
+import { useScannerWedge } from '@/utils/useScannerWedge';
 
 interface VoucherSheetProps {
   open: boolean;
@@ -65,6 +66,20 @@ export default function VoucherSheet({
     }
   }, [open]);
 
+  // The built-in 2D scanner on this POS is a keyboard wedge, not a camera: it
+  // "types" the decoded string and presses Enter. Autofocusing the field alone
+  // isn't enough — focus is lost as soon as staff tap a voucher in the member
+  // list or anywhere else on the sheet, and every scan after that goes nowhere.
+  // Capturing the burst globally means scanning works wherever focus happens to
+  // be, the same way it already does in the Scanner tab and the loyalty sheet.
+  useScannerWedge({
+    enabled: open && !loading,
+    onScan: (scanned) => {
+      setCode('');
+      void submitApply(undefined, scanned);
+    },
+  });
+
   if (!open) {
     return null;
   }
@@ -84,9 +99,11 @@ export default function VoucherSheet({
   // One field, two possibilities: a voucher code applies directly; a scanned
   // membership QR (the Plotholders customer id) attaches the member to the
   // sale and lists their vouchers below for easy redemption.
-  async function submitApply(event?: FormEvent<HTMLFormElement>) {
+  // `scanned` is supplied by the hardware wedge, which never routes through the
+  // input's value; typing into the field falls back to the `code` state.
+  async function submitApply(event?: FormEvent<HTMLFormElement>, scanned?: string) {
     event?.preventDefault();
-    const trimmed = code.trim();
+    const trimmed = (scanned ?? code).trim();
     if (!trimmed) return;
 
     if (appliedCodes.has(trimmed.toUpperCase())) {
@@ -148,6 +165,9 @@ export default function VoucherSheet({
       }
     } finally {
       setLoading(false);
+      // Put the caret back so the next code can be typed straight away, and so
+      // a wedge scan still lands somewhere sensible if it arrives mid-render.
+      window.setTimeout(() => inputRef.current?.focus(), 0);
     }
   }
 
