@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -48,9 +48,14 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     discount_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="available")
-    expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    # These three are written with an aware ``datetime.now(UTC)``. Without an
+    # explicit ``timezone=True`` SQLAlchemy infers a naive ``DateTime()`` from
+    # the annotation, asyncpg binds them with its naive-timestamp codec, and the
+    # write dies on "can't subtract offset-naive and offset-aware datetimes" —
+    # even though the Postgres columns are timestamptz.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    redeemed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    redeemed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     redeemed_order_id: Mapped[Optional[UUID]] = mapped_column(
         Uuid,
         ForeignKey("orders.id", ondelete="SET NULL"),
@@ -75,7 +80,7 @@ class Voucher(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
-    voided_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     customer = relationship("Customer", foreign_keys=[customer_id], back_populates="vouchers")
     campaign = relationship("Campaign", foreign_keys=[campaign_id], back_populates="vouchers")
