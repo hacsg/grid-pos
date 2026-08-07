@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.idempotency_key import IdempotencyKey
@@ -138,8 +138,23 @@ async def complete(
 
 
 async def release(session: AsyncSession, scope: str, key: str) -> None:
-    """Drop an in-progress claim so a failed request can be retried immediately."""
-    record = await session.get(IdempotencyKey, (scope, key))
-    if record is not None and record.state != "completed":
-        await session.delete(record)
-        await session.commit()
+    """Drop an in-progress claim so a failed request can be retried immediately.
+
+    This only ever runs on the error path, where the caller's transaction may
+    already be aborted — one failed statement poisons the session, and every
+    later operation on it raises ``PendingRollbackError``. So roll back first,
+    or the delete cannot run at all and the claim leaks as ``in_progress``:
+    the cashier's retry then gets a 409 "already in progress" that hides the
+    real error until the stale-claim window expires.
+
+    A failure to clean up must never replace the exception that brought us
+    here — that is the one the caller needs to see — so log and move on.
+    """
+    try:
+        await session.rollback()
+        record = await session.get(IdempotencyKey, (scope, key))
+        if record is not None and record.state != "completed":
+            await session.delete(record)
+            await session.commit()
+    except SQLAlchemyError:
+        log.exception("Failed to release idempotency claim scope=%s key=%s", scope, key)
