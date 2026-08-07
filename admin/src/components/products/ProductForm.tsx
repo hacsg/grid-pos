@@ -14,6 +14,7 @@ const productSchema = z.object({
   price: z.coerce.number().positive('Price must be positive'),
   category_id: z.string().min(1, 'Category is required'),
   available: z.boolean(),
+  is_gift_card: z.boolean(),
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
@@ -51,6 +52,7 @@ export default function ProductForm({
       price: product?.price ?? 0,
       category_id: product?.category_id ?? '',
       available: product?.available ?? true,
+      is_gift_card: product?.is_gift_card ?? false,
     },
   });
 
@@ -81,6 +83,7 @@ export default function ProductForm({
       price: product?.price ?? 0,
       category_id: product?.category_id ?? '',
       available: product?.available ?? true,
+      is_gift_card: product?.is_gift_card ?? false,
     };
     reset(formValues);
   }, [product?.id, reset]);
@@ -202,6 +205,23 @@ export default function ProductForm({
         <label htmlFor="available" className="text-sm text-text">
           Available for sale
         </label>
+      </div>
+
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          id="is_gift_card"
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          {...register('is_gift_card')}
+        />
+        <div className="flex flex-col">
+          <label htmlFor="is_gift_card" className="text-sm text-text">
+            Physical gift card
+          </label>
+          <span className="text-xs text-text-muted">
+            Selling this prompts staff to scan and activate a physical card after payment.
+          </span>
+        </div>
       </div>
 
       {/* Modifier Groups Section */}

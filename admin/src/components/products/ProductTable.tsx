@@ -53,7 +53,14 @@ export default function ProductTable({
             {product.name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <p className="font-medium text-text">{product.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-text">{product.name}</p>
+              {product.is_gift_card && (
+                <span className="inline-flex items-center rounded-full bg-primary/5 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  Gift Card
+                </span>
+              )}
+            </div>
             <p className="text-xs text-text-muted line-clamp-1">{product.description}</p>
           </div>
         </div>

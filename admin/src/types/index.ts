@@ -7,6 +7,7 @@ export interface Product {
   category_name: string;
   image_url: string | null;
   available: boolean;
+  is_gift_card: boolean;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -99,6 +100,7 @@ export interface ProductFormData {
   category_id: string;
   image_url: string | null;
   available: boolean;
+  is_gift_card: boolean;
   modifier_groups: ModifierGroup[];
 }
 
