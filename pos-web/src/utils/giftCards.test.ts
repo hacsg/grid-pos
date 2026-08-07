@@ -61,8 +61,11 @@ describe('giftCards pure logic', () => {
     expect(required.map(r => r.price)).toEqual([50, 50, 50, 10]);
   });
 
-  it('a gift card validate response yields the "apply at checkout" affordance, not Redeem', () => {
-    expect(getScannerVoucherAffordance(true)).toBe('instruction');
+  it('a gift card is redeemable from the Scanner, but only behind a confirmation', () => {
+    // Outlets not yet running Grid redeem gift cards here like a CDC coupon,
+    // so this must not be blocked — but it spends the whole card with no
+    // change, so it must never be a single reflex tap either.
+    expect(getScannerVoucherAffordance(true)).toBe('confirm_then_redeem');
     expect(getScannerVoucherAffordance(false)).toBe('redeem_button');
     expect(getScannerVoucherAffordance(undefined)).toBe('redeem_button');
   });

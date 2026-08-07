@@ -327,6 +327,11 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
   const [momentAwarded, setMomentAwarded] = useState(false);
   const [redeemedMemberCodes, setRedeemedMemberCodes] = useState<string[]>([]);
   const [redeemingCode, setRedeemingCode] = useState<string | null>(null);
+  // Gift cards are single-use with no change given, so redeeming one here
+  // consumes its whole value against no order. Outlets not yet on Grid need
+  // exactly this (same as a CDC coupon), but it must be a deliberate two-tap
+  // action rather than something done by reflex on the way past.
+  const [confirmGiftRedeem, setConfirmGiftRedeem] = useState(false);
   const [recent, setRecent] = useState<RecentRedemption[]>(() => loadRecent());
   const [now, setNow] = useState(() => new Date());
   const [scannerPaused, setScannerPaused] = useState(false);
@@ -354,6 +359,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
     setMember(null);
     setMomentAwarded(false);
     setRedeemedMemberCodes([]);
+    setConfirmGiftRedeem(false);
     setCode('');
     setManualOpen(false);
     setScannerPaused(false);
@@ -377,6 +383,9 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
           type: res.type,
           amount: amount > 0 ? amount : undefined,
           id: res.id,
+          // Must be carried through: every gift-card branch below keys off it,
+          // and omitting it here silently made all of them dead code.
+          is_gift_card: res.is_gift_card,
         });
         setJustRedeemed(null);
         return true; // keep scanner paused while showing the voucher card
@@ -670,10 +679,58 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
                 )}
                 <div className="voucher-result-code">{validated.code}</div>
 
-                {validated.is_gift_card ? (
-                  <div className="voucher-result-instruction" style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
-                    <p style={{ margin: 0, fontWeight: 500, color: '#374151' }}>Add items to the sale and apply this at checkout.</p>
-                  </div>
+                {validated.is_gift_card && !confirmGiftRedeem ? (
+                  <>
+                    <div className="voucher-result-instruction" style={{ padding: '0.85rem 1rem', backgroundColor: '#fdf6e7', border: '1px solid #e8d3a2', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontWeight: 500, color: '#7a5a15' }}>
+                        Single use — redeeming here spends the whole card and gives no change.
+                      </p>
+                      <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#8a6a25' }}>
+                        On a till running Grid, apply it at checkout instead so only what&rsquo;s spent comes off.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button voucher-redeem-btn-large"
+                      onClick={() => { tapFeedback(); setConfirmGiftRedeem(true); }}
+                      disabled={loading}
+                    >
+                      Redeem gift card
+                    </button>
+                  </>
+                ) : validated.is_gift_card && confirmGiftRedeem ? (
+                  <>
+                    <div className="voucher-result-instruction" style={{ padding: '0.85rem 1rem', backgroundColor: '#fdf4f4', border: '1px solid #f0c9c9', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontWeight: 600, color: '#b91c1c' }}>
+                        {validated.amount && validated.amount > 0
+                          ? `Spend the full ${formatCurrency(validated.amount)}?`
+                          : 'Spend this card in full?'}
+                      </p>
+                      <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#a33' }}>
+                        Any unspent balance is forfeited. This cannot be undone.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button voucher-redeem-btn-large"
+                      onClick={handleRedeem}
+                      disabled={loading}
+                    >
+                      {loading
+                        ? 'Redeeming…'
+                        : validated.amount && validated.amount > 0
+                          ? `Yes, redeem ${formatCurrency(validated.amount)}`
+                          : 'Yes, redeem'}
+                    </button>
+                    <button
+                      type="button"
+                      className="voucher-cancel-link"
+                      onClick={() => setConfirmGiftRedeem(false)}
+                      disabled={loading}
+                    >
+                      Back
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
@@ -735,20 +792,25 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
                           <strong>{v.title || v.code}</strong>
                           <span>{amount > 0 ? formatCurrency(amount) : v.description || v.code}</span>
                         </div>
-                        {v.is_gift_card ? (
-                          <div style={{ fontSize: '0.85rem', color: '#6b7280', textAlign: 'right' }}>
-                            Add items to the sale and<br/>apply this at checkout.
-                          </div>
-                        ) : (
-                          <button
-                            className={isRedeemed ? 'secondary-button' : 'primary-button'}
-                            type="button"
-                            disabled={isRedeemed || redeemingCode === v.code}
-                            onClick={() => void handleRedeemMemberVoucher(v)}
-                          >
-                            {isRedeemed ? 'Redeemed' : redeemingCode === v.code ? 'Redeeming…' : 'Redeem'}
-                          </button>
-                        )}
+                        <button
+                          className={isRedeemed ? 'secondary-button' : 'primary-button'}
+                          type="button"
+                          disabled={isRedeemed || redeemingCode === v.code}
+                          onClick={() => {
+                            // Same forfeiture warning as the main card, but this
+                            // row is too compact for an inline confirm step.
+                            if (getScannerVoucherAffordance(v.is_gift_card) === 'confirm_then_redeem') {
+                              const value = amount > 0 ? formatCurrency(amount) : 'this gift card';
+                              const ok = window.confirm(
+                                `Spend ${value} in full?\n\nGift cards are single use and give no change — any unspent balance is forfeited. This cannot be undone.`
+                              );
+                              if (!ok) return;
+                            }
+                            void handleRedeemMemberVoucher(v);
+                          }}
+                        >
+                          {isRedeemed ? 'Redeemed' : redeemingCode === v.code ? 'Redeeming…' : 'Redeem'}
+                        </button>
                       </div>
                     );
                   })}

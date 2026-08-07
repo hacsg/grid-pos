@@ -771,6 +771,12 @@ export interface VoucherValidateResponse {
   type: VoucherType;
   amount?: number | string | null;
   is_valid: boolean;
+  // The backend returns these on every validate; without them the POS cannot
+  // tell a cash-value gift card from a free-scoop voucher.
+  kind?: string | null;
+  source?: string | null;
+  status?: string | null;
+  is_gift_card?: boolean;
 }
 
 export interface AppliedVoucher {
