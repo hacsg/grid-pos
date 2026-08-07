@@ -484,7 +484,12 @@ export default function PaymentModal({
     }
     if (voucherCodes && voucherCodes.length > 0) {
       try {
-        await applyVouchersToOrder(orderId, voucherCodes);
+        // Silent: the order-create call already carries these codes, so the
+        // normal outcome here is a 409 from the single-redemption constraint.
+        // Without this the interceptor toasts "Voucher already applied to
+        // another order" on every successful voucher sale — the catch below
+        // swallows the rejection, but the toast has already fired.
+        await applyVouchersToOrder(orderId, voucherCodes, { silent: true });
       } catch {
         // Vouchers were likely applied at order creation on the first attempt.
       }

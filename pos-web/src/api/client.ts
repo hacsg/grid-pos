@@ -804,8 +804,16 @@ export async function validateVoucher(
   return data;
 }
 
-export async function applyVouchersToOrder(orderId: string, codes: string[]): Promise<OrderRead> {
-  const { data } = await api.post<OrderRead>(`/orders/${orderId}/vouchers`, { codes });
+export async function applyVouchersToOrder(
+  orderId: string,
+  codes: string[],
+  options?: { silent?: boolean }
+): Promise<OrderRead> {
+  const { data } = await api.post<OrderRead>(
+    `/orders/${orderId}/vouchers`,
+    { codes },
+    { silent: options?.silent } as SilentRequestConfig
+  );
   return data;
 }
 
