@@ -1,15 +1,48 @@
 """FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+import logging
+import secrets
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from app.config import settings
 from app.database import check_database_connection
 from app.migrations import run_sql_migrations
 from app.routers import analytics, campaigns, customers, discounts, gto, kpay, loyalty, orders, outlets, print_templates, products, reports, shift, staff, till, vouchers, ws_daemon
 from app.schemas.health import HealthRead
+
+logger = logging.getLogger(__name__)
+
+
+class UnhandledExceptionMiddleware(BaseHTTPMiddleware):
+    """Return a CORS-safe JSON 500 for unhandled exceptions.
+
+    Starlette's ServerErrorMiddleware sits outside user middleware. If an
+    exception reaches it, the plain 500 never passes back through CORS and the
+    browser surfaces a "Network Error". Catching here (inside CORSMiddleware)
+    keeps the response readable by the till client.
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        try:
+            return await call_next(request)
+        except Exception:
+            ref = secrets.token_hex(3).upper()
+            logger.exception("Unhandled server error Ref: %s", ref)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "detail": (
+                        "Something went wrong on our side. Don't retry — "
+                        f"this order may already exist. Ref: {ref}"
+                    ),
+                },
+            )
 
 
 @asynccontextmanager
@@ -26,6 +59,9 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
+# add_middleware inserts at position 0: last added is outermost. Register the
+# unhandled-exception handler *before* CORS so it sits inside CORSMiddleware.
+app.add_middleware(UnhandledExceptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
