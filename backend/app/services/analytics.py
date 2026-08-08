@@ -23,22 +23,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
+from app.models.voucher import OrderVoucher, Voucher
 from app.schemas.analytics import (
     AnalyticsDashboardResponse,
     AnalyticsKpis,
+    CdcRedemptions,
     ConcentrationData,
     DayOfWeekPoint,
     HourlyPoint,
     OutletSalesItem,
     PaymentBreakdownItem,
+    RedemptionTypeBreakdown,
+    RedemptionsData,
     ScoopRatioData,
     TopProductItem,
     TrendPoint,
+    VoucherRedemptions,
 )
 from app.utils.timezone import SGT, UTC, sgt_day_bounds_utc
 
 # Display buckets for the payment-mix chart, in fixed order.
-PAYMENT_BUCKETS = ("Cash", "Card", "PayNow", "Voucher", "Other")
+# CDC is after Voucher so existing chart colour ordering stays stable for prior buckets.
+PAYMENT_BUCKETS = ("Cash", "Card", "PayNow", "Voucher", "CDC", "Other")
 
 _DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -106,11 +112,14 @@ def payment_display_split(order) -> dict[str, Decimal]:
     if method == "split":
         cash = Decimal(str(order.cash_amount or 0))
         card = Decimal(str(order.card_amount or 0))
-        voucher = Decimal(str(order.voucher_amount or 0)) + Decimal(str(order.cdc_amount or 0))
+        voucher = Decimal(str(order.voucher_amount or 0))
+        cdc = Decimal(str(order.cdc_amount or 0))
         buckets["Cash"] += cash
         buckets["Card"] += card
         buckets["Voucher"] += voucher
-        residual = total - (cash + card + voucher)
+        buckets["CDC"] += cdc
+        # Residual must subtract both voucher and CDC so buckets still sum to total.
+        residual = total - (cash + card + voucher + cdc)
         if residual != 0:
             buckets["Other"] += residual
     elif method == "cash":
@@ -237,6 +246,63 @@ async def _product_rollup(
     return [(r.product_id, r.name or "", int(r.quantity), Decimal(str(r.revenue))) for r in rows]
 
 
+async def _redemptions_rollup(
+    db: AsyncSession,
+    from_date: date | None,
+    to_date: date | None,
+    outlet_id: UUID | None,
+) -> RedemptionsData:
+    """CDC (keyed-in amounts) and scanned voucher redemptions for the dashboard range.
+
+    CDC comes from orders.cdc_amount on paid orders — government vouchers never
+    enter Grid as codes. Vouchers come from order_vouchers (the real till log).
+    """
+    paid = _paid_orders_stmt(from_date, to_date, outlet_id)
+    paid_ids = paid.with_only_columns(Order.id)
+
+    cdc_stmt = select(
+        func.count().label("orders"),
+        func.coalesce(func.sum(Order.cdc_amount), 0).label("value"),
+    ).where(
+        Order.id.in_(paid_ids),
+        Order.cdc_amount.is_not(None),
+        Order.cdc_amount > 0,
+    )
+    cdc_row = (await db.execute(cdc_stmt)).one()
+    cdc = CdcRedemptions(
+        orders=int(cdc_row.orders or 0),
+        value=round(float(cdc_row.value or 0), 2),
+    )
+
+    voucher_stmt = (
+        select(
+            Voucher.type,
+            func.count().label("count"),
+            func.coalesce(func.sum(OrderVoucher.amount_applied), 0).label("value"),
+        )
+        .select_from(OrderVoucher)
+        .join(Voucher, Voucher.id == OrderVoucher.voucher_id)
+        .where(OrderVoucher.order_id.in_(paid_ids))
+        .group_by(Voucher.type)
+        .order_by(Voucher.type)
+    )
+    by_type_rows = (await db.execute(voucher_stmt)).all()
+    by_type = [
+        RedemptionTypeBreakdown(
+            type=row.type.value if hasattr(row.type, "value") else str(row.type),
+            count=int(row.count),
+            value=round(float(row.value or 0), 2),
+        )
+        for row in by_type_rows
+    ]
+    vouchers = VoucherRedemptions(
+        count=sum(b.count for b in by_type),
+        value=round(sum(b.value for b in by_type), 2),
+        by_type=by_type,
+    )
+    return RedemptionsData(cdc=cdc, vouchers=vouchers)
+
+
 async def get_analytics_dashboard(
     db: AsyncSession,
     *,
@@ -247,6 +313,7 @@ async def get_analytics_dashboard(
     orders = (await db.execute(_paid_orders_stmt(from_date, to_date, outlet_id))).scalars().all()
     agg = aggregate_orders(orders)
     products = await _product_rollup(db, from_date, to_date, outlet_id)
+    redemptions = await _redemptions_rollup(db, from_date, to_date, outlet_id)
 
     items_sold = sum(p[2] for p in products)
     avg_ticket = (agg.net / agg.transactions) if agg.transactions else Decimal("0")
@@ -344,4 +411,5 @@ async def get_analytics_dashboard(
         hourly=hourly,
         concentration=concentration_from_quantities([p[2] for p in products]),
         scoop_ratio=scoop_ratio_from_products(products),
+        redemptions=redemptions,
     )

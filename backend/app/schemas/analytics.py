@@ -73,6 +73,32 @@ class ScoopRatioData(BaseModel):
     double_pct: float
 
 
+class RedemptionTypeBreakdown(BaseModel):
+    type: str
+    count: int
+    value: float
+
+
+class CdcRedemptions(BaseModel):
+    """Government CDC amounts keyed in at checkout (orders.cdc_amount > 0)."""
+
+    orders: int
+    value: float
+
+
+class VoucherRedemptions(BaseModel):
+    """Scanned voucher redemptions from order_vouchers."""
+
+    count: int
+    value: float
+    by_type: list[RedemptionTypeBreakdown]
+
+
+class RedemptionsData(BaseModel):
+    cdc: CdcRedemptions
+    vouchers: VoucherRedemptions
+
+
 class AnalyticsDashboardResponse(BaseModel):
     date_from: str
     date_to: str
@@ -86,3 +112,4 @@ class AnalyticsDashboardResponse(BaseModel):
     hourly: list[HourlyPoint]
     concentration: ConcentrationData
     scoop_ratio: ScoopRatioData
+    redemptions: RedemptionsData

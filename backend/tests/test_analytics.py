@@ -71,20 +71,79 @@ def test_previous_period_partial_range_same_length():
 
 
 def test_payment_split_single_methods():
-    assert payment_display_split(_order("10.00", method="cash"))["Cash"] == Decimal("10.00")
-    assert payment_display_split(_order("10.00", method="card"))["Card"] == Decimal("10.00")
-    assert payment_display_split(_order("10.00", method="paynow"))["PayNow"] == Decimal("10.00")
+    cash = payment_display_split(_order("10.00", method="cash"))
+    assert cash["Cash"] == Decimal("10.00")
+    assert sum(cash.values()) == Decimal("10.00")
+
+    card = payment_display_split(_order("10.00", method="card"))
+    assert card["Card"] == Decimal("10.00")
+    assert sum(card.values()) == Decimal("10.00")
+
+    paynow = payment_display_split(_order("10.00", method="paynow"))
+    assert paynow["PayNow"] == Decimal("10.00")
+    assert sum(paynow.values()) == Decimal("10.00")
 
 
 def test_payment_split_split_order_balances_to_total():
+    """CDC residual-only split: CDC is its own bucket; residual still balances."""
     split = payment_display_split(
         _order("12.00", method="split", cash_amount="5.00", card_amount="4.00", cdc_amount="2.00")
     )
     assert split["Cash"] == Decimal("5.00")
     assert split["Card"] == Decimal("4.00")
-    assert split["Voucher"] == Decimal("2.00")
+    assert split["CDC"] == Decimal("2.00")
+    assert split["Voucher"] == Decimal("0")
     assert split["Other"] == Decimal("1.00")  # residual keeps the mix balanced
     assert sum(split.values()) == Decimal("12.00")
+
+
+def test_payment_split_voucher_and_cdc_separate_buckets():
+    """Split with both voucher and CDC puts each in its own bucket and sums to total."""
+    split = payment_display_split(
+        _order(
+            "20.00",
+            method="split",
+            cash_amount="5.00",
+            card_amount="7.00",
+            voucher_amount="3.00",
+            cdc_amount="5.00",
+        )
+    )
+    assert split["Cash"] == Decimal("5.00")
+    assert split["Card"] == Decimal("7.00")
+    assert split["Voucher"] == Decimal("3.00")
+    assert split["CDC"] == Decimal("5.00")
+    assert split["Other"] == Decimal("0")
+    assert sum(split.values()) == Decimal("20.00")
+
+
+def test_payment_split_cdc_only_no_voucher_merge():
+    """Order with CDC and no voucher shows zero Voucher, not a merged figure."""
+    split = payment_display_split(
+        _order("15.00", method="split", card_amount="10.00", cdc_amount="5.00")
+    )
+    assert split["CDC"] == Decimal("5.00")
+    assert split["Voucher"] == Decimal("0")
+    assert split["Card"] == Decimal("10.00")
+    assert sum(split.values()) == Decimal("15.00")
+
+
+def test_payment_split_unattributed_residual_with_voucher_and_cdc():
+    """Residual subtracts both voucher and CDC so the mix still balances."""
+    split = payment_display_split(
+        _order(
+            "25.00",
+            method="split",
+            cash_amount="10.00",
+            voucher_amount="3.00",
+            cdc_amount="2.00",
+        )
+    )
+    assert split["Cash"] == Decimal("10.00")
+    assert split["Voucher"] == Decimal("3.00")
+    assert split["CDC"] == Decimal("2.00")
+    assert split["Other"] == Decimal("10.00")  # 25 - 10 - 3 - 2
+    assert sum(split.values()) == Decimal("25.00")
 
 
 def test_aggregate_orders_buckets_by_sgt_day_and_hour():
@@ -135,6 +194,8 @@ async def _seed_order(
     payment_method: str = "cash",
     status: OrderStatus = OrderStatus.paid,
     subtotal: Decimal | None = None,
+    cdc_amount: Decimal | None = None,
+    voucher_amount: Decimal | None = None,
 ) -> Order:
     order = Order(
         order_number="0001",
@@ -144,6 +205,8 @@ async def _seed_order(
         total=total,
         status=status,
         payment_method=payment_method,
+        cdc_amount=cdc_amount,
+        voucher_amount=voucher_amount,
     )
     order.created_at = created_sgt.astimezone(UTC)
     db_session.add(order)
@@ -228,6 +291,72 @@ async def test_dashboard_endpoint(client, db_session, outlet, cashier_staff, pro
     hourly = {h["hour"]: h for h in data["hourly"]}
     assert hourly[12]["revenue"] == 20.0
     assert hourly[18]["revenue"] == 30.0
+
+    # Empty redemptions shape for orders without CDC / order_vouchers.
+    assert data["redemptions"]["cdc"] == {"orders": 0, "value": 0.0}
+    assert data["redemptions"]["vouchers"] == {"count": 0, "value": 0.0, "by_type": []}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_redemptions_cdc_and_vouchers(client, db_session, outlet, cashier_staff):
+    from app.models.voucher import OrderVoucher, Voucher, VoucherType
+
+    # CDC keyed-in at checkout (no voucher row).
+    await _seed_order(
+        db_session,
+        outlet.id,
+        cashier_staff.id,
+        Decimal("20.00"),
+        datetime(2026, 7, 2, 12, 0, tzinfo=SGT),
+        payment_method="split",
+        cdc_amount=Decimal("5.00"),
+    )
+    # Another CDC order.
+    order_with_vouchers = await _seed_order(
+        db_session,
+        outlet.id,
+        cashier_staff.id,
+        Decimal("30.00"),
+        datetime(2026, 7, 3, 14, 0, tzinfo=SGT),
+        payment_method="split",
+        cdc_amount=Decimal("10.00"),
+        voucher_amount=Decimal("8.00"),
+    )
+
+    acre = Voucher(code="ACRE-TEST-1", type=VoucherType.acre_group, amount=Decimal("6.00"), status="redeemed")
+    cdc_row = Voucher(code="CDC-SCAN-1", type=VoucherType.cdc, amount=Decimal("2.00"), status="redeemed")
+    db_session.add_all([acre, cdc_row])
+    await db_session.commit()
+    await db_session.refresh(acre)
+    await db_session.refresh(cdc_row)
+
+    db_session.add_all(
+        [
+            OrderVoucher(order_id=order_with_vouchers.id, voucher_id=acre.id, amount_applied=Decimal("6.00")),
+            OrderVoucher(order_id=order_with_vouchers.id, voucher_id=cdc_row.id, amount_applied=Decimal("2.00")),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await client.get(
+        "/api/analytics/dashboard",
+        params={"from_date": "2026-07-01", "to_date": "2026-07-07"},
+    )
+    assert resp.status_code == 200
+    red = resp.json()["redemptions"]
+
+    assert red["cdc"]["orders"] == 2
+    assert red["cdc"]["value"] == 15.0
+    assert red["vouchers"]["count"] == 2
+    assert red["vouchers"]["value"] == 8.0
+    by_type = {b["type"]: b for b in red["vouchers"]["by_type"]}
+    assert by_type["acre_group"] == {"type": "acre_group", "count": 1, "value": 6.0}
+    assert by_type["cdc"] == {"type": "cdc", "count": 1, "value": 2.0}
+
+    # Payment mix: CDC separate from Voucher.
+    payments = {p["method"]: p["amount"] for p in resp.json()["payments"]}
+    assert payments["CDC"] == 15.0
+    assert payments["Voucher"] == 8.0
 
 
 @pytest.mark.asyncio

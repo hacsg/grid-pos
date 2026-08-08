@@ -33,6 +33,7 @@ const PAYMENT_COLORS: Record<string, string> = {
   Card: '#2a78d6',
   PayNow: '#eda100',
   Voucher: '#e34948',
+  CDC: '#c45c1a', // distinct from Voucher; label in legend carries the meaning
   Other: '#4a3aa7',
 };
 const GRID = '#E9ECEF';
@@ -504,6 +505,80 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* ── Vouchers & CDC redemptions ── */}
+      <Card
+        title="Vouchers & CDC"
+        subtitle="Redemptions in the selected range — CDC is government-issued, not Grid"
+      >
+        {!data ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-lg border border-gray-100 bg-surface/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  Government CDC vouchers
+                </p>
+                <p className="mt-2 text-2xl font-bold text-text">
+                  {formatCurrency(data.redemptions.cdc.value)}
+                </p>
+                <p className="mt-1 text-sm text-text-muted">
+                  {data.redemptions.cdc.orders.toLocaleString()} order
+                  {data.redemptions.cdc.orders === 1 ? '' : 's'} with CDC keyed in at checkout
+                </p>
+                <p className="mt-2 text-xs text-text-muted">
+                  Government CDC vouchers keyed in at checkout — not issued by Grid
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-100 bg-surface/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  Scanned vouchers
+                </p>
+                <p className="mt-2 text-2xl font-bold text-text">
+                  {formatCurrency(data.redemptions.vouchers.value)}
+                </p>
+                <p className="mt-1 text-sm text-text-muted">
+                  {data.redemptions.vouchers.count.toLocaleString()} voucher
+                  {data.redemptions.vouchers.count === 1 ? '' : 's'} redeemed at the till
+                </p>
+              </div>
+            </div>
+            {data.redemptions.vouchers.by_type.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-muted">
+                  By voucher type
+                </p>
+                <div className="space-y-2">
+                  {data.redemptions.vouchers.by_type.map((row) => (
+                    <div
+                      key={row.type}
+                      className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium text-text">
+                        {row.type === 'cdc'
+                          ? 'CDC (scanned code)'
+                          : row.type === 'acre_group'
+                            ? 'Acre Group'
+                            : row.type}
+                      </span>
+                      <span className="text-text-muted">
+                        {row.count.toLocaleString()} · {formatCurrency(row.value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.redemptions.cdc.orders === 0 && data.redemptions.vouchers.count === 0 && (
+              <p className="text-center text-sm text-text-muted">No redemptions in this period</p>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* ── Scoop ratio + Staff performance ── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

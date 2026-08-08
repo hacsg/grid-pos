@@ -64,6 +64,28 @@ export interface ScoopRatioData {
   double_pct: number;
 }
 
+export interface RedemptionTypeBreakdown {
+  type: string;
+  count: number;
+  value: number;
+}
+
+export interface CdcRedemptions {
+  orders: number;
+  value: number;
+}
+
+export interface VoucherRedemptions {
+  count: number;
+  value: number;
+  by_type: RedemptionTypeBreakdown[];
+}
+
+export interface RedemptionsData {
+  cdc: CdcRedemptions;
+  vouchers: VoucherRedemptions;
+}
+
 export interface AnalyticsDashboard {
   date_from: string;
   date_to: string;
@@ -77,6 +99,7 @@ export interface AnalyticsDashboard {
   hourly: HourlyPoint[];
   concentration: ConcentrationData;
   scoop_ratio: ScoopRatioData;
+  redemptions: RedemptionsData;
 }
 
 export interface AnalyticsDashboardParams {
