@@ -13,7 +13,6 @@ import {
   Lightbulb,
   Megaphone,
   Ticket,
-  UserRound,
   BadgePercent,
   Printer,
   Wallet,
@@ -31,6 +30,8 @@ const navItems = [
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/outlets', icon: Store, label: 'Outlets' },
   { to: '/discounts', icon: BadgePercent, label: 'Discounts' },
+  { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
+  { to: '/vouchers', icon: Ticket, label: 'Vouchers' },
   { to: '/print-templates', icon: Printer, label: 'Print Templates' },
 ];
 

@@ -13,6 +13,8 @@ import Staff from '@/pages/Staff';
 import Outlets from '@/pages/Outlets';
 import Discounts from '@/pages/Discounts';
 import PrintTemplates from '@/pages/PrintTemplates';
+import Campaigns from '@/pages/Campaigns';
+import Vouchers from '@/pages/Vouchers';
 import Login from '@/pages/Login';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -62,6 +64,14 @@ export default function App() {
             <Route path="outlets" element={<Outlets />} />
             <Route path="discounts" element={<Discounts />} />
             <Route path="print-templates" element={<PrintTemplates />} />
+            {/* Vouchers is the only admin surface for minting CDC voucher codes,
+                and Campaigns is what supplies the campaigns it issues against.
+                Both were built but never routed, so the capability existed and
+                was unreachable. Grid-local customer management is deliberately
+                not restored — Acre Club owns customers, and two places to edit
+                one is how records drift apart. */}
+            <Route path="campaigns" element={<Campaigns />} />
+            <Route path="vouchers" element={<Vouchers />} />
           </Route>
         </Routes>
       </BrowserRouter>
