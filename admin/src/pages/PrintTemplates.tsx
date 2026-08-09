@@ -75,11 +75,11 @@ export default function PrintTemplates() {
     const payload = {
       ...data,
       outlet_id: editingTemplate?.id ? editingTemplate.outlet_id : activeOutletId || null,
-      name: duplicate && editingTemplate ? nextCopyName(data.name) : data.name,
+      name: duplicate && editingTemplate?.id ? nextCopyName(data.name) : data.name,
     };
 
     try {
-      if (editingTemplate && !duplicate) {
+      if (editingTemplate?.id && !duplicate) {
         await updateTemplate.mutateAsync({ id: editingTemplate.id, data: payload });
         toast.success('Template updated');
       } else {

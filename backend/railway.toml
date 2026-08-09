@@ -3,10 +3,15 @@ builder = "nixpacks"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1'"
+startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --forwarded-allow-ips=*'"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
+# forwarded-allow-ips=* lets uvicorn trust Railway's X-Forwarded-Proto. Without
+# it, request.url is http:// and any redirect (e.g. FastAPI's trailing-slash 307)
+# points at plain HTTP, which the HTTPS clients block as mixed content and report
+# as "Network Error".
+#
 # IMPORTANT: workers=1 is required for KPay WebSocket integration.
 # WebSocket connection state (_active_connections) is stored in-memory per worker.
 # Multiple workers would break daemon communication - each worker has isolated memory.
