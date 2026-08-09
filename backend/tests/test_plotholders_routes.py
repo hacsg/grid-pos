@@ -472,3 +472,192 @@ async def test_order_detail_reports_which_vouchers_were_used(
     assert float(body["voucher_amount"]) == 3.5
     # The line items must be nameable without a second lookup.
     assert body["items"][0]["product_name"] == product.name
+
+
+@pytest.mark.asyncio
+async def test_applying_a_members_voucher_attaches_them_to_the_order(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """Scanning a member's voucher must tag the order with that member.
+
+    Regression: staff who applied a voucher without separately attaching the
+    member left orders.customer_id NULL. The paid-order hook awards the visit
+    moment only when customer_id is set, so every voucher sale rang up, gave
+    the discount, and silently earned the member nothing.
+    """
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+    assert order.customer_id is None
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-OWNED": {
+                "id": "v_owned",
+                "code": "SSCSIGNCCP-OWNED",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-abc-123",
+            }
+        }
+    )
+
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-OWNED"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.customer_id == "cust-abc-123"
+
+
+@pytest.mark.asyncio
+async def test_gift_card_does_not_attach_its_owner_to_the_order(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """A gift card is a bearer instrument — the holder is not necessarily the owner.
+
+    Crediting the card's owner would attribute someone else's visit to them.
+    """
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "GIFTABCDEFGH": {
+                "id": "v_gift",
+                "code": "GIFTABCDEFGH",
+                "kind": "amount_off",
+                "source": "gift",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-gift-owner",
+            }
+        }
+    )
+
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["GIFTABCDEFGH"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.customer_id is None
+
+
+@pytest.mark.asyncio
+async def test_voucher_owner_never_overwrites_an_explicitly_attached_member(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """A member attached at the till wins over the voucher's owner."""
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+            customer_id="cust-at-the-till",
+        ),
+    )
+    assert order.customer_id == "cust-at-the-till"
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-OTHER": {
+                "id": "v_other",
+                "code": "SSCSIGNCCP-OTHER",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-someone-else",
+            }
+        }
+    )
+
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-OTHER"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.customer_id == "cust-at-the-till"
+
+
+@pytest.mark.asyncio
+async def test_two_different_owners_on_one_order_stays_unattributed(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """Two members' vouchers on one sale is ambiguous — guessing credits the wrong person."""
+    product.price = Decimal("30.00")
+    await db_session.commit()
+    await db_session.refresh(product)
+
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-AAA": {
+                "id": "v_a",
+                "code": "SSCSIGNCCP-AAA",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-aaa",
+            },
+            "SSCSIGNCCP-BBB": {
+                "id": "v_b",
+                "code": "SSCSIGNCCP-BBB",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-bbb",
+            },
+        }
+    )
+
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-AAA", "SSCSIGNCCP-BBB"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.customer_id is None

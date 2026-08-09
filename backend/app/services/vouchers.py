@@ -49,6 +49,24 @@ def _assert_spendable(external: dict, code: str) -> None:
     )
 
 
+def _voucher_owner_id(external: dict) -> str | None:
+    """The member a voucher was issued to, when redeeming it identifies them.
+
+    A campaign or referral voucher is issued to one named member, so scanning it
+    at the till tells us who is standing there. Gift cards are the exception:
+    they are bearer instruments (a physical card is sold over the counter, a
+    digital one is forwarded), so the holder is usually *not* the owner and
+    crediting the owner would attribute the visit to the wrong person.
+    """
+    if str(external.get("source") or "").strip().lower() == "gift":
+        return None
+    owner = external.get("customer_id")
+    if owner is None:
+        return None
+    owner_str = str(owner).strip()
+    return owner_str or None
+
+
 def quantize_money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
@@ -186,6 +204,7 @@ async def apply_vouchers_to_order(
 
     client = plotholders or PlotholdersClient()
     collected: list[tuple[Voucher, Decimal, str]] = []
+    voucher_owner_ids: set[str] = set()
     total_voucher_amount = Decimal("0.00")
     remaining_total = order.total
     outlet_name = ""
@@ -241,6 +260,10 @@ async def apply_vouchers_to_order(
                 detail=f"Voucher {voucher.code} has already been redeemed",
             )
 
+        owner_id = _voucher_owner_id(external)
+        if owner_id:
+            voucher_owner_ids.add(owner_id)
+
         collected.append((voucher, amount, normalized))
         total_voucher_amount += amount
         remaining_total = quantize_money(remaining_total - amount)
@@ -278,6 +301,22 @@ async def apply_vouchers_to_order(
     # voucher_amount and saw zero on a sale that used a voucher. Kept in step
     # with the total above so subtotal - loyalty - voucher_amount == total.
     order.voucher_amount = quantize_money(total_voucher_amount)
+
+    # Scanning a member's voucher identifies them just as well as scanning their
+    # membership QR, but until now it never reached the order: staff who applied
+    # a voucher without also attaching the member left customer_id NULL, and the
+    # paid-order hook awards the visit moment only when customer_id is set. The
+    # sale happened, the discount applied, and the member silently earned
+    # nothing. Only attach when exactly one member owns the applied vouchers —
+    # two owners on one order is ambiguous, and guessing would credit the wrong
+    # person. Never overwrite a member the till already attached explicitly.
+    if order.customer_id is None and len(voucher_owner_ids) == 1:
+        order.customer_id = next(iter(voucher_owner_ids))
+        logger.info(
+            "Attached member %s to order %s from applied voucher",
+            order.customer_id,
+            order.id,
+        )
 
     try:
         await db.commit()
