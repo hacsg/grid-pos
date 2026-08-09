@@ -401,3 +401,63 @@ async def load_applied_vouchers_for_order(db: AsyncSession, order_id: UUID) -> l
         }
         for link, voucher in rows
     ]
+
+
+async def release_vouchers_for_order(
+    db: AsyncSession,
+    *,
+    order: Order,
+    reason: str = "order cancelled",
+    plotholders: PlotholdersClient | None = None,
+) -> list[str]:
+    """Hand back the vouchers applied to an order whose sale never completed.
+
+    Vouchers are redeemed the moment they are applied, which happens while the
+    order is still pending. Cancelling without this leaves the customer's
+    voucher consumed for a sale that never happened — and no way to get it back
+    short of issuing a replacement by hand.
+
+    Mirrors apply_vouchers_to_order's ordering in reverse: release locally and
+    commit first, then tell Plotholders. An upstream failure is logged, not
+    raised, because refusing to cancel an order over it would leave the till
+    stuck on a sale that is already over.
+
+    Returns the codes released.
+    """
+    result = await db.execute(
+        select(OrderVoucher, Voucher)
+        .join(Voucher, OrderVoucher.voucher_id == Voucher.id)
+        .where(OrderVoucher.order_id == order.id)
+    )
+    rows = result.all()
+    if not rows:
+        return []
+
+    released_codes: list[str] = []
+    for _link, voucher in rows:
+        voucher.redeemed_at = None
+        voucher.status = "active"
+        voucher.redeemed_by_staff_id = None
+        voucher.order_id = None
+        voucher.redeemed_order_id = None
+        released_codes.append(voucher.code)
+
+    # The order no longer carries a voucher discount; leave the totals coherent
+    # so a cancelled order doesn't report a discount it gave nothing for.
+    order.voucher_amount = Decimal("0.00")
+
+    await db.commit()
+
+    client = plotholders or PlotholdersClient()
+    for code in released_codes:
+        try:
+            await client.release_voucher_by_code(code, reason)
+        except PlotholdersAPIError as exc:
+            logger.error(
+                "Plotholders release failed after local release: code=%s, order=%s, error=%s",
+                code,
+                order.id,
+                exc,
+            )
+
+    return released_codes

@@ -670,12 +670,15 @@ export async function updateOrderStatus(
     cdc_amount?: number;
     paynow_confirmed_at?: string;
   },
-  options?: { idempotencyKey?: string }
+  options?: { idempotencyKey?: string; silent?: boolean }
 ): Promise<OrderRead> {
   const headers = options?.idempotencyKey
     ? { 'Idempotency-Key': options.idempotencyKey }
     : undefined;
-  const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload, { headers });
+  const { data } = await api.put<OrderRead>(`/orders/${orderId}/status`, payload, {
+    headers,
+    ...(options?.silent ? ({ silent: true } as SilentRequestConfig) : {}),
+  });
   return data;
 }
 

@@ -166,6 +166,18 @@ class PlotholdersClient:
             json={"code": code, "staff_id": staff_id, "outlet": outlet},
         )
 
+    async def release_voucher_by_code(self, code: str, reason: str = "") -> dict[str, Any]:
+        """Give a voucher back after a sale that never completed.
+
+        Vouchers are redeemed when applied to a *pending* order, so cancelling
+        one has to hand the voucher back or the customer simply loses it.
+        """
+        return await self._request(
+            "POST",
+            "/api/vouchers/release",
+            json={"code": code, "reason": reason},
+        )
+
     async def activate_gift_card(self, code: str, staff_id: str, outlet: str) -> dict[str, Any]:
         """Activate a physical gift card at the point of sale."""
         return await self._request(

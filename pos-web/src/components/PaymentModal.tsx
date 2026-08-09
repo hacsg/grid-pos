@@ -190,8 +190,34 @@ export default function PaymentModal({
       } catch {
         // Customer display is optional.
       }
+      abandonPendingOrder();
     }
     onClose();
+  }
+
+  /**
+   * Cancel the order row we created before taking payment.
+   *
+   * The order is written as `pending` before the first tender attempt, so
+   * walking away from a failed or abandoned payment used to leave it pending
+   * forever — and any voucher on it was already redeemed, so the customer lost
+   * it to a sale that never happened. Cancelling releases those vouchers.
+   *
+   * Never cancel when money may already have been taken: `finalizationPending`
+   * means the terminal approved and only the mark-paid call failed, and that
+   * order must stay recoverable rather than be thrown away here.
+   */
+  function abandonPendingOrder() {
+    const order = pendingOrder;
+    if (!order || finalizationPending) {
+      return;
+    }
+    setPendingOrder(null);
+    // Fire-and-forget: the modal is closing either way, and a failed cancel
+    // leaves exactly the pending order we already had.
+    void updateOrderStatus(order.id, { status: 'cancelled' }, { silent: true }).catch(() => {
+      // Swallowed deliberately — nothing useful to show on a closing modal.
+    });
   }
   const [splitSecondMethod, setSplitSecondMethod] = useState<TerminalPaymentMethod>('card');
   const [cashAmount, setCashAmount] = useState('');

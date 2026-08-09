@@ -21,7 +21,7 @@ from app.models.staff import Staff
 from app.models.voucher import OrderVoucher, Voucher
 from app.schemas.order import OrderCreate, OrderItemCreate
 from app.services.plotholders_client import PlotholdersAPIError, PlotholdersClient
-from app.services.vouchers import apply_vouchers_to_order
+from app.services.vouchers import apply_vouchers_to_order, release_vouchers_for_order
 
 from app.utils.timezone import SGT as SGT_TZ, business_day_bounds  # noqa: F401  (re-exported)
 
@@ -371,6 +371,7 @@ async def update_order_status_service(
             detail=f"Order status changed to '{new_status.value}' while request was in flight",
         )
     _validate_status_transition(order, new_status)
+    previous_status = order.status
     order.status = new_status
     effective_payment_method = payment_method if payment_method is not None else order.payment_method
     if payment_method is not None:
@@ -441,7 +442,28 @@ async def update_order_status_service(
     # transition (paid→paid is rejected by _validate_status_transition), so this
     # fires exactly once per order — the customer's one visit/moment.
     became_paid = new_status == OrderStatus.paid and order.customer_id
+    # A pending order still holds vouchers that were redeemed when they were
+    # applied. Cancelling it has to hand them back, or the customer loses a
+    # voucher to a sale that never happened. Only from pending: a paid order
+    # being cancelled has already given the goods, and unwinding that belongs
+    # with refunds, not here.
+    release_vouchers = new_status == OrderStatus.cancelled and previous_status == OrderStatus.pending
     await db.commit()
+
+    if release_vouchers:
+        try:
+            released = await release_vouchers_for_order(db, order=order, reason="order cancelled")
+            if released:
+                logger.info(
+                    "Released %d voucher(s) from cancelled order %s: %s",
+                    len(released),
+                    order.id,
+                    ", ".join(released),
+                )
+        except Exception:
+            # Never block a cancel on the voucher unwind — the sale is over
+            # either way, and a stuck till is worse than a voucher to chase.
+            logger.exception("Unable to release vouchers for cancelled order %s", order.id)
 
     if became_paid:
         try:

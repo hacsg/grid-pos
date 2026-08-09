@@ -9,14 +9,19 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.models.voucher import OrderVoucher
 from app.routers.loyalty import get_plotholders_client
 from app.routers import vouchers as vouchers_router
 from app.schemas.order import OrderCreate, OrderItemCreate
 from app.services.orders import create_order as create_order_service
+from app.services.orders import update_order_status_service
 from app.services.plotholders_client import PlotholdersAPIError
-from app.services.vouchers import apply_vouchers_to_order
+from app.services.vouchers import (
+    apply_vouchers_to_order,
+    get_voucher_by_code,
+    release_vouchers_for_order,
+)
 
 
 class FakePlotholdersClient:
@@ -65,6 +70,7 @@ class FakeVoucherPlotholdersClient:
         self.activate_error = activate_error
         self.activate_calls: list[tuple[str, str, str]] = []
         self.redeem_calls: list[str] = []
+        self.release_calls: list[str] = []
 
     async def get_voucher(self, voucher_ref: str) -> dict[str, Any] | None:
         return self.vouchers_by_code.get(voucher_ref.strip())
@@ -72,6 +78,10 @@ class FakeVoucherPlotholdersClient:
     async def redeem_voucher_by_code(self, code: str, staff_id: str, outlet: str) -> dict[str, Any]:
         self.redeem_calls.append(code)
         return {"status": "redeemed", "code": code}
+
+    async def release_voucher_by_code(self, code: str, reason: str = "") -> dict[str, Any]:
+        self.release_calls.append(code)
+        return {"status": "active", "code": code}
 
     async def activate_gift_card(self, code: str, staff_id: str, outlet: str) -> dict[str, Any]:
         self.activate_calls.append((code, staff_id, outlet))
@@ -661,3 +671,167 @@ async def test_two_different_owners_on_one_order_stays_unattributed(
     reloaded = await db_session.get(Order, order.id)
     assert reloaded is not None
     assert reloaded.customer_id is None
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_pending_order_gives_the_voucher_back(
+    db_session, outlet, cashier_staff, product
+) -> None:
+    """An abandoned sale must not eat the customer's voucher.
+
+    Vouchers are redeemed the moment they are applied, which happens while the
+    order is still pending. Cancelling without releasing left the voucher
+    consumed for a sale that never happened.
+    """
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-ABANDON": {
+                "id": "v_abandon",
+                "code": "SSCSIGNCCP-ABANDON",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+                "customer_id": "cust-abandoned",
+            }
+        }
+    )
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-ABANDON"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    voucher = await get_voucher_by_code(db_session, "SSCSIGNCCP-ABANDON")
+    assert voucher is not None
+    assert voucher.redeemed_at is not None
+
+    released = await release_vouchers_for_order(
+        db_session, order=order, reason="order cancelled", plotholders=fake
+    )
+    assert released == ["SSCSIGNCCP-ABANDON"]
+
+    await db_session.refresh(voucher)
+    assert voucher.redeemed_at is None
+    assert voucher.status == "active"
+    assert voucher.order_id is None
+    # Plotholders is the source of truth for redemption — a local-only release
+    # would leave the voucher unusable on the next attempt.
+    assert fake.release_calls == ["SSCSIGNCCP-ABANDON"]
+
+    reloaded = await db_session.get(Order, order.id)
+    assert reloaded is not None
+    assert reloaded.voucher_amount == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_cancel_endpoint_releases_vouchers_end_to_end(
+    db_session, outlet, cashier_staff, product, monkeypatch
+) -> None:
+    """Cancelling through the status transition releases, not just the helper."""
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-CANCEL": {
+                "id": "v_cancel",
+                "code": "SSCSIGNCCP-CANCEL",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+            }
+        }
+    )
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-CANCEL"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    monkeypatch.setattr(
+        "app.services.orders.PlotholdersClient", lambda *a, **k: fake
+    )
+    monkeypatch.setattr(
+        "app.services.vouchers.PlotholdersClient", lambda *a, **k: fake
+    )
+
+    await update_order_status_service(
+        db_session,
+        order.id,
+        OrderStatus.cancelled,
+    )
+
+    voucher = await get_voucher_by_code(db_session, "SSCSIGNCCP-CANCEL")
+    assert voucher is not None
+    assert voucher.status == "active"
+    assert voucher.redeemed_at is None
+    assert fake.release_calls == ["SSCSIGNCCP-CANCEL"]
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_paid_order_does_not_release_vouchers(
+    db_session, outlet, cashier_staff, product, monkeypatch
+) -> None:
+    """A paid order gave the goods — unwinding it belongs with refunds."""
+    order = await create_order_service(
+        db_session,
+        OrderCreate(
+            outlet_id=outlet.id,
+            staff_id=cashier_staff.id,
+            items=[OrderItemCreate(product_id=product.id, quantity=1)],
+        ),
+    )
+
+    fake = FakeVoucherPlotholdersClient(
+        vouchers_by_code={
+            "SSCSIGNCCP-PAID": {
+                "id": "v_paid",
+                "code": "SSCSIGNCCP-PAID",
+                "kind": "amount_off",
+                "source": "signup",
+                "status": "active",
+                "value": 3.5,
+            }
+        }
+    )
+    await apply_vouchers_to_order(
+        db_session,
+        order_id=order.id,
+        codes=["SSCSIGNCCP-PAID"],
+        staff=cashier_staff,
+        plotholders=fake,
+    )
+
+    monkeypatch.setattr("app.services.orders.PlotholdersClient", lambda *a, **k: fake)
+    monkeypatch.setattr("app.services.vouchers.PlotholdersClient", lambda *a, **k: fake)
+
+    await update_order_status_service(
+        db_session, order.id, OrderStatus.paid, payment_method="cash"
+    )
+    await update_order_status_service(db_session, order.id, OrderStatus.cancelled)
+
+    voucher = await get_voucher_by_code(db_session, "SSCSIGNCCP-PAID")
+    assert voucher is not None
+    assert voucher.status == "redeemed"
+    assert fake.release_calls == []
