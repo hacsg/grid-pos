@@ -287,7 +287,16 @@ Read [the OEM key section](README.md#reading-the-oem-key-on-a-windows-7-machine)
 before buying anything — if the machine carries a firmware OEM licence, a clean
 install self-activates and there is no key to buy.
 
-Windows also installs and runs **unactivated** indefinitely: you get a watermark
-and locked personalisation settings, but updates, drivers and Chrome all work.
-That is a legitimate way to get a till into service while a licence is sorted
-out — you are not blocked on the key.
+Windows also installs and runs **unactivated** indefinitely — skip the key prompt
+with "I don't have a product key". Security updates, drivers, Chrome, the KPay
+daemon and the kiosk launcher all work. The restrictions are cosmetic: an
+"Activate Windows" watermark and greyed-out Personalisation settings.
+
+Use that to get a till into service while a licence is sorted out — you are not
+blocked on the key. **It is a bridge, not a plan:** unactivated is not the same
+as licensed, and running a business on unlicensed Windows carries the same
+exposure as a grey-market key.
+
+There is also a practical reason not to leave a till this way: the watermark
+renders on the **customer-facing display**, in the corner of the screen customers
+watch while paying.
