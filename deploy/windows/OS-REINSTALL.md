@@ -23,7 +23,13 @@ wipe anything. See [README](README.md#surveying-a-new-till).
 
 ## 2. Build the install USB
 
-**Use Rufus.** This is the step that most often goes wrong.
+**Microsoft's Media Creation Tool is fine** and is the simplest option: it writes
+FAT32 + MBR with `install.wim` split as needed, which boots both legacy and UEFI.
+If you used MCT, the stick is almost certainly not your problem — go to
+[step 3](#3-getting-the-machine-to-actually-boot-it).
+
+Reach for **Rufus** when you need control over the layout, or as an A/B test when
+a machine refuses to boot the MCT stick.
 
 | Setting | Value |
 |---|---|
@@ -46,16 +52,33 @@ Windows cannot mount and that often won't boot Windows Setup properly.
 
 ### Symptom: Windows says the stick "needs to be reformatted"
 
-That message means the host can't read the USB's filesystem, and a Windows
-install USB should always be readable. It points at one of:
+That message means *the machine reading it* can't parse the USB's filesystem.
+Which end is at fault depends on how the stick was made:
 
-- The stick was written in **image/dd mode** (Etcher, `dd`, Rufus DD mode).
-- The stick was written **GPT** and is a *removable* flash drive — Windows 7 only
-  exposes the first partition of removable media and handles GPT on it badly.
-- The stick is **failing or counterfeit**. Cheap flash with faked capacity is
-  common; if a correct rebuild still won't read, try a different stick.
+- Written in **image/dd mode** (Etcher, `dd`, Rufus DD mode) — the stick is at
+  fault. That layout is ISO9660/UDF, which Windows cannot mount.
+- Written **GPT** on a *removable* flash drive — Windows 7 only exposes the first
+  partition of removable media and handles GPT on it badly.
+- **Failing or counterfeit flash.** Faked-capacity sticks are common.
+- **The reading machine is at fault.** A heavily stripped vendor image can have a
+  damaged USB storage or filesystem stack and fail to mount a perfectly good
+  FAT32 stick. If the same image is also missing PowerShell, assume this before
+  blaming the stick.
 
-Rebuild it with the settings in the table above.
+Prove which it is before rebuilding anything — see below.
+
+### Prove the stick before blaming the BIOS
+
+Plug the stick into a **known-good PC**. Two checks, in order:
+
+1. **Does it open?** You should see `setup.exe`, `bootmgr`, `boot\`, `efi\boot\`
+   and `sources\`. `efi\boot\bootx64.efi` is the file UEFI needs;
+   `sources\install.wim` or `install.esd` is the payload.
+2. **Does it boot?** Boot that PC from it and stop at the "Install now" screen,
+   then power off. Nothing is written to the PC.
+
+If it boots on another machine, the stick is proven good and the problem is
+entirely the till's firmware. Skip any rebuild and work through step 3.
 
 ### FAT32 and the 4 GB limit
 
@@ -85,9 +108,18 @@ order of how often they're the answer:
    board — not a front-panel header, not a hub.
 4. **Disable Fast Boot.** It skips USB enumeration during POST.
 5. **Pick the right entry.** With CSM enabled the stick appears twice: `UEFI: <name>`
-   and a plain `<name>` (legacy). For an MBR/NTFS stick, try the plain legacy
-   entry first.
+   and a plain `<name>` (legacy). Try both — they are different boot paths and
+   one failing says nothing about the other. A Media Creation Tool stick is
+   FAT32, so the `UEFI:` entry is the cleaner path on that media; a Rufus
+   MBR/NTFS stick generally does better on the plain legacy entry.
 6. **Disable Secure Boot** if the firmware has it.
+7. **Check the `Boot Option Filter` / CSM sub-settings.** Some firmware sets
+   storage devices to "UEFI only" or "Legacy only" independently of the global
+   CSM switch, which silently hides one of the two entries above.
+8. **32-bit UEFI firmware.** Some Bay Trail / Atom POS boards ship a 32-bit UEFI
+   even with a 64-bit CPU. A 64-bit installer has no `bootia32.efi`, so the UEFI
+   path is a no-op — the legacy entry is the only one that will work. Check the
+   survey's CPU `AddressWidth` and the OS architecture.
 
 ## 4. UEFI or legacy?
 
