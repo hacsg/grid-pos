@@ -25,11 +25,36 @@ Open `start-pos-mode.ps1` and edit the **CONFIG** block:
 
 ```powershell
 $PosUrl             = 'https://your-pos-host'  # POS web app URL, no trailing slash (required)
+$Outlet             = ''                       # preselect this outlet on the login screen
 $ChromePath         = $null                    # auto-detect, or full path to chrome.exe
 $UseKiosk           = $false                   # see kiosk note below
 $SwapMonitors       = $false                   # $true flips which monitor gets POS vs display
 $NetworkWaitSeconds = 60                        # wait for the host before launching; 0 = skip
 ```
+
+### Preselecting the outlet
+
+Set `$Outlet` to the till's outlet so staff don't pick it from the dropdown every
+shift:
+
+```powershell
+$Outlet = 'Sunset Way'
+```
+
+The value must match the outlet's **name exactly as it appears in the login
+dropdown** (case-insensitive, surrounding whitespace ignored), or be its UUID.
+The launcher URL-encodes it and appends `?outlet=` to the POS window only.
+
+> **Don't put `?outlet=...` on `$PosUrl`.** The customer display URL is built as
+> `"$PosUrl/display"`, so a query string on the base would produce
+> `.../?outlet=Sunset%20Way/display` and break the display window. Use `$Outlet`.
+
+If the name doesn't match any outlet, the login screen shows an error and falls
+back to the first outlet in the list — it will not quietly sign staff in against
+the wrong one. If you see that toast, check `$Outlet` against the dropdown.
+
+The same thing works by hand for testing, without touching the launcher:
+`https://your-pos-host/?outlet=Sunset%20Way`
 
 `$PosUrl` **must** be set — the script refuses to launch (and pops an error) while
 it still contains `CHANGE-ME`.

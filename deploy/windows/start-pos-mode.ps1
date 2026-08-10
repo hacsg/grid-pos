@@ -20,6 +20,14 @@
 # Base URL where the POS web app is served (no trailing slash).
 $PosUrl = 'https://grid-pos-web-production.up.railway.app'
 
+# Outlet to preselect on the login screen for this till, e.g. 'Sunset Way'.
+# Must match the outlet's name as shown in the login dropdown (case-insensitive)
+# or its UUID. Leave '' to let staff pick.
+#
+# Do NOT put ?outlet=... on $PosUrl instead: the customer display URL is built as
+# "$PosUrl/display", so a query string there would produce ".../?outlet=X/display".
+$Outlet = ''
+
 # Path to chrome.exe. Leave as $null to auto-detect common install locations.
 $ChromePath = $null
 
@@ -372,8 +380,16 @@ try {
     # position/size/fullscreen flags when opened from a shared profile.
     $SharedProfile = Join-Path $ProfileRoot 'profile'
 
+    # The outlet preselection goes on the POS window only. The customer display
+    # has no login screen, and appending to $PosUrl would corrupt "/display".
+    $posPageUrl = "$PosUrl/"
+    if ($Outlet) {
+        $posPageUrl = "$PosUrl/?outlet=" + [System.Uri]::EscapeDataString($Outlet)
+        Write-Log "Preselecting outlet: $Outlet"
+    }
+
     $pb = $posScreen.Bounds
-    $posProc = Start-PosWindow -Chrome $chrome -Url "$PosUrl/" `
+    $posProc = Start-PosWindow -Chrome $chrome -Url $posPageUrl `
         -ProfileDir $SharedProfile `
         -X $pb.X -Y $pb.Y -W $pb.Width -H $pb.Height -Kiosk $UseKiosk
 

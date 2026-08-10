@@ -51,12 +51,21 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     // Preselect an outlet from ?outlet=<id|name> so a per-outlet start-pos.bat
     // can deep-link straight to the right till (e.g. ?outlet=HAC%20Bedok).
     const params = new URLSearchParams(window.location.search);
-    const wanted = (params.get('outlet') ?? '').trim().toLowerCase();
+    const requested = (params.get('outlet') ?? '').trim();
+    const wanted = requested.toLowerCase();
     const match = wanted
       ? outletsQuery.data.find(
-          (o) => o.id.toLowerCase() === wanted || o.name.toLowerCase() === wanted,
+          (o) => o.id.toLowerCase() === wanted || o.name.trim().toLowerCase() === wanted,
         )
       : null;
+    if (wanted && !match) {
+      // Falling back quietly would sign staff in against the wrong outlet and
+      // attribute the day's takings to it, so make a bad ?outlet= impossible to
+      // miss rather than letting the till look correctly configured.
+      toast.error(`Outlet "${requested}" not found — check the till's ?outlet= and pick one manually`, {
+        duration: 10000,
+      });
+    }
     setSelectedOutletId((match ?? outletsQuery.data[0]).id);
   }, [outletsQuery.data, selectedOutletId]);
 
