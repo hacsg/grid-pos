@@ -15,6 +15,7 @@ with only one monitor, just the staff POS opens.
 |------|---------|
 | `start-pos-mode.ps1` | The launcher. Edit the CONFIG block at the top. |
 | `start-pos-mode.bat` | Double-clickable wrapper that runs the `.ps1`. |
+| `pos-survey.ps1` / `.bat` | Read-only machine survey — see [below](#surveying-a-new-till). |
 
 ## 1. Configure
 
@@ -74,6 +75,42 @@ till boots straight into POS mode.
 2. General: *Run only when user is logged on*.
 3. Triggers: *At log on* (optionally a 10s delay so the desktop/network settle).
 4. Actions: *Start a program* → `start-pos-mode.bat`.
+
+## Surveying a new till
+
+When a new POS machine arrives — especially a vendor-supplied one with an
+unknown Windows image — run `pos-survey.bat` (right-click → **Run as
+administrator**) *before* changing anything. It writes `pos-survey.txt` next to
+the script and opens it in Notepad. It is read-only and modifies nothing.
+
+It collects, in one pass:
+
+- **Hardware** — model, CPU, RAM (plus free slots and max capacity), disks
+  (including whether storage is a small eMMC module), partition style, free space.
+- **Firmware** — BIOS version, GPT/UEFI indicators, TPM presence.
+- **Licensing** — the firmware-embedded OEM key (`OA3xOriginalProductKey`) if the
+  machine has one, the current activation channel, and any configured KMS server.
+- **Peripherals** — monitors, printers and their drivers, COM ports, every USB
+  device with its VID/PID, and any device sitting with a driver error.
+- **Software** — installed Chrome version, the `grid-pos-daemon` service state.
+
+Two fields decide whether an OS reinstall is straightforward:
+
+- **`OA3xOriginalProductKey`** — if a key is present, the machine carries a
+  firmware OEM licence and a clean Windows install self-activates with nothing to
+  buy. If it is blank, a licence has to be supplied separately.
+- **Activation `Description`** — `OEM_SLP` or `RETAIL` is a normal licence.
+  `VOLUME_KMSCLIENT` on a standalone till, combined with a
+  `KeyManagementServiceMachine` value, means the image was activated against a
+  KMS crack rather than licensed.
+
+The **All USB device IDs** section is the one to keep: those VID/PID values are
+how you find Windows 10/11 drivers for the touchscreen, receipt printer, pole
+display and any USB-serial bridge *before* wiping the machine.
+
+> The script targets **PowerShell 2.0**, the version that ships with Windows 7,
+> so it avoids `Get-CimInstance`, `Get-PnpDevice`, `Get-Printer` and other PS3+
+> cmdlets. Don't modernise it until every till is on Windows 10+.
 
 ## Notes / troubleshooting
 
