@@ -18,6 +18,9 @@ wipe anything. See [README](README.md#surveying-a-new-till).
 - **Collect drivers** for the touchscreen, receipt printer, pole display and any
   USB-serial bridge, using the VID/PID list from the survey. Put them on a second
   USB stick.
+- **Look for a vendor driver partition on the internal disk.** These machines
+  often ship drivers on a second partition and nowhere else, so a wipe destroys
+  the only copy. See [rescuing it](#first-rescue-the-vendors-driver-partition).
 - **Check the storage size.** 32 GB eMMC will not hold a modern Windows install
   plus updates. Budget for an SSD swap rather than fighting it.
 
@@ -138,6 +141,52 @@ pick the **legacy** USB entry instead to stay on MBR.
 
 Setup can't reuse the existing partition. Don't fight it — wipe the disk and let
 Setup lay it out from scratch.
+
+### First: rescue the vendor's driver partition
+
+Chinese POS vendors routinely ship drivers on a **second partition** of the
+internal disk rather than on any external media, and it is often the only copy in
+existence. Wiping the disk destroys it. Check for it before doing anything
+destructive.
+
+From `Shift+F10` at the partition screen:
+
+```cmd
+diskpart
+list volume
+exit
+```
+
+Read the **Size** column — the large volume is Windows, a few-GB volume alongside
+it is usually the driver partition. WinPE assigns its own drive letters, so they
+will not match what Windows 7 showed. Confirm with `dir E:\` before trusting a
+letter.
+
+Plug in a **second** USB stick, leave the install media alone, and copy:
+
+```cmd
+robocopy E:\ F:\till-drivers /E /R:1 /W:1 /XJ
+dir F:\till-drivers /s | more
+```
+
+Verify the copy before wiping anything.
+
+These are Windows 7 drivers, so some will not install on Windows 10 — keep them
+anyway. The `.inf` files identify the exact hardware, which is usually the
+fastest route to the correct Windows 10 driver even when the binaries are
+useless.
+
+### Keeping the driver partition in place
+
+The whole-disk wipe is only needed because MBR → GPT conversion requires an empty
+disk. Reboot on the USB's **legacy** entry instead and no conversion is needed:
+delete only the Windows partition, install into that space, and the driver
+partition survives untouched.
+
+The cost is staying on MBR, which rules out a later Windows 11 upgrade.
+Acceptable for a till, but copying the drivers to a USB stick and going GPT is
+the better end state — drivers stored on the machine they belong to are one disk
+failure from gone.
 
 ### Fix: wipe and convert with diskpart
 
