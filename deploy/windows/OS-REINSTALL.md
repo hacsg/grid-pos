@@ -243,15 +243,38 @@ Either works for a till. Decide once and stay consistent:
 Whichever you pick, **delete all existing partitions** at the drive-selection
 screen rather than installing alongside the vendor image.
 
+## 4a. Which edition, and how you will reach the till remotely
+
+**Install Pro, not Home.** Windows 10/11 **Home cannot host a Remote Desktop
+session** — it can only connect out. If remote access matters, the edition is
+decided at purchase time and is expensive to get wrong.
+
+That said, **RDP is a poor fit for a till.** Desktop Windows is single-session:
+an incoming RDP connection *locks the physical console*. Connecting to help a
+cashier kicks them off mid-transaction, and you cannot see the screen they are
+describing.
+
+For POS support use **console mirroring** instead — RustDesk (free, open source,
+self-hostable), AnyDesk or TeamViewer. These attach to the live session, so the
+cashier keeps working while you watch.
+
+Note this cuts both ways: those tools run on Windows 7 too, so remote access on
+its own is not a reason to reinstall. The reasons that hold are the stripped
+image, Chrome being frozen at 109, and PowerShell being absent — a till without
+PowerShell cannot run `start-pos-mode.ps1` and therefore cannot run POS mode at
+all.
+
 ## 5. After the install
 
 1. Windows Update, then the peripheral drivers you collected in step 1.
 2. Check Device Manager for anything unresolved — or re-run the survey and read
    its *Devices with a driver problem* section.
 3. Install Chrome.
-4. `setup-pos-pc.bat` — installs the KPay daemon as a service.
-5. `start-pos-mode.ps1` — configure `$PosUrl`, then set up auto-start.
-6. Set the customer-facing screen as the Windows **secondary** monitor, or set
+4. Install the remote-support client (see [4a](#4a-which-edition-and-how-you-will-reach-the-till-remotely))
+   before the till leaves your bench — it is what saves a site visit later.
+5. `setup-pos-pc.bat` — installs the KPay daemon as a service.
+6. `start-pos-mode.ps1` — configure `$PosUrl`, then set up auto-start.
+7. Set the customer-facing screen as the Windows **secondary** monitor, or set
    `$SwapMonitors = $true`.
 
 Once every till is on Windows 10+, two pins can be lifted: the Go 1.20 toolchain
