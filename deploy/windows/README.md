@@ -17,6 +17,7 @@ with only one monitor, just the staff POS opens.
 | `start-pos-mode.bat` | Double-clickable wrapper that runs the `.ps1`. |
 | `pos-survey.ps1` / `.bat` | Read-only machine survey — see [below](#surveying-a-new-till). |
 | `pos-survey-cmd.bat` | Same survey, CMD-only, for machines with no PowerShell. |
+| `OS-REINSTALL.md` | Runbook for rebuilding a till's Windows from scratch. |
 
 ## 1. Configure
 
