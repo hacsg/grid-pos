@@ -66,8 +66,8 @@ function StaffForm({ staff, outlets, onSubmit, onCancel, isSubmitting }: StaffFo
         >
           <option value="admin">Admin</option>
           <option value="manager">Manager</option>
+          <option value="supervisor">Supervisor</option>
           <option value="cashier">Cashier</option>
-          <option value="kitchen">Kitchen</option>
         </select>
       </div>
 

@@ -8,6 +8,7 @@ Two routers are provided:
 
 from collections import deque
 from datetime import timedelta
+from math import ceil
 from threading import Lock
 from time import monotonic
 from uuid import UUID
@@ -41,6 +42,14 @@ _LOGIN_BLOCK_SECONDS = 10 * 60
 _login_lock = Lock()
 _login_failures: dict[str, deque[float]] = {}
 _login_blocked_until: dict[str, float] = {}
+
+# Roles allowed to sign in to the admin portal (a login with no outlet_id).
+# The till always posts an outlet_id, so this only gates the back office and a
+# cashier PIN cannot be used to reach it.
+_BACK_OFFICE_ROLES = frozenset({StaffRole.admin, StaffRole.manager, StaffRole.supervisor})
+_ADMIN_LOGIN_FAILURE_DETAIL = (
+    "Invalid name or PIN, or this account has no back-office access."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -81,15 +90,23 @@ def _prune_login_failures(attempts: deque[float], now: float) -> None:
 
 
 def _enforce_login_rate_limit(key: str) -> None:
-    """Raise 429 when the source is temporarily blocked."""
+    """Raise 429 when the source is temporarily blocked.
+
+    The remaining cooldown is spelled out; "try again later" left staff with no
+    idea whether to wait a minute or call someone.
+    """
     now = monotonic()
     with _login_lock:
         blocked_until = _login_blocked_until.get(key)
         if blocked_until is not None:
             if blocked_until > now:
+                retry_after = max(1, ceil(blocked_until - now))
+                minutes = ceil(retry_after / 60)
+                wait = f"{minutes} minute{'s' if minutes != 1 else ''}"
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many failed login attempts. Try again later.",
+                    detail=f"Too many failed login attempts. Try again in {wait}.",
+                    headers={"Retry-After": str(retry_after)},
                 )
             _login_blocked_until.pop(key, None)
 
@@ -118,12 +135,12 @@ def _clear_failed_logins(key: str) -> None:
         _login_blocked_until.pop(key, None)
 
 
-def _invalid_credentials(key: str) -> HTTPException:
+def _invalid_credentials(key: str, detail: str = "Invalid credentials") -> HTTPException:
     """Record a failed login and return the standard auth failure."""
     _record_failed_login(key)
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid credentials",
+        detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -181,7 +198,7 @@ async def login_staff(
     else:
         # Admin flow: search by name + PIN across all outlets
         if not payload.name:
-            raise _invalid_credentials(rate_limit_key)
+            raise _invalid_credentials(rate_limit_key, _ADMIN_LOGIN_FAILURE_DETAIL)
         query = select(Staff).where(
             Staff.name.ilike(f"%{payload.name}%"), Staff.is_active.is_(True)
         )
@@ -196,7 +213,14 @@ async def login_staff(
             break
 
     if matched is None:
+        if payload.outlet_id is None:
+            raise _invalid_credentials(rate_limit_key, _ADMIN_LOGIN_FAILURE_DETAIL)
         raise _invalid_credentials(rate_limit_key)
+
+    if payload.outlet_id is None and matched.role not in _BACK_OFFICE_ROLES:
+        # Deliberately the same message as a wrong PIN: telling a caller their
+        # PIN was right but their role is too low confirms a working PIN.
+        raise _invalid_credentials(rate_limit_key, _ADMIN_LOGIN_FAILURE_DETAIL)
 
     _clear_failed_logins(rate_limit_key)
 

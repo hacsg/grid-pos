@@ -62,6 +62,48 @@ class TestLogin:
         assert resp.status_code == 429
         assert "Too many failed login attempts" in resp.json()["detail"]
 
+    async def test_rate_limit_states_the_wait(self, client: AsyncClient, cashier_staff) -> None:
+        """The 429 spells out the cooldown and sets Retry-After."""
+        payload = {"pin": "0000", "outlet_id": str(cashier_staff.outlet_id)}
+        for _ in range(5):
+            await client.post("/api/auth/login", json=payload)
+
+        resp = await client.post("/api/auth/login", json=payload)
+
+        assert resp.status_code == 429
+        assert "Try again in 10 minutes" in resp.json()["detail"]
+        assert 0 < int(resp.headers["retry-after"]) <= 600
+
+    async def test_admin_login_with_admin_role(self, client: AsyncClient, admin_staff) -> None:
+        """An admin signs in to the back office with name + PIN, no outlet."""
+        payload = {"name": "Admin User", "pin": "0000"}
+        resp = await client.post("/api/auth/login", json=payload)
+        assert resp.status_code == 200
+        assert resp.json()["staff"]["role"] == "admin"
+
+    async def test_admin_login_allows_manager_and_supervisor(
+        self, client: AsyncClient, manager_staff, supervisor_staff
+    ) -> None:
+        """Managers and supervisors keep back-office access."""
+        for name, pin in (("Manager User", "1111"), ("Supervisor User", "2222")):
+            resp = await client.post("/api/auth/login", json={"name": name, "pin": pin})
+            assert resp.status_code == 200, name
+
+    async def test_admin_login_rejects_cashier(self, client: AsyncClient, cashier_staff) -> None:
+        """A correct cashier PIN cannot open the admin portal."""
+        payload = {"name": "Cashier User", "pin": "1234"}
+        resp = await client.post("/api/auth/login", json=payload)
+        assert resp.status_code == 401
+        # Same wording as a wrong PIN, so a valid PIN is not confirmed.
+        assert resp.json()["detail"] == "Invalid name or PIN, or this account has no back-office access."
+
+    async def test_cashier_still_logs_in_at_the_till(self, client: AsyncClient, cashier_staff) -> None:
+        """The outlet-scoped till flow is unchanged for cashiers."""
+        payload = {"pin": "1234", "outlet_id": str(cashier_staff.outlet_id)}
+        resp = await client.post("/api/auth/login", json=payload)
+        assert resp.status_code == 200
+        assert resp.json()["staff"]["role"] == "cashier"
+
     async def test_login_with_inactive_staff(self, client: AsyncClient, inactive_staff) -> None:
         """Login with inactive staff returns 401."""
         payload = {"pin": "9999", "outlet_id": str(inactive_staff.outlet_id)}

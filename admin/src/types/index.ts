@@ -173,7 +173,9 @@ export interface Staff {
   updated_at: string;
 }
 
-export type StaffRole = 'admin' | 'manager' | 'cashier' | 'kitchen';
+// Mirrors backend StaffRole. 'kitchen' is not a backend role — offering it
+// made the create-staff form fail validation.
+export type StaffRole = 'admin' | 'manager' | 'supervisor' | 'cashier';
 
 export interface StaffFormData {
   name: string;
