@@ -121,6 +121,65 @@ order of how often they're the answer:
    path is a no-op — the legacy entry is the only one that will work. Check the
    survey's CPU `AddressWidth` and the OS architecture.
 
+## 3a. Errors at the "Where do you want to install Windows?" screen
+
+Two errors show up together on a vendor-imaged till, and they share a cause: the
+disk is still laid out for the old install, and it does not match the mode you
+booted Setup in.
+
+> **"Windows cannot be installed to this disk. The selected disk has an MBR
+> partition table. On EFI systems, Windows can only be installed to GPT disks."**
+
+You booted the USB via its **UEFI** entry, but the internal disk is **MBR** from
+the vendor's Windows 7. Either convert the disk to GPT (below), or reboot and
+pick the **legacy** USB entry instead to stay on MBR.
+
+> **"We couldn't format the selected partition. [Error: 0x8004242d]"**
+
+Setup can't reuse the existing partition. Don't fight it — wipe the disk and let
+Setup lay it out from scratch.
+
+### Fix: wipe and convert with diskpart
+
+At the partition screen press `Shift+F10` for a command prompt:
+
+```cmd
+diskpart
+list disk
+```
+
+**Read the sizes and identify the internal disk before going further.** POS
+machines often have a multi-slot card reader that enumerates as several removable
+disks, plus the install USB itself — so `Disk 0` is not automatically the right
+target. Match on capacity.
+
+```cmd
+select disk 0
+clean
+convert gpt
+exit
+exit
+```
+
+Then **Refresh** on the partition screen, select the single block of unallocated
+space, and press **Next**. Setup creates the EFI system partition, MSR and
+primary partition itself — do not create them by hand.
+
+Omit `convert gpt` if you deliberately booted legacy and want to stay MBR.
+
+> `clean` erases the whole disk immediately and without confirmation, including
+> the vendor's Windows. Make sure the disk image from step 1 exists first, and
+> that you selected the right disk.
+
+### While you have the prompt open
+
+`Shift+F10` in Setup is also the reliable place to read the firmware OEM key,
+which Windows 7 cannot report:
+
+```cmd
+wmic path softwarelicensingservice get OA3xOriginalProductKey
+```
+
 ## 4. UEFI or legacy?
 
 Either works for a till. Decide once and stay consistent:
