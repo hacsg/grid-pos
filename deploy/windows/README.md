@@ -16,6 +16,7 @@ with only one monitor, just the staff POS opens.
 | `start-pos-mode.ps1` | The launcher. Edit the CONFIG block at the top. |
 | `start-pos-mode.bat` | Double-clickable wrapper that runs the `.ps1`. |
 | `pos-survey.ps1` / `.bat` | Read-only machine survey — see [below](#surveying-a-new-till). |
+| `pos-survey-cmd.bat` | Same survey, CMD-only, for machines with no PowerShell. |
 
 ## 1. Configure
 
@@ -111,6 +112,50 @@ display and any USB-serial bridge *before* wiping the machine.
 > The script targets **PowerShell 2.0**, the version that ships with Windows 7,
 > so it avoids `Get-CimInstance`, `Get-PnpDevice`, `Get-Printer` and other PS3+
 > cmdlets. Don't modernise it until every till is on Windows 10+.
+
+### If the machine has no PowerShell
+
+Stripped vendor "Ghost" images often have PowerShell removed entirely. Run
+**`pos-survey-cmd.bat`** instead — same output file, same sections, but built
+only from `wmic`, `reg`, `sc`, `diskpart`, `ipconfig` and `systeminfo`.
+
+Before reaching for it, check whether PowerShell is genuinely absent rather than
+just missing from `PATH`:
+
+```cmd
+dir "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+dir "%SystemRoot%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+```
+
+The CMD collector reports this for you in its **AVAILABLE TOOLING** section,
+along with which other built-ins survived the image — a useful proxy for how far
+the vendor stripped Windows. Note that PowerShell 2.0 also needs .NET 2.0/3.5,
+so `powershell.exe` can be present and still fail to start.
+
+> A till with no PowerShell **cannot run `start-pos-mode.ps1`**, so it can't run
+> Grid POS kiosk mode as shipped. Treat a missing PowerShell as a reason to
+> reinstall the OS, not as something to work around.
+
+### Reading the OEM key on a Windows 7 machine
+
+`OA3xOriginalProductKey` is a **Windows 8+ WMI property**. On Windows 7 the query
+usually returns nothing *even when the machine does have a firmware key*, because
+Windows 7 predates the UEFI MSDM table that stores it. **A blank result on
+Windows 7 is not evidence that the machine lacks an OEM licence.**
+
+To read it properly, use something newer than the installed OS:
+
+- **From Windows Setup** — boot the Windows 10/11 install USB, and at the first
+  screen press `Shift+F10` for a command prompt:
+  ```cmd
+  wmic path softwarelicensingservice get OA3xOriginalProductKey
+  ```
+  This costs nothing extra, since you're booting that USB anyway.
+- **From a Linux live USB**:
+  ```sh
+  strings /sys/firmware/acpi/tables/MSDM
+  ```
+  The key is the last line of output. No MSDM file means no firmware key.
 
 ## Notes / troubleshooting
 
