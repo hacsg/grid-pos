@@ -81,6 +81,8 @@ export default function Products() {
 
   const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
+    const label = selectedIds.length === 1 ? 'this product' : `these ${selectedIds.length} products`;
+    if (!window.confirm(`Delete ${label}? They stay on past orders but leave the POS menu.`)) return;
     deleteProducts.mutate(selectedIds, {
       onSuccess: () => setSelectedIds([]),
     });
@@ -149,7 +151,7 @@ export default function Products() {
           onSelect={handleSelect}
           onSelectAll={handleSelectAll}
           onEdit={handleEdit}
-          onToggleAvailability={(id) => toggleAvailability.mutate(id)}
+          onToggleAvailability={(id, isAvailable) => toggleAvailability.mutate({ id, isAvailable })}
           onSearch={setSearch}
           onFilterCategory={setCategoryFilter}
         />

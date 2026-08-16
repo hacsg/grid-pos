@@ -196,13 +196,13 @@ export const deleteProducts = async (ids: string[]): Promise<void> => {
   toast.success(`${ids.length} products deleted successfully`);
 };
 
-export const toggleProductAvailability = async (id: string): Promise<Product> => {
-  const { data } = await api.patch(`/products/${id}/toggle-availability`);
+export const toggleProductAvailability = async (id: string, isAvailable: boolean): Promise<Product> => {
+  const { data } = await api.patch(`/products/${id}/availability`, { is_available: isAvailable });
   return data;
 };
 
 export const toggleProductsAvailability = async (ids: string[], available: boolean): Promise<void> => {
-  await api.post('/products/bulk-toggle-availability', { ids, available });
+  await api.patch('/products/bulk-availability', { ids, is_available: available });
   toast.success(`${ids.length} products updated`);
 };
 

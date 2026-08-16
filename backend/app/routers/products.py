@@ -33,6 +33,8 @@ from app.schemas.modifier import (
 )
 from app.schemas.product import (
     ProductAvailabilityUpdate,
+    ProductBulkAvailabilityUpdate,
+    ProductBulkDelete,
     ProductCreate,
     ProductDetailRead,
     ProductUpdate,
@@ -79,6 +81,20 @@ async def _load_product_or_404(db: AsyncSession, product_id: UUID) -> Product:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return product
+
+
+async def _set_products_availability(
+    db: AsyncSession, product_ids: list[UUID], is_available: bool
+) -> None:
+    """Set availability on a batch of products, or 404 if any id is unknown."""
+    unique_ids = list(dict.fromkeys(product_ids))
+    result = await db.execute(select(Product).where(Product.id.in_(unique_ids)))
+    products = list(result.scalars().all())
+    if len(products) != len(unique_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    for product in products:
+        product.is_available = is_available
+    await db.commit()
 
 
 async def _load_modifier_group_or_404(db: AsyncSession, group_id: UUID) -> ModifierGroup:
@@ -328,6 +344,32 @@ async def list_products(
             _build_assignment_read(a) for a in (p.modifier_group_assignments or [])
         ]
     return products
+
+
+@router.post("/products/bulk-delete", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_delete_products(
+    payload: ProductBulkDelete,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
+    """Soft-delete several products at once.
+
+    Mirrors the single-product delete: the rows are kept and only marked
+    unavailable, so past orders keep resolving their product names.
+    """
+    await _set_products_availability(db, payload.ids, False)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/products/bulk-availability", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_set_product_availability(
+    payload: ProductBulkAvailabilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> Response:
+    """Set availability on several products at once."""
+    await _set_products_availability(db, payload.ids, payload.is_available)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/products/{product_id}", response_model=ProductDetailRead)

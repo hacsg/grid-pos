@@ -13,7 +13,7 @@ interface ProductTableProps {
   onSelect: (id: string) => void;
   onSelectAll: () => void;
   onEdit: (product: Product) => void;
-  onToggleAvailability: (id: string) => void;
+  onToggleAvailability: (id: string, isAvailable: boolean) => void;
   onSearch: (query: string) => void;
   onFilterCategory: (categoryId: string) => void;
 }
@@ -89,7 +89,7 @@ export default function ProductTable({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onToggleAvailability(product.id);
+            onToggleAvailability(product.id, !product.available);
           }}
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
             product.available

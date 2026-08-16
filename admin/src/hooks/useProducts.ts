@@ -75,7 +75,8 @@ export function useDeleteProducts() {
 export function useToggleProductAvailability() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => toggleProductAvailability(id),
+    mutationFn: ({ id, isAvailable }: { id: string; isAvailable: boolean }) =>
+      toggleProductAvailability(id, isAvailable),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },

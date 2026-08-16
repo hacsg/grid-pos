@@ -197,3 +197,58 @@ class TestToggleAvailability:
             f"/api/products/{product.id}/availability", json={"is_available": None}
         )
         assert resp.status_code == 422
+
+
+class TestBulkProductActions:
+    """POST /api/products/bulk-delete and PATCH /api/products/bulk-availability"""
+
+    async def test_bulk_delete_marks_products_unavailable(
+        self, client: AsyncClient, product, category
+    ) -> None:
+        second = await client.post(
+            "/api/products",
+            json={"name": "Second Product", "price": "4.50", "category_id": str(category.id)},
+        )
+        second_id = second.json()["id"]
+
+        resp = await client.post(
+            "/api/products/bulk-delete", json={"ids": [str(product.id), second_id]}
+        )
+
+        assert resp.status_code == 204
+        for pid in (product.id, second_id):
+            assert (await client.get(f"/api/products/{pid}")).json()["is_available"] is False
+
+    async def test_bulk_availability_sets_the_given_value(
+        self, client: AsyncClient, product
+    ) -> None:
+        off = await client.patch(
+            "/api/products/bulk-availability",
+            json={"ids": [str(product.id)], "is_available": False},
+        )
+        assert off.status_code == 204
+        assert (await client.get(f"/api/products/{product.id}")).json()["is_available"] is False
+
+        on = await client.patch(
+            "/api/products/bulk-availability",
+            json={"ids": [str(product.id)], "is_available": True},
+        )
+        assert on.status_code == 204
+        assert (await client.get(f"/api/products/{product.id}")).json()["is_available"] is True
+
+    async def test_unknown_id_leaves_the_batch_untouched(
+        self, client: AsyncClient, product
+    ) -> None:
+        bogus = "00000000-0000-0000-0000-000000000000"
+
+        resp = await client.post(
+            "/api/products/bulk-delete", json={"ids": [str(product.id), bogus]}
+        )
+
+        assert resp.status_code == 404
+        assert (await client.get(f"/api/products/{product.id}")).json()["is_available"] is True
+
+    async def test_empty_id_list_returns_422(self, client: AsyncClient) -> None:
+        resp = await client.post("/api/products/bulk-delete", json={"ids": []})
+
+        assert resp.status_code == 422

@@ -55,3 +55,15 @@ class ProductAvailabilityUpdate(BaseModel):
 
     is_available: bool
 
+
+class ProductBulkDelete(BaseModel):
+    """Payload for soft-deleting several products at once."""
+
+    ids: list[UUID] = Field(min_length=1)
+
+
+class ProductBulkAvailabilityUpdate(ProductAvailabilityUpdate):
+    """Payload for setting availability on several products at once."""
+
+    ids: list[UUID] = Field(min_length=1)
+
