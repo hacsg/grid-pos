@@ -192,6 +192,9 @@ export interface Outlet {
   phone: string | null;
   paynow_qr_url?: string | null;
   logo_url?: string | null;
+  receipt_brand_name?: string | null;
+  receipt_company_details?: string | null;
+  paynow_uen?: string | null;
   manual_terminal_mode?: boolean;
   created_at: string;
   updated_at: string;
@@ -201,6 +204,9 @@ export interface OutletFormData {
   name: string;
   address: string;
   phone?: string | null;
+  receipt_brand_name?: string | null;
+  receipt_company_details?: string | null;
+  paynow_uen?: string | null;
   manual_terminal_mode?: boolean;
 }
 

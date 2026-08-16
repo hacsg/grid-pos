@@ -28,6 +28,9 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
   const [name, setName] = useState(outlet?.name ?? '');
   const [address, setAddress] = useState(outlet?.address ?? '');
   const [phone, setPhone] = useState(outlet?.phone ?? '');
+  const [brandName, setBrandName] = useState(outlet?.receipt_brand_name ?? '');
+  const [companyDetails, setCompanyDetails] = useState(outlet?.receipt_company_details ?? '');
+  const [paynowUen, setPaynowUen] = useState(outlet?.paynow_uen ?? '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +39,9 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
       name: name.trim(),
       address: address.trim(),
       phone: phone.trim() || null,
+      receipt_brand_name: brandName.trim() || null,
+      receipt_company_details: companyDetails.trim() || null,
+      paynow_uen: paynowUen.trim().toUpperCase() || null,
     });
   };
 
@@ -61,6 +67,49 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
       />
+
+      <div className="space-y-4 border-t border-gray-200 pt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+          Receipt &amp; PayNow
+        </p>
+        <Input
+          label="Receipt Brand Name"
+          placeholder="Hundred Acre"
+          value={brandName}
+          onChange={(e) => setBrandName(e.target.value)}
+          maxLength={64}
+        />
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="receipt-company-details" className="text-sm font-medium text-text">
+            Receipt Company Details
+          </label>
+          <textarea
+            id="receipt-company-details"
+            rows={3}
+            maxLength={500}
+            placeholder={'HAC North Pte Ltd\nUEN 202031206N'}
+            value={companyDetails}
+            onChange={(e) => setCompanyDetails(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-text placeholder:text-text-muted/60 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+          <span className="text-xs text-text-muted">
+            Printed under the receipt header. One line per row.
+          </span>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Input
+            label="PayNow UEN"
+            placeholder="202031206N"
+            value={paynowUen}
+            onChange={(e) => setPaynowUen(e.target.value)}
+            maxLength={20}
+          />
+          <span className="text-xs text-text-muted">
+            Set this and the POS generates a manual PayNow QR with the exact amount. Leave blank to
+            fall back to the uploaded QR image.
+          </span>
+        </div>
+      </div>
 
       <div className="flex items-center justify-end gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>
@@ -113,6 +162,19 @@ function PayNowQrControls({ outlet }: { outlet: Outlet }) {
     if (!window.confirm(`Remove manual PayNow QR for "${outlet.name}"?`)) return;
     deleteQr.mutate(outlet.id);
   };
+
+  const uen = outlet.paynow_uen?.trim();
+
+  // A configured UEN wins at the POS: the QR is generated per transaction with
+  // the exact amount. The uploaded image is only the no-UEN fallback.
+  if (uen) {
+    return (
+      <div onClick={(event) => event.stopPropagation()}>
+        <p className="text-xs font-semibold text-primary">Auto QR</p>
+        <p className="font-mono text-xs text-text-muted">{uen}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3" onClick={(event) => event.stopPropagation()}>

@@ -73,3 +73,44 @@ class TestPayNowQr:
 
         assert resp.status_code == 200
         assert resp.json()["paynow_qr_url"] is None
+
+
+class TestOutletUpdate:
+    """Outlet edit endpoint, including receipt and PayNow settings."""
+
+    async def test_patch_updates_receipt_and_paynow_fields(self, client: AsyncClient, outlet) -> None:
+        resp = await client.patch(
+            f"/api/outlets/{outlet.id}",
+            json={
+                "address": "12 Sunset Way",
+                "receipt_brand_name": "Hundred Acre",
+                "receipt_company_details": "HAC North Pte Ltd\nUEN 202031206N",
+                "paynow_uen": "202031206N",
+                "manual_terminal_mode": False,
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["address"] == "12 Sunset Way"
+        assert data["receipt_brand_name"] == "Hundred Acre"
+        assert data["receipt_company_details"] == "HAC North Pte Ltd\nUEN 202031206N"
+        assert data["paynow_uen"] == "202031206N"
+        assert data["manual_terminal_mode"] is False
+
+    async def test_create_accepts_receipt_and_paynow_fields(self, client: AsyncClient) -> None:
+        resp = await client.post(
+            "/api/outlets",
+            json={
+                "name": "HAC Test Way",
+                "address": "1 Test Road",
+                "receipt_brand_name": "Hundred Acre",
+                "paynow_uen": "202031206N",
+            },
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["receipt_brand_name"] == "Hundred Acre"
+        assert data["paynow_uen"] == "202031206N"
+        assert data["manual_terminal_mode"] is True

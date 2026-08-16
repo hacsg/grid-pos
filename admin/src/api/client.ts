@@ -364,6 +364,10 @@ export const getOutlets = async (params?: {
     phone: (o.phone as string | null) ?? null,
     paynow_qr_url: (o.paynow_qr_url as string | null) ?? null,
     logo_url: (o.logo_url as string | null) ?? null,
+    receipt_brand_name: (o.receipt_brand_name as string | null) ?? null,
+    receipt_company_details: (o.receipt_company_details as string | null) ?? null,
+    paynow_uen: (o.paynow_uen as string | null) ?? null,
+    manual_terminal_mode: (o.manual_terminal_mode as boolean | undefined) ?? true,
     created_at: o.created_at as string,
     updated_at: o.updated_at as string,
   }));
@@ -382,7 +386,7 @@ export const createOutlet = async (outlet: OutletFormData): Promise<Outlet> => {
 };
 
 export const updateOutlet = async (id: string, outlet: Partial<OutletFormData>): Promise<Outlet> => {
-  const { data } = await api.put(`/outlets/${id}`, outlet);
+  const { data } = await api.patch(`/outlets/${id}`, outlet);
   toast.success('Outlet updated successfully');
   return data;
 };

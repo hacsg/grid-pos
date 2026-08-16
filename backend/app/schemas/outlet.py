@@ -18,6 +18,11 @@ class OutletBase(BaseModel):
 class OutletCreate(OutletBase):
     """Payload for creating an outlet."""
 
+    receipt_brand_name: str | None = Field(default=None, max_length=64)
+    receipt_company_details: str | None = Field(default=None, max_length=500)
+    paynow_uen: str | None = Field(default=None, max_length=20)
+    manual_terminal_mode: bool = True
+
 
 class OutletUpdate(BaseModel):
     """Payload for updating an outlet."""
