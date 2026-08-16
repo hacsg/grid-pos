@@ -15,6 +15,9 @@ with only one monitor, just the staff POS opens.
 |------|---------|
 | `start-pos-mode.ps1` | The launcher. Edit the CONFIG block at the top. |
 | `start-pos-mode.bat` | Double-clickable wrapper that runs the `.ps1`. |
+| `pos-survey.ps1` / `.bat` | Read-only machine survey — see [below](#surveying-a-new-till). |
+| `pos-survey-cmd.bat` | Same survey, CMD-only, for machines with no PowerShell. |
+| `OS-REINSTALL.md` | Runbook for rebuilding a till's Windows from scratch. |
 
 ## 1. Configure
 
@@ -22,11 +25,36 @@ Open `start-pos-mode.ps1` and edit the **CONFIG** block:
 
 ```powershell
 $PosUrl             = 'https://your-pos-host'  # POS web app URL, no trailing slash (required)
+$Outlet             = ''                       # preselect this outlet on the login screen
 $ChromePath         = $null                    # auto-detect, or full path to chrome.exe
 $UseKiosk           = $false                   # see kiosk note below
 $SwapMonitors       = $false                   # $true flips which monitor gets POS vs display
 $NetworkWaitSeconds = 60                        # wait for the host before launching; 0 = skip
 ```
+
+### Preselecting the outlet
+
+Set `$Outlet` to the till's outlet so staff don't pick it from the dropdown every
+shift:
+
+```powershell
+$Outlet = 'Sunset Way'
+```
+
+The value must match the outlet's **name exactly as it appears in the login
+dropdown** (case-insensitive, surrounding whitespace ignored), or be its UUID.
+The launcher URL-encodes it and appends `?outlet=` to the POS window only.
+
+> **Don't put `?outlet=...` on `$PosUrl`.** The customer display URL is built as
+> `"$PosUrl/display"`, so a query string on the base would produce
+> `.../?outlet=Sunset%20Way/display` and break the display window. Use `$Outlet`.
+
+If the name doesn't match any outlet, the login screen shows an error and falls
+back to the first outlet in the list — it will not quietly sign staff in against
+the wrong one. If you see that toast, check `$Outlet` against the dropdown.
+
+The same thing works by hand for testing, without touching the launcher:
+`https://your-pos-host/?outlet=Sunset%20Way`
 
 `$PosUrl` **must** be set — the script refuses to launch (and pops an error) while
 it still contains `CHANGE-ME`.
@@ -74,6 +102,86 @@ till boots straight into POS mode.
 2. General: *Run only when user is logged on*.
 3. Triggers: *At log on* (optionally a 10s delay so the desktop/network settle).
 4. Actions: *Start a program* → `start-pos-mode.bat`.
+
+## Surveying a new till
+
+When a new POS machine arrives — especially a vendor-supplied one with an
+unknown Windows image — run `pos-survey.bat` (right-click → **Run as
+administrator**) *before* changing anything. It writes `pos-survey.txt` next to
+the script and opens it in Notepad. It is read-only and modifies nothing.
+
+It collects, in one pass:
+
+- **Hardware** — model, CPU, RAM (plus free slots and max capacity), disks
+  (including whether storage is a small eMMC module), partition style, free space.
+- **Firmware** — BIOS version, GPT/UEFI indicators, TPM presence.
+- **Licensing** — the firmware-embedded OEM key (`OA3xOriginalProductKey`) if the
+  machine has one, the current activation channel, and any configured KMS server.
+- **Peripherals** — monitors, printers and their drivers, COM ports, every USB
+  device with its VID/PID, and any device sitting with a driver error.
+- **Software** — installed Chrome version, the `grid-pos-daemon` service state.
+
+Two fields decide whether an OS reinstall is straightforward:
+
+- **`OA3xOriginalProductKey`** — if a key is present, the machine carries a
+  firmware OEM licence and a clean Windows install self-activates with nothing to
+  buy. If it is blank, a licence has to be supplied separately.
+- **Activation `Description`** — `OEM_SLP` or `RETAIL` is a normal licence.
+  `VOLUME_KMSCLIENT` on a standalone till, combined with a
+  `KeyManagementServiceMachine` value, means the image was activated against a
+  KMS crack rather than licensed.
+
+The **All USB device IDs** section is the one to keep: those VID/PID values are
+how you find Windows 10/11 drivers for the touchscreen, receipt printer, pole
+display and any USB-serial bridge *before* wiping the machine.
+
+> The script targets **PowerShell 2.0**, the version that ships with Windows 7,
+> so it avoids `Get-CimInstance`, `Get-PnpDevice`, `Get-Printer` and other PS3+
+> cmdlets. Don't modernise it until every till is on Windows 10+.
+
+### If the machine has no PowerShell
+
+Stripped vendor "Ghost" images often have PowerShell removed entirely. Run
+**`pos-survey-cmd.bat`** instead — same output file, same sections, but built
+only from `wmic`, `reg`, `sc`, `diskpart`, `ipconfig` and `systeminfo`.
+
+Before reaching for it, check whether PowerShell is genuinely absent rather than
+just missing from `PATH`:
+
+```cmd
+dir "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+dir "%SystemRoot%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+```
+
+The CMD collector reports this for you in its **AVAILABLE TOOLING** section,
+along with which other built-ins survived the image — a useful proxy for how far
+the vendor stripped Windows. Note that PowerShell 2.0 also needs .NET 2.0/3.5,
+so `powershell.exe` can be present and still fail to start.
+
+> A till with no PowerShell **cannot run `start-pos-mode.ps1`**, so it can't run
+> Grid POS kiosk mode as shipped. Treat a missing PowerShell as a reason to
+> reinstall the OS, not as something to work around.
+
+### Reading the OEM key on a Windows 7 machine
+
+`OA3xOriginalProductKey` is a **Windows 8+ WMI property**. On Windows 7 the query
+usually returns nothing *even when the machine does have a firmware key*, because
+Windows 7 predates the UEFI MSDM table that stores it. **A blank result on
+Windows 7 is not evidence that the machine lacks an OEM licence.**
+
+To read it properly, use something newer than the installed OS:
+
+- **From Windows Setup** — boot the Windows 10/11 install USB, and at the first
+  screen press `Shift+F10` for a command prompt:
+  ```cmd
+  wmic path softwarelicensingservice get OA3xOriginalProductKey
+  ```
+  This costs nothing extra, since you're booting that USB anyway.
+- **From a Linux live USB**:
+  ```sh
+  strings /sys/firmware/acpi/tables/MSDM
+  ```
+  The key is the last line of output. No MSDM file means no firmware key.
 
 ## Notes / troubleshooting
 
