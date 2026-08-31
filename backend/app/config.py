@@ -72,6 +72,32 @@ class Settings(BaseSettings):
     gto_sftp_password: str = Field(default="", alias="GTO_SFTP_PASSWORD")
     gto_sftp_remote_dir: str = Field(default=".", alias="GTO_SFTP_REMOTE_DIR")
 
+    # --- Daily sales email ------------------------------------------------
+    daily_sales_cron_secret: str = Field(
+        default="",
+        alias="DAILY_SALES_CRON_SECRET",
+        description="Shared secret for the daily sales email cron trigger",
+    )
+    daily_sales_report_to: str = Field(
+        default="hello@hundredacre.sg",
+        alias="DAILY_SALES_REPORT_TO",
+        description="Comma-separated recipients for the daily sales report",
+    )
+    daily_sales_report_from: str = Field(
+        default="hello@hundredacre.sg",
+        alias="DAILY_SALES_REPORT_FROM",
+        description="Gmail account used as the report sender",
+    )
+    gmail_api_client_id: str = Field(default="", alias="GMAIL_API_CLIENT_ID")
+    gmail_api_client_secret: str = Field(default="", alias="GMAIL_API_CLIENT_SECRET")
+    gmail_api_refresh_token: str = Field(default="", alias="GMAIL_API_REFRESH_TOKEN")
+    gmail_oauth_token_url: str = Field(
+        default="https://oauth2.googleapis.com/token", alias="GMAIL_OAUTH_TOKEN_URL"
+    )
+    gmail_api_url: str = Field(
+        default="https://gmail.googleapis.com/gmail/v1", alias="GMAIL_API_URL"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

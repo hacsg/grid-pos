@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse, Response
 from app.config import settings
 from app.database import check_database_connection
 from app.migrations import run_sql_migrations
-from app.routers import analytics, campaigns, customers, discounts, gto, kpay, loyalty, orders, outlets, print_templates, products, reports, shift, staff, till, vouchers, ws_daemon
+from app.routers import analytics, campaigns, customers, daily_sales, discounts, gto, kpay, loyalty, orders, outlets, print_templates, products, reports, shift, staff, till, vouchers, ws_daemon
 from app.schemas.health import HealthRead
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ app.include_router(shift.router, prefix="/api")
 app.include_router(loyalty.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(daily_sales.router, prefix="/api")
 app.include_router(vouchers.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
