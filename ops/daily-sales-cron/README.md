@@ -1,7 +1,7 @@
 # Daily sales email cron
 
-This Railway cron service calls the Grid backend every day at **02:00 SGT**
-(`18:00 UTC`) and asks it to email the previous SGT day's report. The backend
+This Railway cron service calls the Grid backend every day at **00:00 SGT**
+(`16:00 UTC`) and asks it to email the previous SGT day's report. The backend
 does not send an email when every outlet has zero net sales.
 
 ## Backend variables

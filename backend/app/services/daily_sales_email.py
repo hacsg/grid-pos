@@ -82,6 +82,8 @@ def render_daily_sales_html(
     hourly_rows = []
     for hour in range(24):
         values = [hourly_by_outlet[UUID(o.outlet_id)][hour] for o in active_outlets]
+        if sum(values) == 0:
+            continue
         cells = "".join(
             f'<td style="text-align:right;padding:8px;border-bottom:1px solid #f3f4f6">{_money(value)}</td>'
             for value in values
@@ -149,7 +151,10 @@ def render_daily_sales_text(
     lines.extend(f"{o.outlet_name}: {_money(o.net_sales)} ({o.transactions} transactions)" for o in active_outlets)
     lines.extend(["", f"Group net sales: {_money(dashboard.kpis.net_sales)}", f"Transactions: {dashboard.kpis.transactions}", "", "HOURLY EARNINGS"])
     for hour in range(24):
-        parts = [f"{o.outlet_name}: {_money(hourly_by_outlet[UUID(o.outlet_id)][hour])}" for o in active_outlets]
+        values = [hourly_by_outlet[UUID(o.outlet_id)][hour] for o in active_outlets]
+        if sum(values) == 0:
+            continue
+        parts = [f"{o.outlet_name}: {_money(value)}" for o, value in zip(active_outlets, values)]
         lines.append(f"{_hour_label(hour)}  " + " | ".join(parts))
     return "\n".join(lines)
 

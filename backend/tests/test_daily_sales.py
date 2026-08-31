@@ -81,8 +81,10 @@ async def test_report_filters_zero_outlets_and_buckets_each_hour(
     assert hourly[another_outlet.id][14] == 20.00
     html = render_daily_sales_html(datetime(2026, 8, 31).date(), report, active, hourly)
     assert "Zero Outlet" not in html
-    assert "00:00–01:00" in html
-    assert "23:00–00:00" in html
+    assert "00:00–01:00" not in html
+    assert "09:00–10:00" in html
+    assert "14:00–15:00" in html
+    assert "23:00–00:00" not in html
     assert "S$32.50" in html
 
 
