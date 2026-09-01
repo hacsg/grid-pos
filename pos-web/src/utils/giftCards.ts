@@ -22,6 +22,9 @@ export function calculateRequiredGiftCards(items: CartItem[]) {
  */
 export function getScannerVoucherAffordance(
   isGiftCard: boolean | undefined
-): 'confirm_then_redeem' | 'redeem_button' {
-  return isGiftCard ? 'confirm_then_redeem' : 'redeem_button';
+): 'confirm_then_redeem' | 'redeem_on_scan' {
+  // The Scanner is a dedicated redemption screen: scanning an ordinary
+  // single-use voucher should consume it. Cash-value gift cards remain behind
+  // confirmation because a scanner redemption forfeits any unused balance.
+  return isGiftCard ? 'confirm_then_redeem' : 'redeem_on_scan';
 }

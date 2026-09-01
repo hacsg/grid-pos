@@ -66,7 +66,7 @@ describe('giftCards pure logic', () => {
     // so this must not be blocked — but it spends the whole card with no
     // change, so it must never be a single reflex tap either.
     expect(getScannerVoucherAffordance(true)).toBe('confirm_then_redeem');
-    expect(getScannerVoucherAffordance(false)).toBe('redeem_button');
-    expect(getScannerVoucherAffordance(undefined)).toBe('redeem_button');
+    expect(getScannerVoucherAffordance(false)).toBe('redeem_on_scan');
+    expect(getScannerVoucherAffordance(undefined)).toBe('redeem_on_scan');
   });
 });

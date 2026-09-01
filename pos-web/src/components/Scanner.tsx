@@ -371,6 +371,40 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
     setScannerPaused(false);
   }
 
+  async function redeemResolvedVoucher(voucher: ValidatedVoucher) {
+    await redeemVoucher({
+      code: voucher.code,
+      staff_id: session.staff.id,
+      outlet: session.outlet.name,
+    });
+
+    const redeemed: RecentRedemption = {
+      code: voucher.code,
+      title: voucher.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher',
+      amount: voucher.amount && voucher.amount > 0 ? voucher.amount : undefined,
+      redeemedAt: new Date().toISOString(),
+    };
+
+    setRecent((current) => {
+      const next = [
+        redeemed,
+        ...current.filter((item) => item.code.toUpperCase() !== redeemed.code.toUpperCase()),
+      ].slice(0, MAX_RECENT);
+      saveRecent(next);
+      return next;
+    });
+
+    setJustRedeemed(voucher);
+    setValidated(null);
+    setCode('');
+    toast.success('Voucher redeemed');
+
+    window.setTimeout(() => {
+      setJustRedeemed(null);
+      setScannerPaused(false);
+    }, 1350);
+  }
+
   // One scan, two possibilities: a voucher code or a membership QR. The
   // membership QR is the Plotholders customer id — a UUID — while voucher QRs
   // encode human-readable codes, so the shape of the scan picks the order:
@@ -384,7 +418,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
       try {
         const res = await validateVoucher(scanned, { silent: true });
         const amount = res.amount != null ? Number(res.amount) : 0;
-        setValidated({
+        const voucher: ValidatedVoucher = {
           code: res.code,
           type: res.type,
           amount: amount > 0 ? amount : undefined,
@@ -392,8 +426,26 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
           // Must be carried through: every gift-card branch below keys off it,
           // and omitting it here silently made all of them dead code.
           is_gift_card: res.is_gift_card,
-        });
+        };
         setJustRedeemed(null);
+
+        // This page is explicitly the redemption scanner, so an ordinary
+        // voucher scan consumes the voucher immediately. Previously scanning
+        // only validated it and required a second, easy-to-miss button tap,
+        // leaving campaign vouchers active in Acre Club.
+        if (getScannerVoucherAffordance(voucher.is_gift_card) === 'redeem_on_scan') {
+          try {
+            await redeemResolvedVoucher(voucher);
+          } catch (redeemError: any) {
+            const msg = redeemError?.response?.data?.detail || redeemError?.message || 'Redemption failed';
+            toast.error(typeof msg === 'string' ? msg : 'Could not redeem voucher');
+            setScannerPaused(false);
+            setCode('');
+          }
+          return true;
+        }
+
+        setValidated(voucher);
         return true; // keep scanner paused while showing the voucher card
       } catch (err: any) {
         if (err?.response?.status === 409) {
@@ -481,34 +533,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
 
     try {
       setLoading(true);
-      await redeemVoucher({
-        code: validated.code,
-        staff_id: session.staff.id,
-        outlet: session.outlet.name,
-      });
-
-      const redeemed: RecentRedemption = {
-        code: validated.code,
-        title: validated.type === 'cdc' ? 'CDC Voucher' : 'Acre Group Voucher',
-        amount: validated.amount && validated.amount > 0 ? validated.amount : undefined,
-        redeemedAt: new Date().toISOString(),
-      };
-
-      const nextRecent = [redeemed, ...recent.filter((r) => r.code.toUpperCase() !== redeemed.code.toUpperCase())].slice(0, MAX_RECENT);
-      setRecent(nextRecent);
-      saveRecent(nextRecent);
-
-      setJustRedeemed(validated);
-      setValidated(null);
-      setCode('');
-
-      toast.success('Voucher redeemed');
-
-      // After success, reset and resume camera for next voucher
-      window.setTimeout(() => {
-        setJustRedeemed(null);
-        setScannerPaused(false);
-      }, 1350);
+      await redeemResolvedVoucher(validated);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || 'Redemption failed';
       toast.error(typeof msg === 'string' ? msg : 'Could not redeem voucher');
@@ -621,7 +646,7 @@ export default function Scanner({ session, onLogout }: ScannerProps) {
         <div className="voucher-center">
           <div className="voucher-title-row">
             <h1 className="voucher-title">Scanner</h1>
-            <p className="voucher-subtitle">Scan a voucher or member QR — members check in for a moment</p>
+            <p className="voucher-subtitle">Voucher scans redeem immediately · member QR scans add one moment</p>
           </div>
 
           {/* AUTO QR CAMERA */}
