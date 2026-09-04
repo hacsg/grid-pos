@@ -68,29 +68,30 @@ def render_daily_sales_html(
     hourly_by_outlet: dict[UUID, list[float]],
 ) -> str:
     """Render an email-safe HTML report with outlet totals first."""
-    outlet_cards = "".join(
-        f'<td style="padding:8px"><div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;min-width:150px">'
-        f'<div style="font-size:12px;color:#6b7280">{escape(outlet.outlet_name)}</div>'
-        f'<div style="font-size:24px;font-weight:700;margin-top:4px">{_money(outlet.net_sales)}</div>'
-        f'<div style="font-size:12px;color:#6b7280;margin-top:4px">{outlet.transactions:,} transactions</div></div></td>'
+    outlet_rows = "".join(
+        f'<tr><td style="padding:12px 10px;border-bottom:1px solid #e7e5e4">'
+        f'<strong style="font-size:15px">{escape(outlet.outlet_name)}</strong><br>'
+        f'<span style="font-size:12px;color:#78716c">{outlet.transactions:,} transactions</span></td>'
+        f'<td style="padding:12px 10px;text-align:right;border-bottom:1px solid #e7e5e4;white-space:nowrap">'
+        f'<strong style="font-size:20px">{_money(outlet.net_sales)}</strong></td></tr>'
         for outlet in active_outlets
     )
-    outlet_headers = "".join(
-        f'<th style="text-align:right;padding:8px;border-bottom:1px solid #e5e7eb">{escape(o.outlet_name)}</th>'
-        for o in active_outlets
-    )
-    hourly_rows = []
-    for hour in range(24):
-        values = [hourly_by_outlet[UUID(o.outlet_id)][hour] for o in active_outlets]
-        if sum(values) == 0:
-            continue
-        cells = "".join(
-            f'<td style="text-align:right;padding:8px;border-bottom:1px solid #f3f4f6">{_money(value)}</td>'
-            for value in values
+    hourly_sections = []
+    for outlet in active_outlets:
+        values = hourly_by_outlet[UUID(outlet.outlet_id)]
+        rows = "".join(
+            f'<tr><td style="padding:8px 10px;border-bottom:1px solid #f3f4f6">{_hour_label(hour)}</td>'
+            f'<td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f3f4f6;white-space:nowrap">{_money(value)}</td></tr>'
+            for hour, value in enumerate(values)
+            if value != 0
         )
-        hourly_rows.append(
-            f'<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6">{_hour_label(hour)}</td>'
-            f'{cells}<td style="text-align:right;padding:8px;border-bottom:1px solid #f3f4f6;font-weight:600">{_money(sum(values))}</td></tr>'
+        hourly_sections.append(
+            f'<h3 style="font-size:15px;margin:20px 0 6px">{escape(outlet.outlet_name)}'
+            f'<span style="float:right;color:#57534e">{_money(outlet.net_sales)}</span></h3>'
+            f'<table style="width:100%;border-collapse:collapse;font-size:13px">'
+            f'<thead><tr><th style="padding:8px 10px;text-align:left;border-bottom:1px solid #d6d3d1">Hour (SGT)</th>'
+            f'<th style="padding:8px 10px;text-align:right;border-bottom:1px solid #d6d3d1">Revenue</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>'
         )
 
     payments = "".join(
@@ -99,43 +100,41 @@ def render_daily_sales_html(
         if item.amount != 0
     )
     products = "".join(
-        f'<tr><td style="padding:7px">{index}</td><td style="padding:7px">{escape(item.name)}</td>'
-        f'<td style="padding:7px;text-align:right">{item.quantity:,}</td><td style="padding:7px;text-align:right">{_money(item.revenue)}</td></tr>'
-        for index, item in enumerate(dashboard.top_by_revenue, 1)
+        f'<tr><td style="padding:8px 6px;overflow-wrap:anywhere">{escape(item.name)}</td>'
+        f'<td style="padding:8px 6px;text-align:right;white-space:nowrap">{item.quantity:,}</td>'
+        f'<td style="padding:8px 6px;text-align:right;white-space:nowrap">{_money(item.revenue)}</td></tr>'
+        for item in dashboard.top_by_revenue
     )
     kpis = dashboard.kpis
     report_date = sales_date.strftime("%A, %d %B %Y")
     return f"""<!doctype html>
-<html><body style="margin:0;background:#f5f5f4;color:#1c1917;font-family:Arial,sans-serif">
-<div style="max-width:900px;margin:auto;padding:24px">
-  <div style="background:#fff;border-radius:14px;padding:28px">
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>@media only screen and (max-width:600px){{.outer{{padding:0!important}}.content{{padding:18px!important;border-radius:0!important}}}}</style>
+</head><body style="margin:0;background:#f5f5f4;color:#1c1917;font-family:Arial,sans-serif;-webkit-text-size-adjust:100%">
+<div class="outer" style="max-width:640px;margin:0 auto;padding:16px">
+  <div class="content" style="background:#fff;border-radius:12px;padding:24px">
     <div style="font-size:12px;color:#78716c;letter-spacing:.08em;text-transform:uppercase">Grid POS · Daily sales</div>
     <h1 style="font-size:26px;margin:6px 0">{escape(report_date)}</h1>
     <p style="color:#78716c;margin:0 0 18px">All figures use Singapore time (SGT). Outlets with zero sales are omitted.</p>
     <h2 style="font-size:17px;margin:24px 0 8px">Sales by outlet</h2>
-    <table role="presentation" style="border-collapse:collapse"><tr>{outlet_cards}</tr></table>
+    <table style="width:100%;border-collapse:collapse;background:#fafaf9">{outlet_rows}</table>
     <h2 style="font-size:17px;margin:28px 0 8px">Group overview</h2>
-    <table style="width:100%;border-collapse:collapse;background:#fafaf9">
-      <tr><td style="padding:12px">Net sales<br><strong>{_money(kpis.net_sales)}</strong></td>
-      <td style="padding:12px">Gross sales<br><strong>{_money(kpis.gross_sales)}</strong></td>
-      <td style="padding:12px">Transactions<br><strong>{kpis.transactions:,}</strong></td>
-      <td style="padding:12px">Items sold<br><strong>{kpis.items_sold:,}</strong></td>
-      <td style="padding:12px">Average ticket<br><strong>{_money(kpis.avg_ticket)}</strong></td></tr>
+    <table style="width:100%;border-collapse:collapse;background:#fafaf9;font-size:14px">
+      <tr><td style="padding:9px 10px">Net sales</td><td style="padding:9px 10px;text-align:right"><strong>{_money(kpis.net_sales)}</strong></td></tr>
+      <tr><td style="padding:9px 10px">Gross sales</td><td style="padding:9px 10px;text-align:right"><strong>{_money(kpis.gross_sales)}</strong></td></tr>
+      <tr><td style="padding:9px 10px">Transactions</td><td style="padding:9px 10px;text-align:right"><strong>{kpis.transactions:,}</strong></td></tr>
+      <tr><td style="padding:9px 10px">Items sold</td><td style="padding:9px 10px;text-align:right"><strong>{kpis.items_sold:,}</strong></td></tr>
+      <tr><td style="padding:9px 10px">Average ticket</td><td style="padding:9px 10px;text-align:right"><strong>{_money(kpis.avg_ticket)}</strong></td></tr>
     </table>
     <h2 style="font-size:17px;margin:28px 0 8px">Hourly earnings by outlet</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr><th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb">Hour (SGT)</th>{outlet_headers}<th style="text-align:right;padding:8px;border-bottom:1px solid #e5e7eb">Total</th></tr></thead>
-      <tbody>{''.join(hourly_rows)}</tbody>
-    </table>
-    <table role="presentation" style="width:100%;margin-top:24px"><tr><td style="width:48%;vertical-align:top">
-      <h2 style="font-size:17px">Payment mix</h2><table style="width:100%;border-collapse:collapse">{payments}</table>
-    </td><td style="width:4%"></td><td style="width:48%;vertical-align:top">
-      <h2 style="font-size:17px">Redemptions</h2>
-      <p>CDC: <strong>{_money(dashboard.redemptions.cdc.value)}</strong> ({dashboard.redemptions.cdc.orders:,} orders)</p>
-      <p>Vouchers: <strong>{_money(dashboard.redemptions.vouchers.value)}</strong> ({dashboard.redemptions.vouchers.count:,} redemptions)</p>
-    </td></tr></table>
+    {''.join(hourly_sections)}
+    <h2 style="font-size:17px;margin:28px 0 8px">Payment mix</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">{payments}</table>
+    <h2 style="font-size:17px;margin:28px 0 8px">Redemptions</h2>
+    <p style="font-size:14px">CDC: <strong>{_money(dashboard.redemptions.cdc.value)}</strong> ({dashboard.redemptions.cdc.orders:,} orders)</p>
+    <p style="font-size:14px">Vouchers: <strong>{_money(dashboard.redemptions.vouchers.value)}</strong> ({dashboard.redemptions.vouchers.count:,} redemptions)</p>
     <h2 style="font-size:17px;margin:28px 0 8px">Top products by revenue</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th></th><th style="text-align:left">Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Revenue</th></tr></thead><tbody>{products}</tbody></table>
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px"><thead><tr><th style="width:56%;text-align:left">Product</th><th style="width:14%;text-align:right">Qty</th><th style="width:30%;text-align:right">Revenue</th></tr></thead><tbody>{products}</tbody></table>
   </div>
 </div></body></html>"""
 

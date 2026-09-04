@@ -86,6 +86,10 @@ async def test_report_filters_zero_outlets_and_buckets_each_hour(
     assert "14:00–15:00" in html
     assert "23:00–00:00" not in html
     assert "S$32.50" in html
+    assert '<meta name="viewport"' in html
+    assert "max-width:640px" in html
+    assert "Hourly earnings by outlet" in html
+    assert "Test Outlet</th>" not in html
 
 
 @pytest.mark.asyncio
