@@ -80,6 +80,7 @@ class TestLogin:
         resp = await client.post("/api/auth/login", json=payload)
         assert resp.status_code == 200
         assert resp.json()["staff"]["role"] == "admin"
+        assert resp.json()["expires_in"] == 30 * 24 * 60 * 60
 
     async def test_admin_login_allows_manager_and_supervisor(
         self, client: AsyncClient, manager_staff, supervisor_staff
@@ -103,6 +104,7 @@ class TestLogin:
         resp = await client.post("/api/auth/login", json=payload)
         assert resp.status_code == 200
         assert resp.json()["staff"]["role"] == "cashier"
+        assert resp.json()["expires_in"] == settings.access_token_expire_minutes * 60
 
     async def test_login_with_inactive_staff(self, client: AsyncClient, inactive_staff) -> None:
         """Login with inactive staff returns 401."""

@@ -224,16 +224,24 @@ async def login_staff(
 
     _clear_failed_logins(rate_limit_key)
 
+    # Back-office browsers are personal devices and benefit from a persistent
+    # session. Keep this separate from shared till sessions, which retain the
+    # shorter ACCESS_TOKEN_EXPIRE_MINUTES lifetime.
+    expiry_minutes = (
+        settings.admin_access_token_expire_minutes
+        if payload.outlet_id is None
+        else settings.access_token_expire_minutes
+    )
     token = create_access_token(
         subject=matched.id,
         role=matched.role.value,
         outlet_id=matched.outlet_id,
-        expires_delta=timedelta(seconds=settings.access_token_expire_minutes * 60),
+        expires_delta=timedelta(minutes=expiry_minutes),
     )
     return TokenResponse(
         access_token=token,
         staff=matched,
-        expires_in=settings.access_token_expire_minutes * 60,
+        expires_in=expiry_minutes * 60,
     )
 
 

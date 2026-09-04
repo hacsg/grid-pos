@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default=DEFAULT_JWT_SECRET, alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    admin_access_token_expire_minutes: int = Field(
+        default=30 * 24 * 60,
+        alias="ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES",
+        description="Back-office session lifetime; kept separate from till sessions",
+    )
     plotholders_api_url: str = Field(
         default="https://plotholders-api-production.up.railway.app",
         alias="PLOT_HOLDERS_API_URL",
