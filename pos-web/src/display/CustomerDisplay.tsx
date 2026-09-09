@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { broadcast, DISPLAY_CHANNEL, type DisplayItem, type DisplayMessage, type OrderSnapshot } from './channel';
 import { formatCurrency } from '@/api/client';
 
@@ -27,6 +27,51 @@ export default function CustomerDisplay() {
     paynowQrUrl: null,
   });
   const [resetTimer, setResetTimer] = useState<number | null>(null);
+  const idleContourRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (state.phase !== 'idle') return;
+    const canvas = idleContourRef.current;
+    if (!canvas) return;
+
+    function drawContour() {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (!width || !height) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = 'rgba(31,26,20,0.09)';
+      ctx.lineWidth = 1;
+
+      const cx = width * 0.5;
+      const cy = height * 0.52;
+      const max = Math.max(width, height) * 0.78;
+      for (let r = 22; r < max; r += 24) {
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2 + 0.12; a += 0.11) {
+          const wob = Math.sin(a * 3 + r * 0.05) * r * 0.06 + Math.cos(a * 5 - r * 0.028) * r * 0.028;
+          const rr = r + wob;
+          const x = cx + Math.cos(a) * rr * 1.45;
+          const y = cy + Math.sin(a) * rr * 0.6;
+          if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    drawContour();
+    window.addEventListener('resize', drawContour);
+    return () => window.removeEventListener('resize', drawContour);
+  }, [state.phase]);
 
   // Paint html/body pure black while the customer display is mounted so no
   // light POS background (or desktop wallpaper) bleeds through at the edges
@@ -203,6 +248,7 @@ export default function CustomerDisplay() {
         {/* IDLE / WELCOME */}
         {phase === 'idle' && (
           <div className="display-idle" key={phase}>
+            <canvas className="display-idle-contour" ref={idleContourRef} aria-hidden="true" />
             <div className="display-idle-meta display-idle-meta-left">
               <span>1.29° N · 103.85° E</span>
               <span>Singapore · Est. 2020</span>
@@ -212,11 +258,6 @@ export default function CustomerDisplay() {
               <span>Handle cold</span>
             </div>
 
-            <div className="display-idle-fence" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
 
             <div className="display-idle-panel">
               <div className="display-brand">
