@@ -40,9 +40,9 @@ C:\KPayDaemon\
 
 Copy `kpay-daemon.exe` to `C:\KPayDaemon\`
 
-You can find it at:
+You can find it in this repo at:
 ```
-/home/edmxnd/projects/grid-pos/services/kpay-daemon/kpay-daemon.exe
+services/kpay-daemon/kpay-daemon.exe
 ```
 
 ## Step 3: Create Configuration File
