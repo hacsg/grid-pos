@@ -16,6 +16,7 @@
   --grid-error: #c2412d;
   --grid-focus: #92c9a0;
   --font-sans: 'Inter Variable', Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: 'Fraunces Variable', Fraunces, Georgia, serif;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 15px;
@@ -2082,15 +2083,40 @@ html.display-active #root {
 .customer-display {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
-  color: #f5f5f5;
+  background: #0f0c08;
+  color: #f4ede1;
   font-family: var(--font-sans);
   overflow: hidden;
+}
+
+.customer-display::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(244, 237, 225, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(244, 237, 225, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.45;
+}
+
+.customer-display::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(192, 138, 62, 0.12), transparent 28%),
+    radial-gradient(circle at 78% 76%, rgba(90, 107, 58, 0.13), transparent 32%);
+  mix-blend-mode: screen;
+  opacity: 0.55;
 }
 
 .display-content {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   padding: 48px 56px;
@@ -2112,27 +2138,122 @@ html.display-active #root {
   transition: opacity 280ms ease;
 }
 
+.display-idle {
+  position: relative;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(244, 237, 225, 0.14);
+  background: #f4ede1;
+  color: #1f1a14;
+  text-align: left;
+}
+
+.display-idle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(74, 63, 48, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 63, 48, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.62), transparent 68%);
+}
+
+.display-idle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: radial-gradient(rgba(31, 26, 20, 0.22) 0.65px, transparent 0.65px);
+  background-size: 5px 5px;
+  mix-blend-mode: multiply;
+}
+
+.display-idle-meta {
+  position: absolute;
+  z-index: 3;
+  top: 32px;
+  display: grid;
+  gap: 5px;
+  color: rgba(74, 63, 48, 0.68);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.display-idle-meta-left {
+  left: 42px;
+}
+
+.display-idle-meta-right {
+  right: 42px;
+  text-align: right;
+}
+
+.display-idle-fence {
+  position: absolute;
+  z-index: 3;
+  top: 104px;
+  bottom: 40px;
+  left: 42px;
+  width: 1px;
+  background: rgba(74, 63, 48, 0.26);
+}
+
+.display-idle-fence span {
+  position: absolute;
+  left: 0;
+  width: 28px;
+  height: 1px;
+  background: rgba(74, 63, 48, 0.26);
+}
+
+.display-idle-fence span:nth-child(1) { top: 0; }
+.display-idle-fence span:nth-child(2) { top: 46%; }
+.display-idle-fence span:nth-child(3) { bottom: 0; }
+
+.display-idle-panel {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: min(760px, calc(100% - 120px));
+  min-height: 100%;
+  align-content: center;
+  padding: clamp(84px, 11vh, 132px) 0 clamp(76px, 10vh, 120px) clamp(80px, 9vw, 140px);
+}
+
+.display-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
 /* Brand mark */
 .display-mark {
-  display: grid;
-  width: 96px;
-  height: 96px;
+  display: inline-grid;
+  width: auto;
+  height: auto;
   place-items: center;
-  border-radius: 16px;
-  background: #ffffff;
-  color: #0a0a0a;
-  font-size: 42px;
-  font-weight: var(--fw-semibold);
-  letter-spacing: -0.01em;
-  margin-bottom: 20px;
+  background: transparent;
+  color: #c08a3e;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3.6vw, 48px);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1;
+  margin-bottom: 0;
 }
 
 .display-mark.small {
-  width: 64px;
-  height: 64px;
-  font-size: 26px;
+  font-size: 24px;
   margin-bottom: 16px;
-  border-radius: 12px;
 }
 
 .display-logo {
@@ -2140,8 +2261,8 @@ html.display-active #root {
   max-width: 300px;
   max-height: 180px;
   object-fit: contain;
-  /* White plate so logos of any colour stay visible on the dark display. */
-  background: #ffffff;
+  background: #f4ede1;
+  border: 1px solid rgba(192, 138, 62, 0.55);
   border-radius: 16px;
   padding: 18px 24px;
   margin-bottom: 20px;
@@ -2156,17 +2277,50 @@ html.display-active #root {
 }
 
 .display-brand-name {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: #c9c9c9;
-  margin-bottom: 12px;
+  color: #4a3f30;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 42px);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 0.96;
+  margin-bottom: 0;
 }
 
-.display-welcome {
-  font-size: 28px;
+.display-idle-kicker {
+  color: #4a3f30;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(10px, 1.1vw, 13px);
+  font-weight: 600;
+  letter-spacing: 0.17em;
+  line-height: 1.4;
+  margin-bottom: 20px;
+  text-transform: uppercase;
+}
+
+.display-idle-outlet {
+  display: inline-flex;
+  width: max-content;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 34px;
+  border-top: 1px solid rgba(74, 63, 48, 0.24);
+  padding-top: 16px;
+  color: #4a3f30;
+}
+
+.display-idle-outlet span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.display-idle-outlet strong {
+  color: #1f1a14;
+  font-size: clamp(18px, 2vw, 28px);
   font-weight: 500;
-  color: #a3a3a3;
 }
 
 /* Order view */

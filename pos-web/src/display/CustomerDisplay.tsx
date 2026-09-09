@@ -191,9 +191,11 @@ export default function CustomerDisplay() {
       <img className={`display-logo${size === 'small' ? ' small' : ''}`} src={logoUrl} alt={displayBrandName} />
     ) : (
       <div className={`display-mark${size === 'small' ? ' small' : ''}`} aria-hidden="true">
-        {displayBrandName.slice(0, 3).toUpperCase()}
+        ✦
       </div>
     );
+
+  const outletLabel = displayBrandName.replace(/^(HAC\s*-?\s*)+/i, '').trim() || displayBrandName;
 
   return (
     <div className="customer-display">
@@ -201,11 +203,32 @@ export default function CustomerDisplay() {
         {/* IDLE / WELCOME */}
         {phase === 'idle' && (
           <div className="display-idle" key={phase}>
-            <div className="display-brand">
-              {mark('large')}
-              <div className="display-brand-name">{displayBrandName}</div>
+            <div className="display-idle-meta display-idle-meta-left">
+              <span>1.29° N · 103.85° E</span>
+              <span>Singapore · Est. 2020</span>
             </div>
-            <div className="display-welcome">Welcome</div>
+            <div className="display-idle-meta display-idle-meta-right">
+              <span>Vol. 01 · No. 12</span>
+              <span>Handle cold</span>
+            </div>
+
+            <div className="display-idle-fence" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+
+            <div className="display-idle-panel">
+              <div className="display-brand">
+                {mark('large')}
+                <div className="display-brand-name">The Acre</div>
+              </div>
+              <div className="display-idle-kicker">SINGAPORE · SMALL-BATCH GELATO · EST. 2020</div>
+              <div className="display-idle-outlet">
+                <span>Outlet</span>
+                <strong>{outletLabel}</strong>
+              </div>
+            </div>
           </div>
         )}
 
