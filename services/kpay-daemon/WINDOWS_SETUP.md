@@ -50,7 +50,7 @@ You can find it at:
 Create a file called `.env` in `C:\KPayDaemon\` with this content:
 
 ```env
-# This outlet's UUID (get from Grid POS app / admin - see below)
+# This outlet's UUID — set to THIS till's outlet (see the table in Step 4 below)
 OUTLET_ID=YOUR_OUTLET_UUID_HERE
 
 # Backend WebSocket URL (where the daemon connects to the Grid POS backend)
@@ -75,14 +75,29 @@ KPAT_MANAGER_PASSWORD=123456
 
 ## Step 4: Get Your Outlet ID
 
-**Option A: From Grid POS Web App**
+**Option A: Copy from the list below (easiest)**
+
+Set `OUTLET_ID` to the UUID for THIS till's outlet:
+
+| Outlet | OUTLET_ID (UUID) |
+|---|---|
+| HAC Bedok | `2b029d9a-cc3c-4c29-8993-c1688a309a29` |
+| HAC SSC | `c3e5a387-4a1a-4ee9-9e80-3a335d816636` |
+| HAC Sunset Way | `9d936497-511c-46a3-b262-806c37485a40` |
+| HAC Tampines | `b29fc9ca-ade6-4869-bb36-0db319092343` |
+
+List current as of 2026-09. If an outlet is added or renamed, get the latest
+from the public endpoint — open `https://grid-backend-production-5fd0.up.railway.app/api/outlets`
+in a browser (returns all outlets with `id` and `name`) — or use Option B/C below.
+
+**Option B: From Grid POS Web App**
 1. Open Grid POS in browser
 2. Log in as staff
 3. Open browser DevTools (F12) → Console
 4. Type: `JSON.parse(localStorage.getItem('grid_pos_staff_session')).outlet.id`
 5. Copy the UUID shown
 
-**Option B: From Railway Dashboard**
+**Option C: From Railway Dashboard**
 1. Go to Railway → grid-pos-api → grid-backend → Variables
 2. Click "Open Database" or use Railway's PostgreSQL GUI
 3. Run: `SELECT id, name FROM outlets;`
