@@ -112,6 +112,50 @@ Find your KPay terminal's IP address:
 
 Update `KPAY_TERMINAL_BASE_URL` in `.env` with the correct IP.
 
+## KPay certification (get your production APP_ID + secret)
+
+Before you get live KPay credentials, KPay requires you to run their standard
+transaction test cases (sale, query, cancel/void, refund) against a physical
+terminal and submit the results. The daemon has a **local test mode** built for
+exactly this — it talks straight to the terminal on your LAN and skips Railway.
+
+You need: the new PC and the physical KPay terminal on the same network, the
+terminal's IP, and the **sandbox/test** APP_ID + secret KPay issued you.
+
+1. Put `kpay-daemon.exe` in `C:\KPayDaemon\` with a `.env` like:
+
+   ```env
+   KPAY_LOCAL_TEST=1
+   KPAT_TERMINAL_IP=192.168.1.50        # your terminal's real LAN IP
+   KPAT_APP_ID=<kpay test app id>
+   KPAT_APP_SECRET=<kpay test secret>
+   KPAT_MANAGER_PASSWORD=<kpay manager password>   # for void/refund
+   ```
+
+   In local-test mode `OUTLET_ID`, `RAILWAY_WS_URL` and `DAEMON_AUTH_TOKEN` are
+   **not** required — you can certify before any outlet wiring exists.
+
+2. Run `kpay-daemon.exe`. It listens on `http://localhost:9000` and does the
+   KPay `/v2/pos/sign` key handshake automatically on the first signed call.
+
+3. Double-click **`kpay-cert-test.bat`** (next to the exe). It's a menu-driven
+   harness that fires each certification transaction, prints the terminal's real
+   response, and saves every request/response as timestamped JSON under
+   `kpay-cert-evidence\` — that folder is what you submit to KPay.
+
+   Transaction types it drives (amounts entered in dollars, sent as cents;
+   currency SGD/702; `payment_type` 1=card, 13=PayNow, 14=Alipay, 15=WeChat,
+   3/16=QR): **Sale → Query → Cancel/Void → Refund**. For a refund, take the
+   `ref_no` and `transaction_no` from the sale's Query result (the harness
+   remembers the last ones for you).
+
+The raw local endpoints, if you'd rather script them yourself, are
+`POST /kpay/sales`, `/kpay/query`, `/kpay/cancel`, `/kpay/refund` on `:9000`.
+
+Once KPay issues your **production** APP_ID/secret, drop them into each outlet
+till's `.env` (with `KPAY_LOCAL_TEST` removed and the Railway vars set) per the
+steps below.
+
 ## Step 6: Test the Daemon
 
 Open Command Prompt or PowerShell in `C:\KPayDaemon\`:
