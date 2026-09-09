@@ -20,12 +20,32 @@
 # Base URL where the POS web app is served (no trailing slash).
 $PosUrl = 'https://grid-pos-web-production.up.railway.app'
 
-# Outlet to preselect on the login screen for this till, e.g. 'Sunset Way'.
-# Must match the outlet's name as shown in the login dropdown (case-insensitive)
-# or its UUID. Leave '' to let staff pick.
+# ---- Outlet for THIS till -------------------------------------------------
+# Preselects the outlet on the login screen so staff don't have to pick it, and
+# so this till can't be signed in against the wrong outlet by mistake.
+#
+# HOW TO SET: put the outlet NAME or its ID (below) between the quotes on the
+# $Outlet line at the bottom of this block. Name is easiest; it is matched
+# case-insensitively and ignores surrounding spaces. Leave '' to let staff pick.
+#
+#   Outlet name        Outlet ID (UUID)
+#   -----------        ----------------
+#   HAC Bedok          2b029d9a-cc3c-4c29-8993-c1688a309a29
+#   HAC SSC            c3e5a387-4a1a-4ee9-9e80-3a335d816636
+#   HAC Sunset Way     9d936497-511c-46a3-b262-806c37485a40
+#   HAC Tampines       b29fc9ca-ade6-4869-bb36-0db319092343
+#   (list current as of 2026-09; if an outlet is added/renamed, get the latest
+#    from the login dropdown or GET /api/outlets)
+#
+# EXAMPLES (set ONE, on the $Outlet line below):
+#   $Outlet = 'HAC Sunset Way'                              # by name (recommended)
+#   $Outlet = 'HAC SSC'
+#   $Outlet = '2b029d9a-cc3c-4c29-8993-c1688a309a29'        # by ID (HAC Bedok)
+#   $Outlet = ''                                            # no preselect; staff pick
 #
 # Do NOT put ?outlet=... on $PosUrl instead: the customer display URL is built as
 # "$PosUrl/display", so a query string there would produce ".../?outlet=X/display".
+# This script appends ?outlet= to the POS window only, leaving /display intact.
 $Outlet = ''
 
 # Path to chrome.exe. Leave as $null to auto-detect common install locations.
