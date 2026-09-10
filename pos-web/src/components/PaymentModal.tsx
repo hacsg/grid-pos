@@ -25,7 +25,7 @@ import type { AppliedDiscountLine } from '@/utils/discounts';
 import QRCode from 'qrcode';
 import CashTenderPad from '@/components/CashTenderPad';
 import { tapFeedback } from '@/utils/haptics';
-import { buildPayNowPayload, MANUAL_PAYNOW_REFERENCE } from '@/utils/paynow';
+import { buildPayNowPayload, derivePayNowReference } from '@/utils/paynow';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import { calculateRequiredGiftCards } from '@/utils/giftCards';
 import { isPrintingSupported, openCashDrawer, printKitchenChit, printReceipt as printReceiptUsb } from '@/utils/printer';
@@ -430,16 +430,18 @@ export default function PaymentModal({
     setPayNowQrLoading(true);
     setPayNowQrError('');
 
-    // Preferred: generate a dynamic PayNow QR with the exact amount and a
-    // fixed reference, so the customer cannot mistype the amount. Falls back
-    // to the outlet's uploaded static QR image when no UEN is configured.
+    // Preferred: generate a dynamic PayNow QR with the exact amount and an
+    // outlet-and-checkout reference, so the customer cannot mistype the amount
+    // and finance can identify the source. Falls back to the outlet's uploaded
+    // static QR image when no UEN is configured.
     const uen = session.outlet.paynow_uen?.trim();
     if (uen && manualPayNowAmount > 0) {
+      const reference = derivePayNowReference(session.outlet.name, checkoutIdempotencyKey);
       const payload = buildPayNowPayload({
         uen,
         amount: manualPayNowAmount,
         merchantName: session.outlet.receipt_brand_name || session.outlet.name,
-        reference: MANUAL_PAYNOW_REFERENCE,
+        reference,
       });
       QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 2, width: 480 })
         .then((dataUrl) => {
@@ -488,7 +490,7 @@ export default function PaymentModal({
     return () => {
       cancelled = true;
     };
-  }, [manualPayNowActive, manualPayNowAmount, open, session.outlet, step]);
+  }, [checkoutIdempotencyKey, manualPayNowActive, manualPayNowAmount, open, session.outlet, step]);
 
   useEffect(() => {
     if (!open || step !== 'payment' || !manualPayNowActive || !payNowQrUrl) {

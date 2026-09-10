@@ -54,5 +54,33 @@ export function buildPayNowPayload({ uen, amount, merchantName, reference, edita
   return `${withCrcId}${crc16ccitt(withCrcId)}`;
 }
 
-/** Fixed bill reference for manual PayNow fallback payments. */
+/** Legacy fallback when a checkout key cannot provide a transaction token. */
 export const MANUAL_PAYNOW_REFERENCE = 'POS-MNL-QR';
+
+/**
+ * Build a bank-statement-friendly reference that identifies both the outlet and
+ * checkout. PayNow bill references are capped at 25 characters; keeping each
+ * component short and using twelve checkout hex characters produces references
+ * such as `TAMP-B29FC9CAADE6` while remaining stable for the life of the checkout.
+ */
+export function derivePayNowReference(outletName?: string | null, checkoutKey?: string | null): string {
+  const normalizedOutlet = (outletName || '')
+    .trim()
+    .replace(/^HAC[\s_-]+/i, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase();
+  const outletWords = normalizedOutlet.split('-').filter(Boolean);
+  const outletCode = outletWords.length > 1
+    ? outletWords.map((word) => word[0]).join('').slice(0, 4)
+    : (outletWords[0] || 'POS').slice(0, 4);
+  const checkoutToken = (checkoutKey || '')
+    .replace(/[^a-fA-F0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 12);
+
+  if (checkoutToken.length !== 12) {
+    return MANUAL_PAYNOW_REFERENCE;
+  }
+  return `${outletCode}-${checkoutToken}`;
+}
