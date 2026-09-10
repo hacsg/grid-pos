@@ -372,8 +372,33 @@ async def update_order_status_service(
         )
     _validate_status_transition(order, new_status)
     previous_status = order.status
-    order.status = new_status
     effective_payment_method = payment_method if payment_method is not None else order.payment_method
+
+    # "Paid by card" must be backed by a real terminal charge. Without this an
+    # authenticated client can mark an order paid by card that never hit the
+    # terminal — money uncollected and card settlement reconciliation corrupted
+    # — or finalize a sale whose card leg was actually declined. Only the genuine
+    # pending -> paid transition is guarded (a paid -> paid replay is already
+    # treated as idempotent above). Cash and manual PayNow legs carry no
+    # PaymentIntent and are exempt; a split whose card leg is 0 is exempt too.
+    if new_status == OrderStatus.paid and previous_status == OrderStatus.pending:
+        card_leg_due = effective_payment_method == "card"
+        if effective_payment_method == "split":
+            card_leg_due = compute_split_card_leg(
+                order,
+                cash_amount=_money_or_zero(cash_amount),
+                cdc_amount=_money_or_zero(cdc_amount),
+            ) > 0
+        if card_leg_due:
+            from app.services.payment_intents import get_successful_intent_for_order
+
+            if await get_successful_intent_for_order(db, str(order_id)) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No successful card payment on record for this order",
+                )
+
+    order.status = new_status
     if payment_method is not None:
         order.payment_method = payment_method
     if payment_reference is not None:

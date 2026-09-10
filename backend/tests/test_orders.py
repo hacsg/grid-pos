@@ -3,7 +3,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -23,6 +23,26 @@ from app.services.vouchers import apply_vouchers_to_order
 @pytest_asyncio.fixture(autouse=True)
 async def _authenticated_client(client: AsyncClient, cashier_token: str) -> None:
     client.headers["Authorization"] = f"Bearer {cashier_token}"
+
+
+async def _seed_successful_card_intent(db_session, *, order_id: str, outlet_id: UUID, amount: str) -> None:
+    """Record a successful KPay PaymentIntent so a card / split card leg can be finalized.
+
+    Mirrors what POST /api/kpay/start + a terminal-approved sale leave behind.
+    """
+    from app.models.payment_intent import PaymentIntent
+
+    db_session.add(
+        PaymentIntent(
+            id=uuid4(),
+            outlet_id=outlet_id,
+            order_id=UUID(order_id),
+            out_trade_no=f"KPAY-TEST-{uuid4().hex[:8].upper()}",
+            amount=Decimal(amount),
+            status="success",
+        )
+    )
+    await db_session.commit()
 
 
 async def _create_order_payload(outlet_id: UUID, staff_id: UUID, product_id: UUID) -> dict:
@@ -437,11 +457,12 @@ class TestUpdateOrderStatus:
         assert data["paynow_confirmed_at"].startswith("2026-06-23T06:30:00")
 
     async def test_pending_to_paid_with_split_amounts(
-        self, client: AsyncClient, outlet, cashier_staff, product
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
     ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
+        await _seed_successful_card_intent(db_session, order_id=order_id, outlet_id=outlet.id, amount="9.98")
 
         resp = await client.put(
             f"/api/orders/{order_id}/status",
@@ -466,11 +487,12 @@ class TestUpdateOrderStatus:
         assert str(data["cash_change"]) == "0.00"
 
     async def test_split_with_cdc_voucher_tender(
-        self, client: AsyncClient, outlet, cashier_staff, product
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
     ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
+        await _seed_successful_card_intent(db_session, order_id=order_id, outlet_id=outlet.id, amount="10.00")
 
         # Total is 19.98: cash 5.00 + CDC 4.98 + card 10.00 must cover it.
         resp = await client.put(
@@ -566,6 +588,7 @@ class TestUpdateOrderStatus:
         cdc_amount = Decimal("1.50")
         expected_card = quantize_money(Decimal("6.73") - cash_amount - cdc_amount)
         assert expected_card == Decimal("3.23")
+        await _seed_successful_card_intent(db_session, order_id=order_id, outlet_id=outlet.id, amount="3.23")
 
         resp = await client.put(
             f"/api/orders/{order_id}/status",
@@ -602,17 +625,19 @@ class TestUpdateOrderStatus:
         assert resp.json()["status"] == "cancelled"
 
     async def test_paid_to_refunded(
-        self, client: AsyncClient, outlet, cashier_staff, product, manager_token
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product, manager_token
     ) -> None:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
+        await _seed_successful_card_intent(db_session, order_id=order_id, outlet_id=outlet.id, amount="19.98")
 
         # First pay
-        await client.put(
+        pay_resp = await client.put(
             f"/api/orders/{order_id}/status",
             json={"status": "paid", "payment_method": "card"},
         )
+        assert pay_resp.status_code == 200
 
         # Then cancel
         resp = await client.put(
@@ -689,6 +714,106 @@ class TestUpdateOrderStatus:
         )
         assert resp2.status_code == 200
         assert resp2.json()["status"] == "paid"
+
+    async def test_mark_paid_card_without_successful_intent_is_rejected(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """A "paid by card" claim with no successful PaymentIntent must not close the sale (P0 1.2d)."""
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "card"},
+        )
+
+        assert resp.status_code == 409
+        assert "no successful card payment" in resp.json()["detail"].lower()
+
+        # Order must still be pending — no money was captured.
+        check = await client.get(f"/api/orders/{order_id}")
+        assert check.json()["status"] == "pending"
+
+    async def test_mark_paid_card_with_successful_intent_succeeds(
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+        await _seed_successful_card_intent(
+            db_session, order_id=order_id, outlet_id=outlet.id, amount="19.98"
+        )
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "card"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
+        assert resp.json()["payment_method"] == "card"
+
+    async def test_mark_paid_split_card_leg_without_intent_is_rejected(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """The card leg of a split payment needs the same terminal proof (P0 1.2d)."""
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "cash_tendered": "10.00",
+                "cash_amount": "10.00",
+                "card_amount": "9.98",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 409
+        assert "no successful card payment" in resp.json()["detail"].lower()
+
+    async def test_mark_paid_split_without_card_leg_does_not_require_intent(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """A split fully covered by cash + CDC has no card leg, so no intent is needed."""
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "cash_amount": "0.00",
+                "card_amount": "0.00",
+                "cdc_amount": "19.98",
+                "voucher_amount": "0.00",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
+
+    async def test_mark_paid_cash_does_not_require_intent(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "cash", "cash_tendered": "20.00"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
 
 
 class TestRefundOrder:
