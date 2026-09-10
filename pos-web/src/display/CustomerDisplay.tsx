@@ -127,6 +127,13 @@ export default function CustomerDisplay() {
         });
       }
 
+      if (msg.type === 'APP_RELOAD') {
+        // The POS is applying a new build. Reload so both screens end up on the
+        // same version; this window has no browser chrome staff could use.
+        window.location.reload();
+        return;
+      }
+
       if (msg.type === 'PAYMENT_START') {
         setState((prev) => ({
           ...prev,

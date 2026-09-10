@@ -30,7 +30,10 @@ export type DisplayMessage =
   | { type: 'ORDER_COMPLETE' }
   // Sent by the customer display on load so the POS re-broadcasts current state
   // (so the idle/welcome screen shows branding even if opened mid-session).
-  | { type: 'DISPLAY_HELLO' };
+  | { type: 'DISPLAY_HELLO' }
+  // Sent by the POS when staff apply a new build. The display window has no
+  // reachable browser chrome of its own, so it can only reload on this cue.
+  | { type: 'APP_RELOAD' };
 
 let channel: BroadcastChannel | null = null;
 

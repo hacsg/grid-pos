@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
-import { ChevronDown, LogOut, WifiOff, X } from 'lucide-react';
+import { ChevronDown, LogOut, RefreshCw, WifiOff, X } from 'lucide-react';
 import CartSidebar from '@/components/CartSidebar';
 import LoginScreen from '@/components/LoginScreen';
 import LoyaltySheet from '@/components/LoyaltySheet';
@@ -33,9 +33,13 @@ import { computeCartDiscounts, type AppliedDiscountLine } from '@/utils/discount
 import { tapFeedback } from '@/utils/haptics';
 import { connectPrinter, forgetPrinter, getSavedPrinter, isPrintingSupported } from '@/utils/printer';
 import { broadcast } from '@/display/channel';
+import { isUpdateAvailable, reloadIntoLatestBuild } from '@/utils/appUpdate';
 
 const SESSION_KEY = 'grid_pos_staff_session';
 const PARKED_CART_KEY = 'grid_pos_parked_cart';
+// How often a till re-checks for a newer deploy. Five minutes keeps a fix
+// reaching the counter promptly without meaningful traffic.
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -786,6 +790,64 @@ function StaffShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [printerName, setPrinterName] = useState<string | null>(() => getSavedPrinter()?.name ?? null);
   const [manualTerminal, setManualTerminal] = useState(() => manualTerminalEnabled(loadSession()));
+  const [updateReady, setUpdateReady] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
+
+  // The tills run fullscreen Chrome with no address bar, refresh button or
+  // keyboard, so staff cannot reload after a deploy — until now the only way to
+  // pick up a fix was restarting the PC. Poll for a newer build and offer a
+  // one-tap reload instead. Checks are cheap (one conditional GET of
+  // index.html) and silently no-op while offline.
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      const available = await isUpdateAvailable();
+      if (!cancelled && available) {
+        setUpdateReady(true);
+      }
+    };
+
+    void check();
+    const timer = window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    // Also check when the till comes back to the foreground, so a deploy during
+    // a quiet spell is picked up as soon as someone touches the screen.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void check();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  async function applyUpdate() {
+    if (applyingUpdate) {
+      return;
+    }
+    // An unfinished sale is in-memory only and will not survive the reload.
+    // Parked carts do persist, so parking first is the safe route.
+    const confirmed = window.confirm(
+      'Load the latest version?\n\nBoth screens will reload. Any unfinished sale still in the cart will be cleared — park it first if you need to keep it.'
+    );
+    if (!confirmed) {
+      return;
+    }
+    setApplyingUpdate(true);
+    // Reload the customer display too, so the two screens never end up on
+    // different builds. It has no reachable browser chrome of its own.
+    try {
+      broadcast({ type: 'APP_RELOAD' });
+    } catch {
+      // The display is optional; never block the reload on it.
+    }
+    await reloadIntoLatestBuild();
+  }
 
   // The axios interceptor clears the stored session on a 401 and fires this
   // event; drop the in-memory session too so StaffShell re-renders to the login
@@ -884,6 +946,18 @@ function StaffShell() {
           <ChevronDown size={16} aria-hidden="true" />
         </button>
       </div>
+
+      {updateReady && (
+        <button
+          className="update-ready-banner"
+          type="button"
+          disabled={applyingUpdate}
+          onPointerDown={() => tapFeedback()}
+          onClick={applyUpdate}
+        >
+          {applyingUpdate ? 'Updating…' : 'Update available — tap to load the latest version'}
+        </button>
+      )}
 
       {tillNotOpen && (
         <Link
@@ -984,6 +1058,21 @@ function StaffShell() {
               <Link className="secondary-button settings-till-link" to="/till" onClick={() => setSettingsOpen(false)}>
                 Open cash till management
               </Link>
+
+              <button
+                className="secondary-button settings-till-link"
+                type="button"
+                disabled={applyingUpdate}
+                onPointerDown={() => tapFeedback()}
+                onClick={applyUpdate}
+              >
+                <RefreshCw size={18} aria-hidden="true" />
+                {applyingUpdate
+                  ? 'Reloading…'
+                  : updateReady
+                    ? 'Update available — reload now'
+                    : 'Reload app (both screens)'}
+              </button>
 
               <div className="settings-build">
                 <div className="settings-build-title">Current build</div>
