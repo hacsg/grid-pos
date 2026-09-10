@@ -45,6 +45,17 @@ async def _seed_successful_card_intent(db_session, *, order_id: str, outlet_id: 
     await db_session.commit()
 
 
+async def _use_integrated_terminal(db_session, outlet) -> None:
+    """Switch the outlet off manual terminal mode so the POS drives KPay.
+
+    Only integrated outlets produce a PaymentIntent, so only they are subject to
+    the "no successful card payment on record" guard.
+    """
+    outlet.manual_terminal_mode = False
+    db_session.add(outlet)
+    await db_session.commit()
+
+
 async def _create_order_payload(outlet_id: UUID, staff_id: UUID, product_id: UUID) -> dict:
     """Build a minimal order creation payload."""
     return {
@@ -716,9 +727,10 @@ class TestUpdateOrderStatus:
         assert resp2.json()["status"] == "paid"
 
     async def test_mark_paid_card_without_successful_intent_is_rejected(
-        self, client: AsyncClient, outlet, cashier_staff, product
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
     ) -> None:
         """A "paid by card" claim with no successful PaymentIntent must not close the sale (P0 1.2d)."""
+        await _use_integrated_terminal(db_session, outlet)
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
@@ -741,6 +753,7 @@ class TestUpdateOrderStatus:
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
+        await _use_integrated_terminal(db_session, outlet)
         await _seed_successful_card_intent(
             db_session, order_id=order_id, outlet_id=outlet.id, amount="19.98"
         )
@@ -755,9 +768,10 @@ class TestUpdateOrderStatus:
         assert resp.json()["payment_method"] == "card"
 
     async def test_mark_paid_split_card_leg_without_intent_is_rejected(
-        self, client: AsyncClient, outlet, cashier_staff, product
+        self, client: AsyncClient, db_session, outlet, cashier_staff, product
     ) -> None:
         """The card leg of a split payment needs the same terminal proof (P0 1.2d)."""
+        await _use_integrated_terminal(db_session, outlet)
         payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
         create_resp = await client.post("/api/orders", json=payload)
         order_id = create_resp.json()["id"]
@@ -810,6 +824,53 @@ class TestUpdateOrderStatus:
         resp = await client.put(
             f"/api/orders/{order_id}/status",
             json={"status": "paid", "payment_method": "cash", "cash_tendered": "20.00"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
+
+    async def test_manual_terminal_outlet_marks_card_paid_without_intent(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """Manual terminal mode never creates a PaymentIntent, so the guard must not fire.
+
+        Regression: the card guard blocked every counter card sale at outlets
+        running manual terminal mode (the default, Plan B go-live path).
+        """
+        assert outlet.manual_terminal_mode is True
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={"status": "paid", "payment_method": "card", "payment_reference": "MANUAL"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paid"
+        assert resp.json()["payment_method"] == "card"
+
+    async def test_manual_terminal_outlet_marks_split_card_leg_paid_without_intent(
+        self, client: AsyncClient, outlet, cashier_staff, product
+    ) -> None:
+        """Same for the card leg of a split at a manual terminal outlet."""
+        assert outlet.manual_terminal_mode is True
+        payload = await _create_order_payload(outlet.id, cashier_staff.id, product.id)
+        create_resp = await client.post("/api/orders", json=payload)
+        order_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/orders/{order_id}/status",
+            json={
+                "status": "paid",
+                "payment_method": "split",
+                "payment_reference": "MANUAL",
+                "cash_tendered": "10.00",
+                "cash_amount": "10.00",
+                "card_amount": "9.98",
+                "voucher_amount": "0.00",
+            },
         )
 
         assert resp.status_code == 200

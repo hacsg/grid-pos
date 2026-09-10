@@ -388,8 +388,12 @@ export default function PaymentModal({
         (splitCashAmount > 0 || splitTerminalAmount > 0 || splitCdcAmount > 0 || voucherAmount > 0) &&
         (splitTerminalAmount <= 0 ||
           (splitSecondMethod === 'card'
-            ? terminalConnected !== false
-            : terminalConnected !== false || manualPayNowReady))));
+            // Manual terminal mode never talks to the daemon, so a disconnected
+            // terminal must not block the card leg of a split.
+            ? manualTerminal || terminalConnected !== false
+            : manualPayNowActive
+              ? manualPayNowReady
+              : terminalConnected !== false))));
 
   useEffect(() => {
     if (mode === 'split' && !splitCashInputValid) {
@@ -893,7 +897,7 @@ export default function PaymentModal({
       <div className="manual-paynow-panel">
         <div className="manual-paynow-banner">
           <QrCode size={18} aria-hidden="true" />
-          <span>{forceManualPayNow ? 'Manual PayNow' : 'Terminal offline – Manual PayNow'}</span>
+          <span>{manualTerminal || forceManualPayNow ? 'Manual PayNow' : 'Terminal offline – Manual PayNow'}</span>
         </div>
         <strong>{formatCurrency(amount)}</strong>
         <div className="manual-paynow-qr">

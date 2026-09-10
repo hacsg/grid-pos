@@ -349,6 +349,19 @@ async def load_order_or_404(
     return order
 
 
+async def _outlet_uses_manual_terminal(db: AsyncSession, outlet_id: UUID) -> bool:
+    """Whether the outlet runs manual terminal mode (POS does not drive the terminal).
+
+    In manual mode staff charge the card on the KPay terminal themselves, so the
+    order never gets a PaymentIntent and the card-charge guard cannot apply.
+    Defaults to True for an outlet that cannot be loaded, matching the POS
+    client default and failing open rather than blocking the counter.
+    """
+    result = await db.execute(select(Outlet.manual_terminal_mode).where(Outlet.id == outlet_id))
+    manual_terminal_mode = result.scalar_one_or_none()
+    return True if manual_terminal_mode is None else bool(manual_terminal_mode)
+
+
 async def update_order_status_service(
     db: AsyncSession,
     order_id: UUID,
@@ -381,6 +394,11 @@ async def update_order_status_service(
     # pending -> paid transition is guarded (a paid -> paid replay is already
     # treated as idempotent above). Cash and manual PayNow legs carry no
     # PaymentIntent and are exempt; a split whose card leg is 0 is exempt too.
+    #
+    # Outlets in manual terminal mode are exempt: there the POS never drives the
+    # terminal (staff key the amount into the KPay terminal themselves and
+    # confirm on the POS), so no PaymentIntent is ever created and requiring one
+    # would block every card and split-with-card sale at the counter.
     if new_status == OrderStatus.paid and previous_status == OrderStatus.pending:
         card_leg_due = effective_payment_method == "card"
         if effective_payment_method == "split":
@@ -389,7 +407,7 @@ async def update_order_status_service(
                 cash_amount=_money_or_zero(cash_amount),
                 cdc_amount=_money_or_zero(cdc_amount),
             ) > 0
-        if card_leg_due:
+        if card_leg_due and not await _outlet_uses_manual_terminal(db, order.outlet_id):
             from app.services.payment_intents import get_successful_intent_for_order
 
             if await get_successful_intent_for_order(db, str(order_id)) is None:
