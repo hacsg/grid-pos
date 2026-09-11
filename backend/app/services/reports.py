@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -10,6 +10,7 @@ from sqlalchemy import case, extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.config import settings
 from app.models.category import Category
 from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
@@ -31,6 +32,7 @@ from app.schemas.report import (
     ShiftCashReconciliation,
     StaffPerformance,
     StaffReportResponse,
+    TodayMetricsResponse,
     WeeklyReportResponse,
 )
 
@@ -185,6 +187,85 @@ async def get_sales_summary(db: AsyncSession, report_date: date) -> SalesSummary
         order_count=order_count,
         average_order_value=average.quantize(Decimal("0.01")),
         date=report_date,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POS "today" metrics
+# ---------------------------------------------------------------------------
+
+
+def _matches_bucket(category_name: str | None, product_names: tuple[str | None, ...], keywords: list[str]) -> bool:
+    """True when the item's category name contains any of ``keywords``.
+
+    Matching is on the category, not the product, so a "Waffle Cone" filed
+    under Cones is not counted as a waffle. Product names are consulted only
+    when the category is gone (the product was deleted after the sale)."""
+    if not keywords:
+        return False
+    if category_name:
+        return any(kw in category_name.lower() for kw in keywords)
+    return any(kw in (name or "").lower() for name in product_names for kw in keywords)
+
+
+def _attach_rate(orders_with: int, order_count: int) -> float:
+    return round(orders_with / order_count * 100, 1) if order_count > 0 else 0.0
+
+
+async def get_today_metrics(db: AsyncSession, report_date: date, outlet_id: UUID | None) -> TodayMetricsResponse:
+    """Headline numbers for the POS Transactions banner.
+
+    Net sales / order count follow the same definition as the daily report
+    (paid orders only, SGT business day). Attachment rates are the share of
+    paid orders that contain at least one waffle / drink line; pints are units
+    sold. Bucket membership is keyword-based — see ``METRICS_*_KEYWORDS``.
+    """
+    start, end = _day_bounds(report_date)
+    revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id)
+
+    lines_stmt = (
+        select(OrderItem.order_id, OrderItem.quantity, OrderItem.product_name, Product.name, Category.name)
+        .join(Order, Order.id == OrderItem.order_id)
+        .outerjoin(Product, Product.id == OrderItem.product_id)
+        .outerjoin(Category, Category.id == Product.category_id)
+        .where(
+            Order.created_at >= start,
+            Order.created_at < end,
+            Order.status == OrderStatus.paid,
+        )
+    )
+    if outlet_id is not None:
+        lines_stmt = lines_stmt.where(Order.outlet_id == outlet_id)
+
+    waffle_keywords = settings.metrics_waffle_keyword_list
+    drink_keywords = settings.metrics_drink_keyword_list
+    pint_keywords = settings.metrics_pint_keyword_list
+
+    waffle_orders: set[UUID] = set()
+    drink_orders: set[UUID] = set()
+    pints_sold = 0
+    for order_id, quantity, line_name, product_name, category_name in (await db.execute(lines_stmt)).all():
+        # Only used when the category is missing: the line carries the name
+        # as sold, the catalogue name covers rows from before it was stored.
+        names = (line_name, product_name)
+        if _matches_bucket(category_name, names, waffle_keywords):
+            waffle_orders.add(order_id)
+        if _matches_bucket(category_name, names, drink_keywords):
+            drink_orders.add(order_id)
+        if _matches_bucket(category_name, names, pint_keywords):
+            pints_sold += int(quantity or 0)
+
+    average = (revenue / order_count) if order_count > 0 else Decimal("0.00")
+    return TodayMetricsResponse(
+        date=report_date,
+        net_sales=revenue,
+        order_count=order_count,
+        average_ticket=average.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        waffle_orders=len(waffle_orders),
+        waffle_attach_rate=_attach_rate(len(waffle_orders), order_count),
+        drink_orders=len(drink_orders),
+        drink_attach_rate=_attach_rate(len(drink_orders), order_count),
+        pints_sold=pints_sold,
     )
 
 

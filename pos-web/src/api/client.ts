@@ -547,6 +547,26 @@ export async function getTodayOrders(outletId?: string): Promise<OrderSummaryRea
   return data;
 }
 
+// --- Today's metrics (Transactions banner) ---------------------------------
+export interface TodayMetrics {
+  date: string;
+  net_sales: number | string;
+  order_count: number;
+  average_ticket: number | string;
+  waffle_orders: number;
+  /** Percent of paid orders with at least one waffle, 0-100. */
+  waffle_attach_rate: number;
+  drink_orders: number;
+  /** Percent of paid orders with at least one drink, 0-100. */
+  drink_attach_rate: number;
+  pints_sold: number;
+}
+
+export async function getTodayMetrics(outletId: string): Promise<TodayMetrics> {
+  const { data } = await api.get<TodayMetrics>('/reports/today-metrics', { params: { outlet_id: outletId } });
+  return data;
+}
+
 export async function getOrder(orderId: string): Promise<OrderRead> {
   const { data } = await api.get<OrderRead>(`/orders/${orderId}`);
   return data;

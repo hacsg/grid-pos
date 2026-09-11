@@ -580,3 +580,101 @@ class TestResponseModels:
     def test_outlet_report_response_shape(self):
         r = OutletReportResponse()
         assert r.outlets == []
+
+
+# ---------------------------------------------------------------------------
+# Today metrics (POS Transactions banner)
+# ---------------------------------------------------------------------------
+
+
+class TestTodayMetrics:
+    """GET /api/reports/today-metrics"""
+
+    async def _seed_menu(self, db_session, outlet):
+        from app.models.category import Category
+        from app.models.product import Product
+
+        cats = {}
+        for name in ("Gelato", "Waffles", "Drinks", "Pints", "Cones"):
+            cat = Category(name=name, sort_order=0, outlet_id=outlet.id)
+            db_session.add(cat)
+            cats[name] = cat
+        await db_session.commit()
+        products = {}
+        for name, cat_name, price in (
+            ("Single Scoop", "Gelato", "5.00"),
+            ("Coconut Pandan Waffle", "Waffles", "12.00"),
+            ("Iced Latte", "Drinks", "6.00"),
+            ("Pistachio", "Pints", "18.00"),
+            ("Waffle Cone", "Cones", "1.50"),
+        ):
+            prod = Product(name=name, price=Decimal(price), category_id=cats[cat_name].id, is_available=True)
+            db_session.add(prod)
+            products[name] = prod
+        await db_session.commit()
+        for prod in products.values():
+            await db_session.refresh(prod)
+        return products
+
+    async def test_empty_day_returns_zeros(self, client: AsyncClient, outlet):
+        resp = await client.get(f"/api/reports/today-metrics?outlet_id={outlet.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["order_count"] == 0
+        assert float(data["net_sales"]) == 0
+        assert data["waffle_attach_rate"] == 0.0
+        assert data["pints_sold"] == 0
+
+    async def test_attachment_and_pints(self, client: AsyncClient, db_session, outlet, cashier_staff):
+        products = await self._seed_menu(db_session, outlet)
+        now = datetime.now(UTC)
+
+        # Order 1: gelato + waffle + drink
+        o1 = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("23.00"), now, order_number="0001")
+        await _seed_order_item(db_session, o1.id, products["Single Scoop"].id)
+        await _seed_order_item(db_session, o1.id, products["Coconut Pandan Waffle"].id)
+        await _seed_order_item(db_session, o1.id, products["Iced Latte"].id)
+        # Order 2: two pints, two waffles (still one waffle *order*)
+        o2 = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("60.00"), now, order_number="0002")
+        await _seed_order_item(db_session, o2.id, products["Pistachio"].id, quantity=2)
+        await _seed_order_item(db_session, o2.id, products["Coconut Pandan Waffle"].id, quantity=2)
+        # Order 3: scoop in a waffle cone — category "Cones" wins, so not a waffle
+        o3 = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("6.50"), now, order_number="0003")
+        await _seed_order_item(db_session, o3.id, products["Single Scoop"].id)
+        await _seed_order_item(db_session, o3.id, products["Waffle Cone"].id)
+        # Order 4: gelato only, paid
+        o4 = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("5.00"), now, order_number="0004")
+        await _seed_order_item(db_session, o4.id, products["Single Scoop"].id)
+        # Refunded order with pints must not count at all
+        o5 = await _seed_order(
+            db_session, outlet.id, cashier_staff.id, Decimal("18.00"), now,
+            status=OrderStatus.refunded, order_number="0005",
+        )
+        await _seed_order_item(db_session, o5.id, products["Pistachio"].id, quantity=3)
+
+        resp = await client.get(f"/api/reports/today-metrics?outlet_id={outlet.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["order_count"] == 4
+        assert float(data["net_sales"]) == 94.50
+        assert float(data["average_ticket"]) == 23.63
+        assert data["waffle_orders"] == 2
+        assert data["waffle_attach_rate"] == 50.0
+        assert data["drink_orders"] == 1
+        assert data["drink_attach_rate"] == 25.0
+        assert data["pints_sold"] == 2
+
+    async def test_scoped_to_outlet(self, client: AsyncClient, db_session, outlet, cashier_staff):
+        products = await self._seed_menu(db_session, outlet)
+        other = Outlet(name="Other Outlet", address="1 Elsewhere")
+        db_session.add(other)
+        await db_session.commit()
+        await db_session.refresh(other)
+        now = datetime.now(UTC)
+        o1 = await _seed_order(db_session, other.id, cashier_staff.id, Decimal("18.00"), now, order_number="0001")
+        await _seed_order_item(db_session, o1.id, products["Pistachio"].id)
+
+        resp = await client.get(f"/api/reports/today-metrics?outlet_id={outlet.id}")
+        assert resp.json()["order_count"] == 0
+        resp = await client.get(f"/api/reports/today-metrics?outlet_id={other.id}")
+        assert resp.json()["pints_sold"] == 1

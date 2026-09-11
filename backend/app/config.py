@@ -93,6 +93,25 @@ class Settings(BaseSettings):
         alias="DAILY_SALES_REPORT_FROM",
         description="Gmail account used as the report sender",
     )
+    # POS "today's metrics" banner buckets. An order item counts towards a
+    # bucket when its category name — or, failing that, its product name —
+    # contains one of these comma-separated keywords (case-insensitive).
+    # Keyword matching keeps the menu free to be renamed without a migration.
+    metrics_waffle_keywords: str = Field(
+        default="waffle",
+        alias="METRICS_WAFFLE_KEYWORDS",
+        description="Category/product name keywords that identify a waffle item",
+    )
+    metrics_drink_keywords: str = Field(
+        default="drink,beverage,coffee,tea",
+        alias="METRICS_DRINK_KEYWORDS",
+        description="Category/product name keywords that identify a drink",
+    )
+    metrics_pint_keywords: str = Field(
+        default="pint",
+        alias="METRICS_PINT_KEYWORDS",
+        description="Category/product name keywords that identify a pint",
+    )
     gmail_api_client_id: str = Field(default="", alias="GMAIL_API_CLIENT_ID")
     gmail_api_client_secret: str = Field(default="", alias="GMAIL_API_CLIENT_SECRET")
     gmail_api_refresh_token: str = Field(default="", alias="GMAIL_API_REFRESH_TOKEN")
@@ -134,6 +153,22 @@ class Settings(BaseSettings):
         elif self.jwt_secret == DEFAULT_JWT_SECRET:
             logger.warning("Using default JWT_SECRET; this is only acceptable for local development")
         return self
+
+    @staticmethod
+    def _keywords(raw: str) -> list[str]:
+        return [kw.strip().lower() for kw in raw.split(",") if kw.strip()]
+
+    @property
+    def metrics_waffle_keyword_list(self) -> list[str]:
+        return self._keywords(self.metrics_waffle_keywords)
+
+    @property
+    def metrics_drink_keyword_list(self) -> list[str]:
+        return self._keywords(self.metrics_drink_keywords)
+
+    @property
+    def metrics_pint_keyword_list(self) -> list[str]:
+        return self._keywords(self.metrics_pint_keywords)
 
     @property
     def cors_origins(self) -> list[str]:

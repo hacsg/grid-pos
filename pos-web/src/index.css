@@ -3840,6 +3840,134 @@ html.display-active #root {
   font-size: 14px;
 }
 
+/* Today's sales banner — headline figure for the SGT business day at this
+   outlet. Sits above the filters so it stays "today" even when the list is
+   filtered to another day. Tinted like .till-summary-item.manager so it reads
+   as information, not as an alert. */
+.today-sales-banner {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px 24px;
+  padding: 14px 18px;
+  border: 1px solid #dfe3dc;
+  border-radius: var(--r-md);
+  background: #edf5ef;
+  box-shadow: var(--shadow-sm);
+}
+
+.today-sales-headline {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.today-sales-label {
+  color: var(--grid-muted);
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.today-sales-total {
+  color: var(--grid-primary-dark);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-sales-meta {
+  color: var(--grid-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-sales-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 0;
+  min-width: 0;
+}
+
+.today-sales-breakdown > div {
+  display: grid;
+  gap: 2px;
+}
+
+.today-sales-breakdown dt {
+  color: var(--grid-muted);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.today-sales-breakdown dd {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-sales-refresh {
+  min-height: 42px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--grid-border);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--grid-text);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.today-sales-refresh:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.today-sales-refresh .spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@media (max-width: 700px) {
+  .today-sales-banner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 16px;
+  }
+  .today-sales-breakdown {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 18px;
+  }
+  /* Keep the refresh control beside the headline rather than as a stray
+     full-width row under the breakdown. */
+  .today-sales-refresh {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: end;
+    align-self: start;
+    padding: 0 12px;
+  }
+  .today-sales-refresh span {
+    display: none;
+  }
+}
+
 .transactions-quick-filters {
   display: flex;
   flex-wrap: wrap;

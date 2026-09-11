@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Printer, Receipt, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -19,6 +20,7 @@ import { tapFeedback } from '@/utils/haptics';
 import { printKitchenChit, printReceipt } from '@/utils/printer';
 import { orderReadToPrintableOrder } from '@/utils/receipt';
 import { getCachedActivePrintTemplate, renderKitchenChitFromTemplate, renderReceiptFromTemplate } from '@/utils/renderFromTemplate';
+import TodaySalesBanner, { TODAY_SALES_QUERY_KEY } from './TodaySalesBanner';
 
 const MANAGER_ROLES: StaffRole[] = ['admin', 'manager', 'supervisor'];
 
@@ -75,6 +77,7 @@ function getErrorDetail(err: unknown, fallback: string): string {
 }
 
 export default function TransactionsPage({ session }: TransactionsPageProps) {
+  const queryClient = useQueryClient();
   const [orders, setOrders] = useState<OrderSummaryRead[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState('');
@@ -225,6 +228,8 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
       toast.success('Refund recorded');
       await refreshDetail(detail.id);
       await loadOrders();
+      // A refund changes today's net sales, so the banner must re-read.
+      void queryClient.invalidateQueries({ queryKey: [TODAY_SALES_QUERY_KEY] });
       closeConfirm();
       setRefundAmount('');
     } catch (err) {
@@ -447,6 +452,8 @@ export default function TransactionsPage({ session }: TransactionsPageProps) {
         <h1>Transactions</h1>
         <p className="transactions-subtitle">Look up orders, reprint, void or refund</p>
       </header>
+
+      <TodaySalesBanner outletId={session.outlet.id} />
 
       <div className="transactions-quick-filters" role="group" aria-label="Quick date filters">
         {[

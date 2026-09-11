@@ -16,6 +16,7 @@ from app.schemas.report import (
     SalesSummaryResponse,
     ShiftCashReconciliation,
     StaffReportResponse,
+    TodayMetricsResponse,
     WeeklyReportResponse,
 )
 from app.services.reports import (
@@ -26,9 +27,11 @@ from app.services.reports import (
     get_product_report,
     get_sales_summary,
     get_staff_report,
+    get_today_metrics,
     get_weekly_report,
 )
 from app.utils.auth import get_current_staff
+from app.utils.timezone import sgt_today
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -41,6 +44,16 @@ async def sales_summary(
     """Return today's total sales, order count, and average order value."""
     today = datetime.now(UTC).date()
     return await get_sales_summary(db, today)
+
+
+@router.get("/today-metrics", response_model=TodayMetricsResponse)
+async def today_metrics(
+    outlet_id: UUID | None = Query(None, description="Filter by outlet"),
+    db: AsyncSession = Depends(get_db),
+    current_staff: Staff = Depends(get_current_staff),
+) -> TodayMetricsResponse:
+    """Today's (SGT) headline metrics for the POS Transactions banner."""
+    return await get_today_metrics(db, sgt_today(), outlet_id)
 
 
 @router.get("/cash-reconciliation", response_model=ShiftCashReconciliation)

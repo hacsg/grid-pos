@@ -134,6 +134,21 @@ class SalesSummaryResponse(BaseModel):
     date: date
 
 
+class TodayMetricsResponse(BaseModel):
+    """Headline figures for the POS Transactions banner: one outlet, one SGT
+    business day. Attachment rates are percentages of paid orders (0-100)."""
+
+    date: date
+    net_sales: Money = Decimal("0.00")
+    order_count: int = 0
+    average_ticket: Money = Decimal("0.00")
+    waffle_orders: int = 0
+    waffle_attach_rate: float = 0.0
+    drink_orders: int = 0
+    drink_attach_rate: float = 0.0
+    pints_sold: int = 0
+
+
 class ShiftCashReconciliation(BaseModel):
     """Cash reconciliation data for a shift."""
 
