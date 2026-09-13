@@ -223,12 +223,13 @@ export default function Designer({ documentType, template, onClose, onSave, savi
             <span>Set active after save</span>
             <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
           </label>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">
               Cancel
             </Button>
             <Button
               variant="secondary"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setIsDuplicating(true);
                 void handleSave(true).finally(() => setIsDuplicating(false));
@@ -237,7 +238,7 @@ export default function Designer({ documentType, template, onClose, onSave, savi
             >
               Save as Copy
             </Button>
-            <Button disabled={!name.trim()} onClick={() => void handleSave()} loading={saving && !isDuplicating}>
+            <Button disabled={!name.trim()} onClick={() => void handleSave()} loading={saving && !isDuplicating} className="w-full sm:w-auto">
               Save Template
             </Button>
           </div>

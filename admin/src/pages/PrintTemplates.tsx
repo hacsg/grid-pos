@@ -95,7 +95,7 @@ export default function PrintTemplates() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Print Templates</h1>
           <p className="mt-1 text-sm text-text-muted">Configure receipt and kitchen chit layouts per outlet.</p>
@@ -104,7 +104,7 @@ export default function PrintTemplates() {
           <select
             value={activeOutletId}
             onChange={(event) => setOutletId(event.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full sm:w-auto rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">All outlets (global default)</option>
             {outlets.map((outlet) => (
@@ -114,6 +114,7 @@ export default function PrintTemplates() {
             ))}
           </select>
           <Button
+            className="w-full sm:w-auto"
             onClick={() => {
               previewMutation.reset();
               setEditingTemplate({

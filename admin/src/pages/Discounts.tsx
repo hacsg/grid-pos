@@ -281,15 +281,16 @@ function DiscountForm({ discount, outlets, categories, products, onSubmit, onCan
           type="checkbox"
           checked={isActive}
           onChange={(e) => setIsActive(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
         />
         Active
       </label>
 
-      <div className="flex items-center justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+        <Button type="button" variant="secondary" onClick={onCancel} className="w-full sm:w-auto">
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting || !name.trim() || targetingInvalid}>
+        <Button type="submit" disabled={isSubmitting || !name.trim() || targetingInvalid} className="w-full sm:w-auto">
           {discount ? 'Update' : 'Create'}
         </Button>
       </div>
@@ -386,19 +387,107 @@ export default function Discounts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Discounts</h1>
           <p className="mt-1 text-sm text-text-muted">Manage staff discounts and promotions</p>
         </div>
-        <Button onClick={() => { setEditingDiscount(null); setIsFormOpen(true); }}>
+        <Button onClick={() => { setEditingDiscount(null); setIsFormOpen(true); }} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
           Add Discount
         </Button>
       </div>
 
       <Card>
-        <div className="overflow-x-auto">
+        {/* Mobile card view */}
+        <div className="space-y-3 md:hidden">
+          {isLoading && <div className="py-6 text-center text-sm text-text-muted">Loading…</div>}
+          {!isLoading && discounts.length === 0 && (
+            <div className="py-6 text-center text-sm text-text-muted">No discounts yet</div>
+          )}
+          {discounts.map((d, index) => (
+            <div
+              key={d.id}
+              className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm space-y-2.5 transition-colors cursor-pointer active:bg-surface/60"
+              onClick={() => handleEdit(d)}
+            >
+              <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveDiscount(index, -1); }}
+                      disabled={index === 0}
+                      className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                      aria-label="Move up"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveDiscount(index, 1); }}
+                      disabled={index === discounts.length - 1}
+                      className="rounded p-0.5 text-text-muted hover:text-text disabled:opacity-30"
+                      aria-label="Move down"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-text">{d.name}</h4>
+                    <p className="text-xs text-text-muted">{d.outlet_id ? getOutletName(d.outlet_id) || '—' : 'All outlets'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => handleToggle(d.id, e)}
+                  className={`inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${d.is_active ? 'bg-primary' : 'bg-gray-200'}`}
+                  aria-label={d.is_active ? 'Deactivate' : 'Activate'}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${d.is_active ? 'translate-x-5' : 'translate-x-0.5'}`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Type</span>
+                <span className={`inline-flex rounded px-2 py-0.5 text-xs ${d.kind === 'percent' ? 'bg-primary/10 text-primary' : 'bg-amber-100 text-amber-700'}`}>
+                  {d.kind === 'percent' ? 'Percent' : 'Fixed'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Amount</span>
+                <span className="font-medium text-text">{formatAmount(d)}</span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Applies to</span>
+                <span className={`inline-flex rounded px-2 py-0.5 text-xs ${d.scope === 'targeted' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-text-muted'}`}>
+                  {describeScope(d)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEdit(d); }}
+                  className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface hover:text-text"
+                  aria-label="Edit"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={(e) => handleDelete(d, e)}
+                  className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface hover:text-error"
+                  aria-label="Delete"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop table view */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs uppercase tracking-wider text-text-muted">

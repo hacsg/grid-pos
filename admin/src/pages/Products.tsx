@@ -95,25 +95,25 @@ export default function Products() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Products</h1>
           <p className="mt-1 text-sm text-text-muted">
             Manage your product catalog
           </p>
         </div>
-        <Button onClick={() => { setEditingProduct(null); setIsFormOpen(true); }}>
+        <Button onClick={() => { setEditingProduct(null); setIsFormOpen(true); }} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
           Add Product
         </Button>
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="flex items-center gap-3 rounded-lg bg-primary/5 px-4 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg bg-primary/5 px-4 py-3">
           <span className="text-sm font-medium text-primary">
             {selectedIds.length} selected
           </span>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="secondary"
               size="sm"

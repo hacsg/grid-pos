@@ -53,37 +53,46 @@ function VarianceBadge({ value }: { value: string | number | null }) {
   );
 }
 
-function MovementsRow({ sessionId, colSpan }: { sessionId: string; colSpan: number }) {
+function MovementsList({ sessionId }: { sessionId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['till-movements', sessionId],
     queryFn: () => getTillMovements(sessionId),
   });
   const movements = data ?? [];
+
+  if (isLoading) {
+    return <p className="text-xs text-text-muted">Loading movements…</p>;
+  }
+
+  if (movements.length === 0) {
+    return <p className="text-xs text-text-muted">No cash movements on this session.</p>;
+  }
+
+  return (
+    <ul className="space-y-1">
+      {movements.map((m) => (
+        <li key={m.id} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="w-14 text-text-muted shrink-0">{sgtTime(m.created_at)}</span>
+          <span
+            className={`font-medium ${
+              m.direction === 'in' ? 'text-success' : m.direction === 'out' ? 'text-error' : 'text-text-muted'
+            }`}
+          >
+            {m.direction === 'in' ? '+ Cash in' : m.direction === 'out' ? '− Cash out' : 'No-sale open'}
+          </span>
+          {m.direction !== 'nosale' && <span className="tabular-nums text-text">{formatCurrency(m.amount)}</span>}
+          {m.reason && <span className="text-text-muted">· {m.reason}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MovementsRow({ sessionId, colSpan }: { sessionId: string; colSpan: number }) {
   return (
     <tr>
       <td colSpan={colSpan} className="border-b border-gray-50 bg-surface/50 px-6 py-3">
-        {isLoading ? (
-          <p className="text-xs text-text-muted">Loading movements…</p>
-        ) : movements.length === 0 ? (
-          <p className="text-xs text-text-muted">No cash movements on this session.</p>
-        ) : (
-          <ul className="space-y-1">
-            {movements.map((m) => (
-              <li key={m.id} className="flex items-center gap-3 text-xs">
-                <span className="w-14 text-text-muted">{sgtTime(m.created_at)}</span>
-                <span
-                  className={`font-medium ${
-                    m.direction === 'in' ? 'text-success' : m.direction === 'out' ? 'text-error' : 'text-text-muted'
-                  }`}
-                >
-                  {m.direction === 'in' ? '+ Cash in' : m.direction === 'out' ? '− Cash out' : 'No-sale open'}
-                </span>
-                {m.direction !== 'nosale' && <span className="tabular-nums text-text">{formatCurrency(m.amount)}</span>}
-                {m.reason && <span className="text-text-muted">· {m.reason}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
+        <MovementsList sessionId={sessionId} />
       </td>
     </tr>
   );
@@ -200,7 +209,70 @@ export default function Tills() {
         title="Till Sessions"
         subtitle="Each close's counted cash becomes the expected opening float of the next session"
       >
-        <div className="overflow-x-auto">
+        {/* Mobile card view */}
+        <div className="space-y-3 md:hidden">
+          {sessions.length === 0 && (
+            <p className="py-8 text-center text-sm text-text-muted">
+              No till sessions yet — open the till from the POS to start tracking drawer cash.
+            </p>
+          )}
+          {sessions.map((s: TillSession) => (
+            <div
+              key={s.id}
+              className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm space-y-2.5 transition-colors cursor-pointer active:bg-surface/60"
+              onClick={() => setExpanded(expanded === s.id ? null : s.id)}
+            >
+              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-text text-sm">
+                    {format(parseISO(s.business_date), 'EEE d MMM')}
+                  </span>
+                  {s.status === 'open' && (
+                    <span className="inline-flex items-center rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+                      Open
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 text-text-muted">
+                  <span className="text-xs">{sgtTime(s.opened_at)}–{sgtTime(s.closed_at)}</span>
+                  {expanded === s.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-sm pt-1">
+                <div>
+                  <span className="text-xs text-text-muted block">Declared Float</span>
+                  <span className="font-medium text-text">{formatCurrency(s.opening_float)}</span>
+                  <div className="mt-0.5">
+                    <VarianceBadge value={s.opening_variance} />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-text-muted block">Counted at Close</span>
+                  <span className="font-semibold text-text">{formatCurrency(s.counted_cash)}</span>
+                  <div className="mt-0.5">
+                    <VarianceBadge value={s.variance} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-text-muted pt-1 border-t border-gray-50">
+                <span>Exp. Open: {formatCurrency(s.expected_opening_float)}</span>
+                <span>Exp. Close: {formatCurrency(s.expected_cash)}</span>
+              </div>
+
+              {expanded === s.id && (
+                <div className="mt-2 rounded-lg bg-surface/80 p-3" onClick={(e) => e.stopPropagation()}>
+                  <p className="text-xs font-semibold text-text mb-2">Cash Movements</p>
+                  <MovementsList sessionId={s.id} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop table view */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead>
               <tr className="text-text-muted">

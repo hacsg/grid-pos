@@ -175,21 +175,23 @@ export default function DateRangeSelector() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-text-muted">or pick custom dates:</span>
-        <input
-          type="date"
-          value={fromParam ?? ''}
-          onChange={(e) => setCustomRange(e.target.value, toParam ?? '')}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-        <span className="text-xs text-text-muted">to</span>
-        <input
-          type="date"
-          value={toParam ?? ''}
-          onChange={(e) => setCustomRange(fromParam ?? '', e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-        <span className="ml-auto text-xs text-text-muted">
+        <span className="text-xs text-text-muted w-full sm:w-auto">or pick custom dates:</span>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <input
+            type="date"
+            value={fromParam ?? ''}
+            onChange={(e) => setCustomRange(e.target.value, toParam ?? '')}
+            className="flex-1 sm:flex-initial min-w-[130px] rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <span className="text-xs text-text-muted">to</span>
+          <input
+            type="date"
+            value={toParam ?? ''}
+            onChange={(e) => setCustomRange(fromParam ?? '', e.target.value)}
+            className="flex-1 sm:flex-initial min-w-[130px] rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <span className="w-full sm:w-auto sm:ml-auto text-xs text-text-muted">
           {COMPARISON_TEXT[activePreset] ?? 'Compared to the same-length previous period'}
         </span>
       </div>
