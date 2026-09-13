@@ -114,11 +114,11 @@ function StaffForm({ staff, outlets, onSubmit, onCancel, isSubmitting }: StaffFo
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+        <Button type="button" variant="secondary" onClick={onCancel} className="w-full sm:w-auto">
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
           {staff ? 'Update' : 'Create'}
         </Button>
       </div>
@@ -255,7 +255,7 @@ export default function StaffPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Staff</h1>
           <p className="mt-1 text-sm text-text-muted">Manage staff accounts and access</p>
@@ -266,6 +266,7 @@ export default function StaffPage() {
             setIsFormOpen(true);
           }}
           disabled={outlets.length === 0}
+          className="w-full sm:w-auto"
         >
           <Plus className="h-4 w-4" />
           Add Staff
@@ -316,9 +317,10 @@ export default function StaffPage() {
             value={newPin}
             onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
           />
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
             <Button
               variant="secondary"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setIsPinModalOpen(false);
                 setResetPinStaff(null);
@@ -327,7 +329,11 @@ export default function StaffPage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleResetPin} disabled={resetPin.isPending || newPin.length !== 4}>
+            <Button
+              onClick={handleResetPin}
+              disabled={resetPin.isPending || newPin.length !== 4}
+              className="w-full sm:w-auto"
+            >
               Reset PIN
             </Button>
           </div>

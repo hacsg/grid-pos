@@ -129,7 +129,7 @@ export default function Orders() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Orders</h1>
           <p className="mt-1 text-sm text-text-muted">View and manage orders</p>
@@ -140,13 +140,13 @@ export default function Orders() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 sm:flex-initial">
           <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-40 rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full sm:w-40 rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
@@ -156,11 +156,11 @@ export default function Orders() {
           </select>
         </div>
 
-        <div className="relative">
+        <div className="relative flex-1 sm:flex-initial">
           <select
             value={outletFilter}
             onChange={(e) => setOutletFilter(e.target.value)}
-            className="w-48 rounded-lg border border-gray-200 bg-white py-2 px-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full sm:w-48 rounded-lg border border-gray-200 bg-white py-2 px-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">All Outlets</option>
             {outlets.map((outlet) => (
@@ -237,7 +237,7 @@ export default function Orders() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-gray-100 pt-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-t border-gray-100 pt-4">
               <div className="space-y-0.5">
                 <p className="text-sm text-text-muted">
                   Subtotal: ${Number(detailOrder.subtotal).toFixed(2)}
@@ -267,6 +267,7 @@ export default function Orders() {
                   size="sm"
                   onClick={() => handleRefund(detailOrder)}
                   disabled={refundOrder.isPending}
+                  className="w-full sm:w-auto"
                 >
                   <Undo2 className="h-4 w-4" />
                   {refundOrder.isPending ? 'Refunding…' : 'Refund'}

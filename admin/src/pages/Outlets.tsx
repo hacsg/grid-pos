@@ -111,11 +111,11 @@ function OutletForm({ outlet, onSubmit, onCancel, isSubmitting }: OutletFormProp
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-2">
+        <Button type="button" variant="secondary" onClick={onCancel} className="w-full sm:w-auto">
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
           {outlet ? 'Update' : 'Create'}
         </Button>
       </div>
@@ -362,12 +362,12 @@ export default function Outlets() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Outlets</h1>
           <p className="mt-1 text-sm text-text-muted">Manage store locations</p>
         </div>
-        <Button onClick={() => { setEditingOutlet(null); setIsFormOpen(true); }}>
+        <Button onClick={() => { setEditingOutlet(null); setIsFormOpen(true); }} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
           Add Outlet
         </Button>

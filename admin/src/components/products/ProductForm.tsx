@@ -166,7 +166,7 @@ export default function ProductForm({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input
           label="Price (S$)"
           type="number"
@@ -240,7 +240,7 @@ export default function ProductForm({
         ) : (
           <>
             {/* Add selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <select
                 className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"
                 value={selectedToAdd}
@@ -257,6 +257,7 @@ export default function ProductForm({
                 size="sm"
                 disabled={!selectedToAdd}
                 onClick={handleAddGroup}
+                className="w-full sm:w-auto"
               >
                 Add
               </Button>
@@ -360,11 +361,11 @@ export default function ProductForm({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
-        <Button variant="secondary" onClick={onCancel} type="button">
+      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 border-t border-gray-100 pt-4">
+        <Button variant="secondary" onClick={onCancel} type="button" className="w-full sm:w-auto">
           Cancel
         </Button>
-        <Button type="submit" loading={loading}>
+        <Button type="submit" loading={loading} className="w-full sm:w-auto">
           {product ? 'Update Product' : 'Create Product'}
         </Button>
       </div>

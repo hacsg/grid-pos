@@ -62,13 +62,13 @@ export default function Vouchers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Vouchers</h1>
           <p className="mt-1 text-sm text-text-muted">Vouchers redeemed at the till</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={load} disabled={loading}>
+          <Button variant="secondary" onClick={load} disabled={loading} className="w-full sm:w-auto">
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
@@ -77,7 +77,7 @@ export default function Vouchers() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="relative min-w-[200px] flex-1">
+        <div className="relative min-w-[200px] w-full sm:w-auto sm:flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
@@ -87,42 +87,42 @@ export default function Vouchers() {
             className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
-        <div>
+        <div className="flex-1 sm:flex-initial min-w-[120px]">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-muted">
             Type
           </label>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as 'all' | VoucherType)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
           >
             <option value="all">All</option>
             <option value="cdc">CDC</option>
             <option value="acre_group">Acre Group</option>
           </select>
         </div>
-        <div>
+        <div className="flex-1 sm:flex-initial min-w-[120px]">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-muted">
             Status
           </label>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'all' | 'available' | 'redeemed')}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
           >
             <option value="all">All</option>
             <option value="available">Available</option>
             <option value="redeemed">Redeemed</option>
           </select>
         </div>
-        <div>
+        <div className="w-full sm:w-auto sm:flex-initial min-w-[140px]">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-muted">
             Campaign
           </label>
           <select
             value={campaignFilter}
             onChange={(e) => setCampaignFilter(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
           >
             <option value="all">All</option>
             {campaigns.map((c) => (
@@ -135,7 +135,92 @@ export default function Vouchers() {
       </div>
 
       <Card>
-        <div className="overflow-x-auto">
+        {/* Mobile card view */}
+        <div className="space-y-3 md:hidden">
+          {loading && (
+            <div className="py-8 text-center text-sm text-text-muted">
+              Loading…
+            </div>
+          )}
+          {!loading && filtered.length === 0 && (
+            <div className="py-8 text-center text-sm text-text-muted">
+              No vouchers found
+            </div>
+          )}
+          {filtered.map((v) => {
+            const isRedeemed = !!v.redeemed_at;
+            return (
+              <div
+                key={v.id}
+                className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm space-y-2.5"
+              >
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                  <span className="font-mono font-bold text-text text-base">{v.code}</span>
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      isRedeemed ? 'bg-error/10 text-error' : 'bg-success/10 text-success'
+                    }`}
+                  >
+                    {isRedeemed ? 'Redeemed' : 'Available'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Type</span>
+                  <span
+                    className={`inline-flex rounded px-2 py-0.5 text-xs ${
+                      v.type === 'cdc' ? 'bg-primary/10 text-primary' : 'bg-success/10 text-success'
+                    }`}
+                  >
+                    {v.type === 'cdc' ? 'CDC' : 'Acre Group'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Amount</span>
+                  <span className="font-medium text-text">{formatAmount(v)}</span>
+                </div>
+
+                {(v.customer_name || v.customer_phone) && (
+                  <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Customer</span>
+                    <div className="text-right">
+                      <p className="text-text">{v.customer_name || '—'}</p>
+                      {v.customer_phone && <p className="text-xs text-text-muted">{v.customer_phone}</p>}
+                    </div>
+                  </div>
+                )}
+
+                {v.campaign_name && (
+                  <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Campaign</span>
+                    <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      {v.campaign_name}
+                    </span>
+                  </div>
+                )}
+
+                {isRedeemed && (
+                  <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Redeemed By</span>
+                    <span className="text-xs text-text-muted">
+                      {v.staff_name || '—'}
+                      {v.outlet_id ? ` @ ${v.outlet_id.slice(0, 8)}` : ''}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-3 text-xs text-text-muted pt-1 border-t border-gray-50">
+                  <span>Created</span>
+                  <span>{formatSgtDate(v.created_at)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop table view */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs uppercase tracking-wider text-text-muted">

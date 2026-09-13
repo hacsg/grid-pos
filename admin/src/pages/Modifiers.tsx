@@ -158,14 +158,14 @@ export default function Modifiers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Modifiers</h1>
           <p className="mt-1 text-sm text-text-muted">
             Manage reusable modifier groups and their options
           </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreate} className="w-full sm:w-auto">
           <Plus className="h-4 w-4" />
           New Group
         </Button>
@@ -179,7 +179,7 @@ export default function Modifiers() {
         ) : (
           <div className="divide-y divide-gray-100">
             {groups.map((g) => (
-              <div key={g.id} className="flex items-center justify-between px-4 py-3 hover:bg-surface/50">
+              <div key={g.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 hover:bg-surface/50">
                 <div className="min-w-0">
                   <div className="font-medium text-text">{g.name}</div>
                   {g.description && (
@@ -189,8 +189,8 @@ export default function Modifiers() {
                     {g.options?.length || 0} option{(g.options?.length || 0) === 1 ? '' : 's'}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => openEdit(g)}>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button variant="secondary" size="sm" onClick={() => openEdit(g)} className="flex-1 sm:flex-initial">
                     <Edit2 className="h-4 w-4" />
                     Edit
                   </Button>
@@ -251,8 +251,8 @@ export default function Modifiers() {
             ) : (
               <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 overflow-hidden">
                 {optionDrafts.map((opt, idx) => (
-                  <div key={idx} className="flex items-center gap-3 px-3 py-2 bg-white">
-                    <div className="flex flex-col gap-1 flex-1 min-w-0">
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 bg-white">
+                    <div className="flex-1 min-w-0">
                       <input
                         className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
                         placeholder="Option name"
@@ -260,17 +260,17 @@ export default function Modifiers() {
                         onChange={(e) => updateOptionDraft(idx, { name: e.target.value })}
                       />
                     </div>
-                    <div className="w-28">
-                      <div className="flex items-center gap-1 text-xs text-text-muted mb-0.5">Price (S$)</div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
-                        value={opt.price_adjustment}
-                        onChange={(e) => updateOptionDraft(idx, { price_adjustment: parseFloat(e.target.value) || 0 })}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 pt-4">
+                    <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Price"
+                          className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
+                          value={opt.price_adjustment}
+                          onChange={(e) => updateOptionDraft(idx, { price_adjustment: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
                       <label className="flex items-center gap-1 text-xs text-text-muted cursor-pointer select-none">
                         <input
                           type="checkbox"
@@ -280,34 +280,34 @@ export default function Modifiers() {
                         />
                         Available
                       </label>
-                    </div>
-                    <div className="flex items-center gap-1 pt-4">
-                      <button
-                        type="button"
-                        className="p-1 text-text-muted hover:text-text disabled:opacity-40"
-                        onClick={() => moveOption(idx, -1)}
-                        disabled={idx === 0}
-                        aria-label="Move up"
-                      >
-                        <ChevronUp className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1 text-text-muted hover:text-text disabled:opacity-40"
-                        onClick={() => moveOption(idx, 1)}
-                        disabled={idx === optionDrafts.length - 1}
-                        aria-label="Move down"
-                      >
-                        <ChevronDown className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1 text-error hover:bg-error/10 rounded"
-                        onClick={() => removeOptionDraft(idx)}
-                        aria-label="Remove option"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-0.5 ml-auto sm:ml-0">
+                        <button
+                          type="button"
+                          className="p-1 text-text-muted hover:text-text disabled:opacity-40"
+                          onClick={() => moveOption(idx, -1)}
+                          disabled={idx === 0}
+                          aria-label="Move up"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 text-text-muted hover:text-text disabled:opacity-40"
+                          onClick={() => moveOption(idx, 1)}
+                          disabled={idx === optionDrafts.length - 1}
+                          aria-label="Move down"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 text-error hover:bg-error/10 rounded"
+                          onClick={() => removeOptionDraft(idx)}
+                          aria-label="Remove option"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -315,11 +315,12 @@ export default function Modifiers() {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
-            <Button variant="secondary" onClick={closeModal} type="button">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 border-t border-gray-100 pt-4">
+            <Button variant="secondary" onClick={closeModal} type="button" className="w-full sm:w-auto">
               Cancel
             </Button>
             <Button
+              className="w-full sm:w-auto"
               onClick={async () => {
                 // Perform the actual save + option reconciliation here using direct client calls
                 // (to avoid hook scoping issues inside the modal save handler)
