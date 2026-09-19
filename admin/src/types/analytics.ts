@@ -23,7 +23,20 @@ export interface AnalyticsKpis {
   month_end_history_days?: number;
   /** Total number of data samples used across outlets */
   month_end_sample_count?: number;
+  /** Per-outlet current earned vs projected target for the current month. */
+  month_end_outlets?: MonthEndOutletForecast[];
 }
+
+export interface MonthEndOutletForecast {
+  outlet_id: string;
+  outlet_name: string;
+  projected_total: number;
+  earned_so_far: number;
+  remaining: number;
+  method?: string;
+  history_days?: number;
+}
+
 
 export interface PaymentBreakdownItem {
   method: string;

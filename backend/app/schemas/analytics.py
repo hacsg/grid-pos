@@ -3,6 +3,18 @@
 from pydantic import BaseModel
 
 
+class MonthEndOutletForecast(BaseModel):
+    """One visible outlet's current earned vs projected full-month target."""
+
+    outlet_id: str
+    outlet_name: str
+    projected_total: float
+    earned_so_far: float
+    remaining: float
+    method: str = "run_rate_fallback"
+    history_days: int = 0
+
+
 class AnalyticsKpis(BaseModel):
     """Headline totals for the selected period, with % change vs the previous period.
 
@@ -30,6 +42,8 @@ class AnalyticsKpis(BaseModel):
     month_end_method: str = "run_rate_fallback"
     month_end_history_days: int = 0
     month_end_sample_count: int = 0
+    # Per-outlet current/target breakdown for the current month (empty otherwise).
+    month_end_outlets: list[MonthEndOutletForecast] = []
 
 
 class PaymentBreakdownItem(BaseModel):

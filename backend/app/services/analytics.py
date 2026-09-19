@@ -32,6 +32,7 @@ from app.schemas.analytics import (
     ConcentrationData,
     DayOfWeekPoint,
     HourlyPoint,
+    MonthEndOutletForecast,
     OutletSalesItem,
     PaymentBreakdownItem,
     RedemptionTypeBreakdown,
@@ -363,8 +364,27 @@ async def get_analytics_dashboard(
     # frontend decides whether to surface it based on date_from / date_to.
     sgt_today = datetime.now(SGT).date()
     me_projected, me_earned, me_remaining, me_method, me_history, me_samples = 0.0, 0.0, 0.0, "run_rate_fallback", 0, 0
+    me_outlets: list[MonthEndOutletForecast] = []
     if from_date is not None and to_date is not None:
-        me_projected, me_earned, me_remaining, me_method, me_history, me_samples = await month_end_prediction(db, outlet_id, sgt_today)
+        forecast = await calculate_month_end_prediction(db, outlet_id, sgt_today)
+        me_projected = forecast.projected_total
+        me_earned = forecast.earned_so_far
+        me_remaining = forecast.remaining
+        me_method = forecast.method
+        me_history = forecast.history_days
+        me_samples = forecast.sample_count
+        me_outlets = [
+            MonthEndOutletForecast(
+                outlet_id=str(item.outlet_id),
+                outlet_name=item.outlet_name,
+                projected_total=item.projected_total,
+                earned_so_far=item.earned_so_far,
+                remaining=item.remaining,
+                method=item.method,
+                history_days=item.history_days,
+            )
+            for item in forecast.outlets
+        ]
 
     # Per-outlet breakdown with names, best first. Hidden outlets are excluded.
     outlet_rows = (await db.execute(
@@ -432,6 +452,7 @@ async def get_analytics_dashboard(
         month_end_method=me_method,
         month_end_history_days=me_history,
         month_end_sample_count=me_samples,
+        month_end_outlets=me_outlets,
     )
 
     return AnalyticsDashboardResponse(

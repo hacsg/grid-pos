@@ -48,6 +48,16 @@ _PUBLIC_HOLIDAYS = {
 _HOLIDAY_EVES = {holiday - timedelta(days=1) for holiday in _PUBLIC_HOLIDAYS}
 
 
+class OutletForecastBreakdown(NamedTuple):
+    outlet_id: UUID
+    outlet_name: str
+    projected_total: float
+    earned_so_far: float
+    remaining: float
+    method: str
+    history_days: int
+
+
 class ForecastResult(NamedTuple):
     projected_total: float
     earned_so_far: float
@@ -55,6 +65,7 @@ class ForecastResult(NamedTuple):
     method: str
     history_days: int
     sample_count: int
+    outlets: list[OutletForecastBreakdown]
 
 
 class OutletForecast(NamedTuple):
@@ -217,7 +228,12 @@ async def calculate_month_end_prediction(
         outlet_ids = [row[0] for row in visible_rows.all()]
 
     if not outlet_ids:
-        return ForecastResult(0.0, 0.0, 0.0, "run_rate_fallback", 0, 0)
+        return ForecastResult(0.0, 0.0, 0.0, "run_rate_fallback", 0, 0, [])
+
+    outlet_name_rows = (await db.execute(
+        select(Outlet.id, Outlet.name).where(Outlet.id.in_(outlet_ids))
+    )).all()
+    outlet_names = {oid: name for oid, name in outlet_name_rows}
 
     current_stmt = select(Order).where(
         Order.status == OrderStatus.paid,
@@ -273,6 +289,7 @@ async def calculate_month_end_prediction(
     max_history_days = 0
     total_samples = 0
     used_historical_method = False
+    outlet_breakdowns: list[OutletForecastBreakdown] = []
 
     prior_grid_outlets = {oid for oid, _, _ in prior_grid_rows}
     for oid in outlet_ids:
@@ -298,6 +315,29 @@ async def calculate_month_end_prediction(
         total_samples += outlet_result.sample_count
         used_historical_method |= outlet_result.method == "historical_weekday_blend"
 
+        # Per-outlet earned includes today's partial trading (all of this
+        # month's paid orders for the outlet), matching the all-outlet total.
+        outlet_earned = round(
+            sum(
+                float(order.total or 0)
+                for order in current_orders
+                if order.outlet_id == oid
+            ),
+            2,
+        )
+        outlet_projected = round(max(outlet_earned, outlet_earned + outlet_result.remaining), 2)
+        outlet_breakdowns.append(OutletForecastBreakdown(
+            outlet_id=oid,
+            outlet_name=outlet_names.get(oid, "Unknown"),
+            projected_total=outlet_projected,
+            earned_so_far=outlet_earned,
+            remaining=round(max(0.0, outlet_projected - outlet_earned), 2),
+            method=outlet_result.method,
+            history_days=outlet_result.history_days,
+        ))
+
+    outlet_breakdowns.sort(key=lambda item: item.outlet_name)
+
     projected = max(earned, earned + total_remaining)
     method = "historical_weekday_blend" if used_historical_method else "run_rate_fallback"
     return ForecastResult(
@@ -307,4 +347,5 @@ async def calculate_month_end_prediction(
         method,
         max_history_days,
         total_samples,
+        outlet_breakdowns,
     )

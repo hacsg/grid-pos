@@ -325,6 +325,41 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+            {(data?.kpis?.month_end_outlets?.length ?? 0) > 1 && (
+              <div className="border-t border-gray-100 pt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-muted">
+                  By outlet
+                </p>
+                <div className="space-y-2">
+                  {data!.kpis!.month_end_outlets!.map((o) => {
+                    const pct =
+                      o.projected_total > 0
+                        ? Math.min(100, (o.earned_so_far / o.projected_total) * 100)
+                        : 0;
+                    return (
+                      <div key={o.outlet_id} className="text-sm">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="font-medium text-text">{o.outlet_name}</span>
+                          <span className="text-text-muted">
+                            {formatCurrency(o.earned_so_far)}
+                            <span className="mx-1 text-gray-300">/</span>
+                            <span className="font-semibold text-text">
+                              {formatCurrency(o.projected_total)}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full rounded-full bg-gray-100">
+                          <div
+                            className="h-1.5 rounded-full bg-primary"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-text-muted">
               {data?.kpis?.month_end_method === 'historical_weekday_blend'
                 ? `Modeled on ${data.kpis.month_end_history_days} history days · updated daily as new sales are recorded`

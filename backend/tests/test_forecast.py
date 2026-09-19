@@ -12,6 +12,7 @@ from app.models.order import Order, OrderStatus
 from app.models.outlet import Outlet
 from app.models.staff import Staff, StaffRole
 from app.services.analytics import month_end_prediction
+from app.services.forecast import calculate_month_end_prediction
 
 SGT = ZoneInfo("Asia/Singapore")
 
@@ -122,3 +123,39 @@ async def test_all_outlets_forecast_excludes_hidden_outlets(db_session):
     visible_only = await month_end_prediction(db_session, visible.id, current)
 
     assert all_visible == visible_only
+
+
+@pytest.mark.asyncio
+async def test_forecast_result_breaks_down_current_and_target_by_visible_outlet(db_session):
+    current = date(2026, 9, 10)
+    first, first_staff = await _add_outlet(db_session, name="First")
+    second, second_staff = await _add_outlet(db_session, name="Second")
+    hidden, _ = await _add_outlet(db_session, name="Bedok", hidden=True)
+    for outlet in (first, second, hidden):
+        await _add_history(db_session, outlet.id, current, "100.00")
+
+    await _add_order(
+        db_session,
+        first,
+        first_staff,
+        datetime(2026, 9, 9, 12, tzinfo=SGT),
+        "100.00",
+        "first-order",
+    )
+    await _add_order(
+        db_session,
+        second,
+        second_staff,
+        datetime(2026, 9, 9, 12, tzinfo=SGT),
+        "200.00",
+        "second-order",
+    )
+
+    result = await calculate_month_end_prediction(db_session, None, current)
+
+    assert [item.outlet_name for item in result.outlets] == ["First", "Second"]
+    assert [item.earned_so_far for item in result.outlets] == [100.0, 200.0]
+    assert all(item.projected_total >= item.earned_so_far for item in result.outlets)
+    assert result.projected_total == pytest.approx(
+        sum(item.projected_total for item in result.outlets)
+    )
