@@ -24,6 +24,7 @@ from app.models.order import Order, OrderStatus
 from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.voucher import OrderVoucher, Voucher
+from app.services.forecast import calculate_month_end_prediction
 from app.schemas.analytics import (
     AnalyticsDashboardResponse,
     AnalyticsKpis,
@@ -199,56 +200,20 @@ async def month_end_prediction(
     db: AsyncSession,
     outlet_id: UUID | None,
     current_date: date,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, str, int, int]:
     """Projected full-month net sales for `current_date`'s month (SGT).
 
-    Returns (projected_total, earned_so_far, remaining).
-    - projected_total = average daily net sales to date × total days in month.
-    - earned_so_far   = actual net sales for the month so far (SGT).
-    - remaining       = projected_total - earned_so_far.
-
-    When there are no sales yet this month, returns (0.0, 0.0, 0.0).
+    Returns (projected_total, earned_so_far, remaining, method, history_days, sample_count).
     """
-    month_start_sgt = current_date.replace(day=1)
-    _, days_in_month = monthrange(current_date.year, current_date.month)
-
-    # Days elapsed (inclusive of current day) — 1-indexed.
-    days_elapsed = (current_date - month_start_sgt).days + 1
-    if days_elapsed <= 0 or days_in_month <= 0:
-        return 0.0, 0.0, 0.0
-
-    # Paid orders for the current month so far (SGT day bounds in UTC).
-    month_start_utc = sgt_day_bounds_utc(month_start_sgt)[0]
-    month_end_utc = sgt_day_bounds_utc(current_date)[1]  # exclusive end of today
-
-    stmt = select(Order).where(
-        Order.status == OrderStatus.paid,
-        Order.created_at >= month_start_utc,
-        Order.created_at < month_end_utc,
+    res = await calculate_month_end_prediction(db, outlet_id, current_date)
+    return (
+        res.projected_total,
+        res.earned_so_far,
+        res.remaining,
+        res.method,
+        res.history_days,
+        res.sample_count,
     )
-    if outlet_id is None:
-        # Exclude hidden outlets when computing for "all outlets".
-        # Hidden outlets (still on another POS) must not contribute to the
-        # Grid prediction or dashboard.
-        hidden_outlets_stmt = select(Outlet.id).where(Outlet.is_hidden == True)
-        hidden_ids = await db.execute(hidden_outlets_stmt)
-        hidden_ids_list = [row[0] for row in hidden_ids.all()]
-        if hidden_ids_list:
-            stmt = stmt.where(Order.outlet_id.notin_(hidden_ids_list))
-    else:
-        stmt = stmt.where(Order.outlet_id == outlet_id)
-
-    orders = (await db.execute(stmt)).scalars().all()
-    earned = sum((o.total or 0) for o in orders)
-    earned_float = float(earned)
-
-    if earned_float == 0.0 or days_elapsed <= 0:
-        return 0.0, earned_float, 0.0
-
-    avg_daily = earned_float / days_elapsed
-    projected = avg_daily * days_in_month
-    remaining = max(projected - earned_float, 0.0)
-    return round(projected, 2), round(earned_float, 2), round(remaining, 2)
 
 
 def concentration_from_quantities(quantities: list[int]) -> ConcentrationData:
@@ -397,9 +362,9 @@ async def get_analytics_dashboard(
     # Only meaningful when the dashboard range covers the current month; the
     # frontend decides whether to surface it based on date_from / date_to.
     sgt_today = datetime.now(SGT).date()
-    me_projected, me_earned, me_remaining = 0.0, 0.0, 0.0
+    me_projected, me_earned, me_remaining, me_method, me_history, me_samples = 0.0, 0.0, 0.0, "run_rate_fallback", 0, 0
     if from_date is not None and to_date is not None:
-        me_projected, me_earned, me_remaining = await month_end_prediction(db, outlet_id, sgt_today)
+        me_projected, me_earned, me_remaining, me_method, me_history, me_samples = await month_end_prediction(db, outlet_id, sgt_today)
 
     # Per-outlet breakdown with names, best first. Hidden outlets are excluded.
     outlet_rows = (await db.execute(
@@ -454,20 +419,25 @@ async def get_analytics_dashboard(
         for h in range(24)
     ]
 
+    kpis = AnalyticsKpis(
+        gross_sales=float(agg.gross),
+        net_sales=float(agg.net),
+        transactions=agg.transactions,
+        items_sold=items_sold,
+        avg_ticket=round(float(avg_ticket), 2),
+        **deltas,
+        month_end_projected_total=me_projected,
+        month_end_earned_so_far=me_earned,
+        month_end_remaining=me_remaining,
+        month_end_method=me_method,
+        month_end_history_days=me_history,
+        month_end_sample_count=me_samples,
+    )
+
     return AnalyticsDashboardResponse(
         date_from=date_from,
         date_to=date_to,
-        kpis=AnalyticsKpis(
-            gross_sales=float(agg.gross),
-            net_sales=float(agg.net),
-            transactions=agg.transactions,
-            items_sold=items_sold,
-            avg_ticket=round(float(avg_ticket), 2),
-            **deltas,
-            month_end_projected_total=me_projected,
-            month_end_earned_so_far=me_earned,
-            month_end_remaining=me_remaining,
-        ),
+        kpis=kpis,
         payments=[
             PaymentBreakdownItem(method=name, amount=float(agg.payments[name]))
             for name in PAYMENT_BUCKETS

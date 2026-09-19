@@ -3,6 +3,7 @@
 from app.models.category import Category
 from app.models.campaign import Campaign
 from app.models.customer import Customer
+from app.models.historical_daily_sale import HistoricalDailySale
 from app.models.idempotency_key import IdempotencyKey
 from app.models.modifier import ModifierGroup, ModifierOption, ProductModifierGroup
 from app.models.order import Order, OrderStatus
@@ -27,6 +28,7 @@ __all__ = [
     "LoyaltyMember",
     "Discount",
     "GtoFile",
+    "HistoricalDailySale",
     "TillSession",
     "TillMovement",
     "IdempotencyKey",

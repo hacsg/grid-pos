@@ -287,7 +287,11 @@ export default function Dashboard() {
       {isCurrentMonth && (data?.kpis?.month_end_projected_total ?? 0) > 0 && (
         <Card
           title="Month-End Prediction"
-          subtitle="Projected total based on current daily run-rate (SGT)"
+          subtitle={
+            data?.kpis?.month_end_method === 'historical_weekday_blend'
+              ? 'Blends historical weekday patterns with current-month pace (SGT)'
+              : 'Projected total based on current daily run-rate (SGT)'
+          }
         >
           <div className="space-y-4">
             <div className="flex items-baseline gap-3">
@@ -322,8 +326,9 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-xs text-text-muted">
-              Based on average daily net sales for the period so far ·
-              updated daily as new sales are recorded
+              {data?.kpis?.month_end_method === 'historical_weekday_blend'
+                ? `Modeled on ${data.kpis.month_end_history_days} history days · updated daily as new sales are recorded`
+                : 'Based on average daily net sales for the period so far · updated daily as new sales are recorded'}
             </p>
           </div>
         </Card>

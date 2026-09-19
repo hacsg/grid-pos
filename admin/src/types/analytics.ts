@@ -11,12 +11,18 @@ export interface AnalyticsKpis {
   transactions_delta: number | null;
   items_sold_delta: number | null;
   avg_ticket_delta: number | null;
-  /** Projected full-month net sales (SGT), based on current daily run-rate. 0 if not current month. */
+  /** Projected full-month net sales (SGT). 0 if not current month. */
   month_end_projected_total: number;
   /** Actual net sales earned in the current month so far (SGT). */
   month_end_earned_so_far: number;
   /** projected_total - earned_so_far; 0 if not current month. */
   month_end_remaining: number;
+  /** Method used for projection ('historical_weekday_blend' or 'run_rate_fallback') */
+  month_end_method?: string;
+  /** Number of unique history days used for forecasting */
+  month_end_history_days?: number;
+  /** Total number of data samples used across outlets */
+  month_end_sample_count?: number;
 }
 
 export interface PaymentBreakdownItem {
