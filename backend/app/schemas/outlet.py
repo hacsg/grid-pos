@@ -45,6 +45,7 @@ class OutletRead(OutletBase, TimestampSchema):
     receipt_company_details: str | None = None
     paynow_uen: str | None = None
     manual_terminal_mode: bool = True
+    is_hidden: bool = False
 
 
 class PayNowQrRead(BaseModel):

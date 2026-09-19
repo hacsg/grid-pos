@@ -196,6 +196,7 @@ export interface Outlet {
   receipt_company_details?: string | null;
   paynow_uen?: string | null;
   manual_terminal_mode?: boolean;
+  is_hidden?: boolean;
   created_at: string;
   updated_at: string;
 }

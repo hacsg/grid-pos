@@ -11,6 +11,12 @@ export interface AnalyticsKpis {
   transactions_delta: number | null;
   items_sold_delta: number | null;
   avg_ticket_delta: number | null;
+  /** Projected full-month net sales (SGT), based on current daily run-rate. 0 if not current month. */
+  month_end_projected_total: number;
+  /** Actual net sales earned in the current month so far (SGT). */
+  month_end_earned_so_far: number;
+  /** projected_total - earned_so_far; 0 if not current month. */
+  month_end_remaining: number;
 }
 
 export interface PaymentBreakdownItem {

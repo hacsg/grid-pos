@@ -64,8 +64,8 @@ async def create_outlet(
 
 @router.get("", response_model=list[OutletRead])
 async def list_outlets(db: AsyncSession = Depends(get_db)) -> list[Outlet]:
-    """List all outlets ordered by name."""
-    result = await db.execute(select(Outlet).order_by(Outlet.name))
+    """List all non-hidden outlets ordered by name."""
+    result = await db.execute(select(Outlet).where(Outlet.is_hidden == False).order_by(Outlet.name))
     return list(result.scalars().all())
 
 

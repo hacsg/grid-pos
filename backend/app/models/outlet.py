@@ -23,6 +23,10 @@ class Outlet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # When true (default), the POS does NOT drive the KPay terminal: staff key
     # card amounts into the terminal manually and PayNow uses the self-QR.
     manual_terminal_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # When True the outlet is excluded from the admin UI and from aggregated
+    # analytics (e.g. month-end prediction for "all outlets"). Used for outlets
+    # that still run a different POS and have not yet been migrated to Grid.
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     categories = relationship("Category", back_populates="outlet")
     staff_members = relationship("Staff", back_populates="outlet")

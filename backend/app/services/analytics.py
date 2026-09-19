@@ -195,6 +195,62 @@ def scoop_ratio_from_products(products: list[tuple]) -> ScoopRatioData:
     )
 
 
+async def month_end_prediction(
+    db: AsyncSession,
+    outlet_id: UUID | None,
+    current_date: date,
+) -> tuple[float, float, float]:
+    """Projected full-month net sales for `current_date`'s month (SGT).
+
+    Returns (projected_total, earned_so_far, remaining).
+    - projected_total = average daily net sales to date × total days in month.
+    - earned_so_far   = actual net sales for the month so far (SGT).
+    - remaining       = projected_total - earned_so_far.
+
+    When there are no sales yet this month, returns (0.0, 0.0, 0.0).
+    """
+    month_start_sgt = current_date.replace(day=1)
+    _, days_in_month = monthrange(current_date.year, current_date.month)
+
+    # Days elapsed (inclusive of current day) — 1-indexed.
+    days_elapsed = (current_date - month_start_sgt).days + 1
+    if days_elapsed <= 0 or days_in_month <= 0:
+        return 0.0, 0.0, 0.0
+
+    # Paid orders for the current month so far (SGT day bounds in UTC).
+    month_start_utc = sgt_day_bounds_utc(month_start_sgt)[0]
+    month_end_utc = sgt_day_bounds_utc(current_date)[1]  # exclusive end of today
+
+    stmt = select(Order).where(
+        Order.status == OrderStatus.paid,
+        Order.created_at >= month_start_utc,
+        Order.created_at < month_end_utc,
+    )
+    if outlet_id is None:
+        # Exclude hidden outlets when computing for "all outlets".
+        # Hidden outlets (still on another POS) must not contribute to the
+        # Grid prediction or dashboard.
+        hidden_outlets_stmt = select(Outlet.id).where(Outlet.is_hidden == True)
+        hidden_ids = await db.execute(hidden_outlets_stmt)
+        hidden_ids_list = [row[0] for row in hidden_ids.all()]
+        if hidden_ids_list:
+            stmt = stmt.where(Order.outlet_id.notin_(hidden_ids_list))
+    else:
+        stmt = stmt.where(Order.outlet_id == outlet_id)
+
+    orders = (await db.execute(stmt)).scalars().all()
+    earned = sum((o.total or 0) for o in orders)
+    earned_float = float(earned)
+
+    if earned_float == 0.0 or days_elapsed <= 0:
+        return 0.0, earned_float, 0.0
+
+    avg_daily = earned_float / days_elapsed
+    projected = avg_daily * days_in_month
+    remaining = max(projected - earned_float, 0.0)
+    return round(projected, 2), round(earned_float, 2), round(remaining, 2)
+
+
 def concentration_from_quantities(quantities: list[int]) -> ConcentrationData:
     """Share of units sold captured by the top 3 / top 5 products."""
     ordered = sorted(quantities, reverse=True)
@@ -337,8 +393,18 @@ async def get_analytics_dashboard(
             "avg_ticket_delta": _delta(avg_ticket, prev_avg),
         }
 
-    # Per-outlet breakdown with names, best first.
-    outlet_rows = (await db.execute(select(Outlet.id, Outlet.name))).all()
+    # Month-end prediction — projected full-month net sales for the current month.
+    # Only meaningful when the dashboard range covers the current month; the
+    # frontend decides whether to surface it based on date_from / date_to.
+    sgt_today = datetime.now(SGT).date()
+    me_projected, me_earned, me_remaining = 0.0, 0.0, 0.0
+    if from_date is not None and to_date is not None:
+        me_projected, me_earned, me_remaining = await month_end_prediction(db, outlet_id, sgt_today)
+
+    # Per-outlet breakdown with names, best first. Hidden outlets are excluded.
+    outlet_rows = (await db.execute(
+        select(Outlet.id, Outlet.name).where(Outlet.is_hidden == False)
+    )).all()
     outlet_names = {r.id: r.name for r in outlet_rows}
     sales_by_outlet = [
         OutletSalesItem(
@@ -398,6 +464,9 @@ async def get_analytics_dashboard(
             items_sold=items_sold,
             avg_ticket=round(float(avg_ticket), 2),
             **deltas,
+            month_end_projected_total=me_projected,
+            month_end_earned_so_far=me_earned,
+            month_end_remaining=me_remaining,
         ),
         payments=[
             PaymentBreakdownItem(method=name, amount=float(agg.payments[name]))

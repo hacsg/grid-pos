@@ -20,6 +20,14 @@ class AnalyticsKpis(BaseModel):
     transactions_delta: float | None = None
     items_sold_delta: float | None = None
     avg_ticket_delta: float | None = None
+    # Month-end prediction (current month only, SGT).
+    # projected_total: total net sales projected for the full month based on
+    #   the current average daily run-rate; 0.0 when range is not the current month.
+    # earned_so_far:   actual net sales for the current month to date.
+    # remaining:       projected_total - earned_so_far (0.0 when not current month).
+    month_end_projected_total: float = 0.0
+    month_end_earned_so_far: float = 0.0
+    month_end_remaining: float = 0.0
 
 
 class PaymentBreakdownItem(BaseModel):

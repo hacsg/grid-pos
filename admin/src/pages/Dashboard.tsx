@@ -160,6 +160,24 @@ export default function Dashboard() {
   );
   const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0);
 
+  // Is the dashboard showing the current calendar month (local time)?
+  // "This Month" preset yields from=1st, to=today; custom full-month yields
+  // from=1st, to=last-day. Both should surface the prediction.
+  const isCurrentMonth = useMemo(() => {
+    if (!from || !to) return false;
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const firstThisMonth = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+    const todayStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const lastThisMonth = `${y}-${String(m + 1).padStart(2, '0')}-${String(
+      new Date(y, m + 1, 0).getDate()
+    ).padStart(2, '0')}`;
+    // Range starts on the 1st of this month and ends either today or the
+    // last day of this month (i.e., not spilling into a future month).
+    return from === firstThisMonth && (to === todayStr || to === lastThisMonth);
+  }, [from, to]);
+
   const trendData = useMemo(
     () =>
       (data?.trend ?? []).map((t) => ({
@@ -263,6 +281,52 @@ export default function Dashboard() {
           <KpiCard label="Items Sold" value={data.kpis.items_sold.toLocaleString()} delta={data.kpis.items_sold_delta} />
           <KpiCard label="Avg Ticket" value={formatCurrency(data.kpis.avg_ticket)} delta={data.kpis.avg_ticket_delta} />
         </div>
+      )}
+
+      {/* ── Month-end prediction ── */}
+      {isCurrentMonth && data?.kpis?.month_end_projected_total > 0 && (
+        <Card
+          title="Month-End Prediction"
+          subtitle="Projected total based on current daily run-rate (SGT)"
+        >
+          <div className="space-y-4">
+            <div className="flex items-baseline gap-3">
+              <p className="text-3xl font-bold text-text">
+                {formatCurrency(data!.kpis!.month_end_projected_total)}
+              </p>
+              <p className="text-sm text-text-muted">projected by month end</p>
+            </div>
+            <div className="grid grid-cols-2 gap-6 text-sm border-t border-gray-100 pt-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  Earned so far
+                </p>
+                <p className="mt-1 text-lg font-semibold text-text">
+                  {formatCurrency(data!.kpis!.month_end_earned_so_far)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  Remaining to target
+                </p>
+                <p
+                  className={`mt-1 text-lg font-semibold ${
+                    data!.kpis!.month_end_remaining > 0 ? 'text-text' : 'text-success'
+                  }`}
+                >
+                  {formatCurrency(data!.kpis!.month_end_remaining)}
+                </p>
+                {data!.kpis!.month_end_remaining === 0 && (
+                  <p className="mt-1 text-xs text-success">Target met ✓</p>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-text-muted">
+              Based on average daily net sales for the period so far ·
+              updated daily as new sales are recorded
+            </p>
+          </div>
+        </Card>
       )}
 
       {/* ── Trend + Payment mix ── */}

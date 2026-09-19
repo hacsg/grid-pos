@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.staff import Staff
 from app.schemas.analytics import AnalyticsDashboardResponse
 from app.schemas.flavor_analytics import FlavorAnalysisResponse, FlavorRankingsResponse
-from app.services.analytics import get_analytics_dashboard, resolve_date_range
+from app.services.analytics import get_analytics_dashboard, resolve_date_range, month_end_prediction
 from app.services.flavor_analytics import get_flavor_analysis, get_flavor_rankings
 from app.utils.auth import get_current_staff
 
