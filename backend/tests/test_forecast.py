@@ -132,7 +132,7 @@ async def test_forecast_result_breaks_down_current_and_target_by_visible_outlet(
     second, second_staff = await _add_outlet(db_session, name="Second")
     hidden, _ = await _add_outlet(db_session, name="Bedok", hidden=True)
     for outlet in (first, second, hidden):
-        await _add_history(db_session, outlet.id, current, "100.00")
+        await _add_history(db_session, outlet.id, date(2026, 9, 1), "100.00")
 
     await _add_order(
         db_session,
@@ -159,3 +159,42 @@ async def test_forecast_result_breaks_down_current_and_target_by_visible_outlet(
     assert result.projected_total == pytest.approx(
         sum(item.projected_total for item in result.outlets)
     )
+
+
+@pytest.mark.asyncio
+async def test_current_month_qashier_days_count_as_earned_before_grid_cutover(db_session):
+    """Pre-cutover Qashier days in the current month are counted as earned.
+
+    Tampines moved to Grid mid-month; the earlier days of the month were still
+    on Qashier. Those imported daily totals must count toward month-to-date
+    earned (and thus the projection), and a real historical value must win over
+    a same-day S$0.01 Grid cert test order.
+    """
+    current = date(2026, 9, 20)
+    outlet, staff = await _add_outlet(db_session, name="Tampines")
+
+    # Imported Qashier days for the current month (pre-cutover).
+    for day, amount in [(1, "677.70"), (2, "829.30"), (3, "966.50")]:
+        db_session.add(HistoricalDailySale(
+            id=uuid4(),
+            outlet_id=outlet.id,
+            sales_date=date(2026, 9, day),
+            net_sales=Decimal(amount),
+            transaction_count=50,
+            source="qashier",
+            source_ref=f"q-{day}",
+        ))
+    await db_session.commit()
+
+    # A S$0.01 cert test order on Sept 1 (same day as a real Qashier report).
+    await _add_order(db_session, outlet, staff, datetime(2026, 9, 1, 9, tzinfo=SGT), "0.01", "cert")
+    # Real Grid trading after cutover, including today (partial).
+    await _add_order(db_session, outlet, staff, datetime(2026, 9, 15, 12, tzinfo=SGT), "500.00", "g15")
+    await _add_order(db_session, outlet, staff, datetime(2026, 9, 20, 10, tzinfo=SGT), "50.00", "g20")
+
+    result = await calculate_month_end_prediction(db_session, outlet.id, current)
+
+    # earned = Qashier 1-3 (real value wins over cert) + Grid 15 + Grid 20 today.
+    assert result.earned_so_far == pytest.approx(677.70 + 829.30 + 966.50 + 500.00 + 50.00)
+    assert result.outlets[0].earned_so_far == pytest.approx(result.earned_so_far)
+    assert result.projected_total >= result.earned_so_far

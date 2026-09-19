@@ -242,7 +242,6 @@ async def calculate_month_end_prediction(
         Order.outlet_id.in_(outlet_ids),
     )
     current_orders = (await db.execute(current_stmt)).scalars().all()
-    earned = float(sum((order.total or 0) for order in current_orders))
 
     historical_rows = (await db.execute(
         select(
@@ -251,6 +250,21 @@ async def calculate_month_end_prediction(
             HistoricalDailySale.net_sales,
         ).where(
             HistoricalDailySale.sales_date >= horizon_start,
+            HistoricalDailySale.sales_date < current_date,
+            HistoricalDailySale.outlet_id.in_(outlet_ids),
+        )
+    )).all()
+
+    # Imported daily totals that fall inside the CURRENT month but before today
+    # (e.g. an outlet still on Qashier for the first days of its cutover month).
+    # These count as real month-to-date sales for those days.
+    current_month_hist = (await db.execute(
+        select(
+            HistoricalDailySale.outlet_id,
+            HistoricalDailySale.sales_date,
+            HistoricalDailySale.net_sales,
+        ).where(
+            HistoricalDailySale.sales_date >= month_start,
             HistoricalDailySale.sales_date < current_date,
             HistoricalDailySale.outlet_id.in_(outlet_ids),
         )
@@ -277,15 +291,31 @@ async def calculate_month_end_prediction(
     for (oid, sales_date), total in prior_grid_daily.items():
         histories[oid][sales_date] = total
 
+    # Build each outlet's completed-day map for THIS month (before today).
+    # Grid orders win over an imported same-day value; imported Qashier days
+    # fill days the outlet had not yet cut over to Grid.
     current_daily: dict[tuple[UUID, date], float] = {}
+    for oid, sales_date, net_sales in current_month_hist:
+        current_daily[(oid, sales_date)] = float(net_sales)
+    grid_daily_this_month: dict[tuple[UUID, date], float] = {}
+    today_partial: dict[UUID, float] = {}
     for order in current_orders:
         order_date = _sgt_date(order.created_at)
+        amount = float(order.total or 0)
         if order_date >= current_date:
+            today_partial[order.outlet_id] = today_partial.get(order.outlet_id, 0.0) + amount
             continue
-        key = (order.outlet_id, order_date)
-        current_daily[key] = current_daily.get(key, 0.0) + float(order.total or 0)
+        grid_daily_this_month[(order.outlet_id, order_date)] = (
+            grid_daily_this_month.get((order.outlet_id, order_date), 0.0) + amount
+        )
+    # Grid wins for a day it genuinely traded, but a tiny cert-test order must
+    # not wipe out a real imported day. Take the larger of the two when a day
+    # has both an imported total and Grid orders.
+    for key, total in grid_daily_this_month.items():
+        current_daily[key] = max(current_daily.get(key, 0.0), total)
 
     total_remaining = 0.0
+    total_earned = 0.0
     max_history_days = 0
     total_samples = 0
     used_historical_method = False
@@ -304,7 +334,8 @@ async def calculate_month_end_prediction(
         completed_actuals: dict[date, float] = {}
         cursor = active_start
         while cursor < current_date:
-            completed_actuals[cursor] = current_daily.get((oid, cursor), 0.0)
+            if (oid, cursor) in current_daily:
+                completed_actuals[cursor] = current_daily[(oid, cursor)]
             cursor += timedelta(days=1)
 
         outlet_result = _forecast_outlet_remaining(
@@ -315,16 +346,13 @@ async def calculate_month_end_prediction(
         total_samples += outlet_result.sample_count
         used_historical_method |= outlet_result.method == "historical_weekday_blend"
 
-        # Per-outlet earned includes today's partial trading (all of this
-        # month's paid orders for the outlet), matching the all-outlet total.
+        # Per-outlet earned = completed days this month (Grid where it traded,
+        # imported Qashier for pre-cutover days) plus today's partial Grid sales.
         outlet_earned = round(
-            sum(
-                float(order.total or 0)
-                for order in current_orders
-                if order.outlet_id == oid
-            ),
+            sum(completed_actuals.values()) + today_partial.get(oid, 0.0),
             2,
         )
+        total_earned += outlet_earned
         outlet_projected = round(max(outlet_earned, outlet_earned + outlet_result.remaining), 2)
         outlet_breakdowns.append(OutletForecastBreakdown(
             outlet_id=oid,
@@ -338,6 +366,7 @@ async def calculate_month_end_prediction(
 
     outlet_breakdowns.sort(key=lambda item: item.outlet_name)
 
+    earned = round(total_earned, 2)
     projected = max(earned, earned + total_remaining)
     method = "historical_weekday_blend" if used_historical_method else "run_rate_fallback"
     return ForecastResult(
