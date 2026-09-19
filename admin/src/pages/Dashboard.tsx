@@ -284,7 +284,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Month-end prediction ── */}
-      {isCurrentMonth && data?.kpis?.month_end_projected_total > 0 && (
+      {isCurrentMonth && (data?.kpis?.month_end_projected_total ?? 0) > 0 && (
         <Card
           title="Month-End Prediction"
           subtitle="Projected total based on current daily run-rate (SGT)"
