@@ -170,7 +170,7 @@ export default function Dashboard() {
   const outletsQuery = useOutlets();
   const outlets = outletsQuery.data?.data ?? [];
 
-  const todayMetricsQuery = useTodayMetrics(outletId);
+  const todayMetricsQuery = useTodayMetrics(outletId, from ?? undefined, to ?? undefined);
   const todayMetrics = todayMetricsQuery.data;
   const isTodayLoading = todayMetricsQuery.isLoading;
   const isTodayError = todayMetricsQuery.isError;
@@ -201,6 +201,13 @@ export default function Dashboard() {
     // Range starts on the 1st of this month and ends either today or the
     // last day of this month (i.e., not spilling into a future month).
     return from === firstThisMonth && (to === todayStr || to === lastThisMonth);
+  }, [from, to]);
+
+  // Label for the metrics card: a single day shows that date; a range shows both.
+  const metricsPeriodLabel = useMemo(() => {
+    if (!from || !to) return 'Today';
+    if (from === to) return format(parseISO(from), 'd MMM yyyy');
+    return `${format(parseISO(from), 'd MMM')} – ${format(parseISO(to), 'd MMM yyyy')}`;
   }, [from, to]);
 
   const trendData = useMemo(
@@ -319,10 +326,10 @@ export default function Dashboard() {
       {/* ── Sales by outlet (top slot when All Outlets is selected) ── */}
       {showSalesByOutletAtTop && salesByOutletCard}
 
-      {/* ── Today's Metrics (SGT) ── */}
+      {/* ── Operational metrics for the selected period (SGT) ── */}
       <Card
-        title="Today's Metrics (SGT)"
-        subtitle={`Scope: ${selectedOutletName}`}
+        title="Attach Rates & Pints (SGT)"
+        subtitle={`${metricsPeriodLabel} · ${selectedOutletName}`}
       >
         {isTodayLoading && !todayMetrics ? (
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
@@ -334,7 +341,7 @@ export default function Dashboard() {
             ))}
           </div>
         ) : isTodayError && !todayMetrics ? (
-          <div className="py-2 text-sm text-error">Could not load today's figures.</div>
+          <div className="py-2 text-sm text-error">Could not load these figures.</div>
         ) : (
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
             <div>

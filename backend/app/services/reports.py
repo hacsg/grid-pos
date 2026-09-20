@@ -212,15 +212,26 @@ def _attach_rate(orders_with: int, order_count: int) -> float:
     return round(orders_with / order_count * 100, 1) if order_count > 0 else 0.0
 
 
-async def get_today_metrics(db: AsyncSession, report_date: date, outlet_id: UUID | None) -> TodayMetricsResponse:
-    """Headline numbers for the POS Transactions banner.
+async def get_today_metrics(
+    db: AsyncSession,
+    report_date: date,
+    outlet_id: UUID | None,
+    end_date: date | None = None,
+) -> TodayMetricsResponse:
+    """Headline numbers for the POS Transactions banner / dashboard card.
 
     Net sales / order count follow the same definition as the daily report
     (paid orders only, SGT business day). Attachment rates are the share of
     paid orders that contain at least one waffle / drink line; pints are units
     sold. Bucket membership is keyword-based — see ``METRICS_*_KEYWORDS``.
+
+    ``end_date`` (inclusive) extends the window to an SGT date range; when it is
+    None the metrics cover the single SGT day ``report_date``.
     """
-    start, end = _day_bounds(report_date)
+    if end_date is not None and end_date != report_date:
+        start, end = _sgt_span_utc(report_date, end_date)
+    else:
+        start, end = _day_bounds(report_date)
     if outlet_id is not None:
         revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id)
     else:

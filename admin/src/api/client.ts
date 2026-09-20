@@ -474,14 +474,21 @@ export const getPrintTemplatePreview = async (id: string, orderData?: Record<str
 // Reports
 export type { TodayMetrics };
 
-export const getTodayMetrics = async (outletId?: string): Promise<TodayMetrics> => {
-  const params = outletId ? { outlet_id: outletId } : undefined;
+export const getTodayMetrics = async (
+  outletId?: string,
+  fromDate?: string,
+  toDate?: string,
+): Promise<TodayMetrics> => {
+  const params: Record<string, string> = {};
+  if (outletId) params.outlet_id = outletId;
+  if (fromDate) params.from_date = fromDate;
+  if (toDate) params.to_date = toDate;
   const { data } = await api.get<
     Omit<TodayMetrics, 'net_sales' | 'average_ticket'> & {
       net_sales: number | string;
       average_ticket: number | string;
     }
-  >('/reports/today-metrics', { params });
+  >('/reports/today-metrics', { params: Object.keys(params).length ? params : undefined });
   return {
     ...data,
     // Money fields are serialized as decimal strings by the backend.

@@ -3,6 +3,9 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+SGT = ZoneInfo("Asia/Singapore")
 
 import pytest
 import pytest_asyncio
@@ -725,3 +728,26 @@ class TestTodayMetrics:
         assert hidden_data["order_count"] == 1
         assert float(hidden_data["net_sales"]) == 48.00
         assert hidden_data["pints_sold"] == 2
+
+    async def test_metrics_honour_explicit_date_range(self, client: AsyncClient, db_session, outlet, cashier_staff):
+        """A from/to range selects that period, not just today (SGT)."""
+        products = await self._seed_menu(db_session, outlet)
+        # Seed an order clearly in the past (well outside today's SGT bounds).
+        past = datetime.now(UTC) - timedelta(days=3)
+        past_date = past.astimezone(SGT).date()
+        o = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("12.00"), past, order_number="P001")
+        await _seed_order_item(db_session, o.id, products["Pistachio"].id, quantity=2)
+
+        # Default (today) sees nothing for that outlet.
+        today_resp = await client.get(f"/api/reports/today-metrics?outlet_id={outlet.id}")
+        assert today_resp.json()["order_count"] == 0
+
+        # Explicit range covering the past day returns that day's metrics.
+        ranged = await client.get(
+            f"/api/reports/today-metrics?outlet_id={outlet.id}"
+            f"&from_date={past_date.isoformat()}&to_date={past_date.isoformat()}"
+        )
+        assert ranged.status_code == 200
+        data = ranged.json()
+        assert data["order_count"] == 1
+        assert data["pints_sold"] == 2
