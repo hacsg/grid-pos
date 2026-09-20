@@ -678,3 +678,50 @@ class TestTodayMetrics:
         assert resp.json()["order_count"] == 0
         resp = await client.get(f"/api/reports/today-metrics?outlet_id={other.id}")
         assert resp.json()["pints_sold"] == 1
+
+    async def test_all_outlets_excludes_hidden_outlet(self, client: AsyncClient, db_session, outlet, cashier_staff):
+        products = await self._seed_menu(db_session, outlet)
+        visible_other = Outlet(name="Visible Outlet 2", address="2 Here", is_hidden=False)
+        hidden_outlet = Outlet(name="Hidden Outlet", address="3 Hidden Way", is_hidden=True)
+        db_session.add(visible_other)
+        db_session.add(hidden_outlet)
+        await db_session.commit()
+        await db_session.refresh(visible_other)
+        await db_session.refresh(hidden_outlet)
+
+        now = datetime.now(UTC)
+        # Visible outlet 1 order: Scoop + Waffle = $17.00
+        o1 = await _seed_order(db_session, outlet.id, cashier_staff.id, Decimal("17.00"), now, order_number="0001")
+        await _seed_order_item(db_session, o1.id, products["Single Scoop"].id)
+        await _seed_order_item(db_session, o1.id, products["Coconut Pandan Waffle"].id)
+
+        # Visible outlet 2 order: Drink + Pint = $24.00
+        o2 = await _seed_order(db_session, visible_other.id, cashier_staff.id, Decimal("24.00"), now, order_number="0002")
+        await _seed_order_item(db_session, o2.id, products["Iced Latte"].id)
+        await _seed_order_item(db_session, o2.id, products["Pistachio"].id, quantity=1)
+
+        # Hidden outlet order: Waffle + 2 Pints = $48.00
+        o3 = await _seed_order(db_session, hidden_outlet.id, cashier_staff.id, Decimal("48.00"), now, order_number="0003")
+        await _seed_order_item(db_session, o3.id, products["Coconut Pandan Waffle"].id)
+        await _seed_order_item(db_session, o3.id, products["Pistachio"].id, quantity=2)
+
+        # All outlets (no outlet_id) should exclude hidden outlet
+        resp = await client.get("/api/reports/today-metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["order_count"] == 2
+        assert float(data["net_sales"]) == 41.00
+        assert float(data["average_ticket"]) == 20.50
+        assert data["waffle_orders"] == 1
+        assert data["waffle_attach_rate"] == 50.0
+        assert data["drink_orders"] == 1
+        assert data["drink_attach_rate"] == 50.0
+        assert data["pints_sold"] == 1
+
+        # Explicit query for hidden outlet still returns that outlet's metrics
+        resp_hidden = await client.get(f"/api/reports/today-metrics?outlet_id={hidden_outlet.id}")
+        assert resp_hidden.status_code == 200
+        hidden_data = resp_hidden.json()
+        assert hidden_data["order_count"] == 1
+        assert float(hidden_data["net_sales"]) == 48.00
+        assert hidden_data["pints_sold"] == 2

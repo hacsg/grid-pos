@@ -222,3 +222,15 @@ export interface FlavorRankings {
   months: string[];
   flavors: FlavorRankingItem[];
 }
+
+export interface TodayMetrics {
+  date: string;
+  net_sales: number;
+  order_count: number;
+  average_ticket: number;
+  waffle_orders: number;
+  waffle_attach_rate: number;
+  drink_orders: number;
+  drink_attach_rate: number;
+  pints_sold: number;
+}

@@ -18,7 +18,7 @@ import {
 import Card from '@/components/ui/Card';
 import DateRangeSelector, { useDateRangeParams } from '@/components/analytics/DateRangeSelector';
 import KpiCard from '@/components/analytics/KpiCard';
-import { useAnalyticsDashboard, useStaffLeaderboard } from '@/hooks/useAnalytics';
+import { useAnalyticsDashboard, useStaffLeaderboard, useTodayMetrics } from '@/hooks/useAnalytics';
 import { useOutlets } from '@/hooks/useOutlets';
 import type { TopProductItem } from '@/types/analytics';
 
@@ -170,6 +170,15 @@ export default function Dashboard() {
   const outletsQuery = useOutlets();
   const outlets = outletsQuery.data?.data ?? [];
 
+  const todayMetricsQuery = useTodayMetrics(outletId);
+  const todayMetrics = todayMetricsQuery.data;
+  const isTodayLoading = todayMetricsQuery.isLoading;
+  const isTodayError = todayMetricsQuery.isError;
+  const selectedOutletName = useMemo(() => {
+    if (!outletId) return 'All Outlets';
+    return outlets.find((o) => o.id === outletId)?.name ?? 'Selected Outlet';
+  }, [outletId, outlets]);
+
   const payments = useMemo(
     () => (data?.payments ?? []).filter((p) => p.amount > 0),
     [data?.payments],
@@ -309,6 +318,40 @@ export default function Dashboard() {
 
       {/* ── Sales by outlet (top slot when All Outlets is selected) ── */}
       {showSalesByOutletAtTop && salesByOutletCard}
+
+      {/* ── Today's Metrics (SGT) ── */}
+      <Card
+        title="Today's Metrics (SGT)"
+        subtitle={`Scope: ${selectedOutletName}`}
+      >
+        {isTodayLoading && !todayMetrics ? (
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i}>
+                <Skeleton className="mb-1 h-3 w-16" />
+                <Skeleton className="h-6 w-20" />
+              </div>
+            ))}
+          </div>
+        ) : isTodayError && !todayMetrics ? (
+          <div className="py-2 text-sm text-error">Could not load today's figures.</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Waffle Attach</p>
+              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.waffle_attach_rate ?? 0}%</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Drink Attach</p>
+              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.drink_attach_rate ?? 0}%</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Pints Sold</p>
+              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.pints_sold ?? 0}</p>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {/* ── KPI cards ── */}
       {isLoading || !data ? (

@@ -221,7 +221,25 @@ async def get_today_metrics(db: AsyncSession, report_date: date, outlet_id: UUID
     sold. Bucket membership is keyword-based — see ``METRICS_*_KEYWORDS``.
     """
     start, end = _day_bounds(report_date)
-    revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id)
+    if outlet_id is not None:
+        revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id)
+    else:
+        sales_stmt = (
+            select(
+                func.coalesce(func.sum(Order.total), 0),
+                func.count(Order.id),
+            )
+            .join(Outlet, Outlet.id == Order.outlet_id)
+            .where(
+                Order.created_at >= start,
+                Order.created_at < end,
+                Order.status == OrderStatus.paid,
+                Outlet.is_hidden == False,
+            )
+        )
+        sales_row = (await db.execute(sales_stmt)).one()
+        revenue = Decimal(str(sales_row[0]))
+        order_count = int(sales_row[1])
 
     lines_stmt = (
         select(OrderItem.order_id, OrderItem.quantity, OrderItem.product_name, Product.name, Category.name)
@@ -236,6 +254,8 @@ async def get_today_metrics(db: AsyncSession, report_date: date, outlet_id: UUID
     )
     if outlet_id is not None:
         lines_stmt = lines_stmt.where(Order.outlet_id == outlet_id)
+    else:
+        lines_stmt = lines_stmt.join(Outlet, Outlet.id == Order.outlet_id).where(Outlet.is_hidden == False)
 
     waffle_keywords = settings.metrics_waffle_keyword_list
     drink_keywords = settings.metrics_drink_keyword_list
