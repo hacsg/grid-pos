@@ -56,6 +56,7 @@ class OutletForecastBreakdown(NamedTuple):
     remaining: float
     method: str
     history_days: int
+    pace_variance_pct: float | None = None
 
 
 class ForecastResult(NamedTuple):
@@ -66,6 +67,7 @@ class ForecastResult(NamedTuple):
     history_days: int
     sample_count: int
     outlets: list[OutletForecastBreakdown]
+    pace_variance_pct: float | None = None
 
 
 class OutletForecast(NamedTuple):
@@ -73,6 +75,8 @@ class OutletForecast(NamedTuple):
     method: str
     history_days: int
     sample_count: int
+    pace_actual: float = 0.0
+    pace_expected: float = 0.0
 
 
 def _event_kind(value: date) -> str | None:
@@ -200,6 +204,8 @@ def _forecast_outlet_remaining(
         "historical_weekday_blend",
         history_days,
         history_days,
+        pace_actual=round(actual_total, 2),
+        pace_expected=round(expected_total, 2),
     )
 
 
@@ -316,10 +322,19 @@ async def calculate_month_end_prediction(
 
     total_remaining = 0.0
     total_earned = 0.0
+    group_pace_actual = 0.0
+    group_pace_expected = 0.0
     max_history_days = 0
     total_samples = 0
     used_historical_method = False
     outlet_breakdowns: list[OutletForecastBreakdown] = []
+
+    def _variance_pct(actual: float, expected: float) -> float | None:
+        # Actual vs model-expected sales on completed days so far this month.
+        # Positive => ahead of the historical trend; negative => behind.
+        if expected <= 0:
+            return None
+        return round((actual - expected) / expected * 100, 1)
 
     prior_grid_outlets = {oid for oid, _, _ in prior_grid_rows}
     for oid in outlet_ids:
@@ -353,6 +368,8 @@ async def calculate_month_end_prediction(
             2,
         )
         total_earned += outlet_earned
+        group_pace_actual += outlet_result.pace_actual
+        group_pace_expected += outlet_result.pace_expected
         outlet_projected = round(max(outlet_earned, outlet_earned + outlet_result.remaining), 2)
         outlet_breakdowns.append(OutletForecastBreakdown(
             outlet_id=oid,
@@ -362,6 +379,7 @@ async def calculate_month_end_prediction(
             remaining=round(max(0.0, outlet_projected - outlet_earned), 2),
             method=outlet_result.method,
             history_days=outlet_result.history_days,
+            pace_variance_pct=_variance_pct(outlet_result.pace_actual, outlet_result.pace_expected),
         ))
 
     outlet_breakdowns.sort(key=lambda item: item.outlet_name)
@@ -369,6 +387,7 @@ async def calculate_month_end_prediction(
     earned = round(total_earned, 2)
     projected = max(earned, earned + total_remaining)
     method = "historical_weekday_blend" if used_historical_method else "run_rate_fallback"
+    group_variance = _variance_pct(group_pace_actual, group_pace_expected)
     return ForecastResult(
         round(projected, 2),
         round(earned, 2),
@@ -377,4 +396,5 @@ async def calculate_month_end_prediction(
         max_history_days,
         total_samples,
         outlet_breakdowns,
+        group_variance,
     )

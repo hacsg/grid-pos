@@ -25,6 +25,8 @@ export interface AnalyticsKpis {
   month_end_sample_count?: number;
   /** Per-outlet current earned vs projected target for the current month. */
   month_end_outlets?: MonthEndOutletForecast[];
+  /** Group actual-vs-expected pace variance % for completed days this month. */
+  month_end_pace_variance_pct?: number | null;
 }
 
 export interface MonthEndOutletForecast {
@@ -35,6 +37,8 @@ export interface MonthEndOutletForecast {
   remaining: number;
   method?: string;
   history_days?: number;
+  /** Actual vs expected sales so far this month: + ahead, - behind, null n/a. */
+  pace_variance_pct?: number | null;
 }
 
 

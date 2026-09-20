@@ -365,6 +365,7 @@ async def get_analytics_dashboard(
     sgt_today = datetime.now(SGT).date()
     me_projected, me_earned, me_remaining, me_method, me_history, me_samples = 0.0, 0.0, 0.0, "run_rate_fallback", 0, 0
     me_outlets: list[MonthEndOutletForecast] = []
+    me_pace_variance: float | None = None
     if from_date is not None and to_date is not None:
         forecast = await calculate_month_end_prediction(db, outlet_id, sgt_today)
         me_projected = forecast.projected_total
@@ -373,6 +374,7 @@ async def get_analytics_dashboard(
         me_method = forecast.method
         me_history = forecast.history_days
         me_samples = forecast.sample_count
+        me_pace_variance = forecast.pace_variance_pct
         me_outlets = [
             MonthEndOutletForecast(
                 outlet_id=str(item.outlet_id),
@@ -382,6 +384,7 @@ async def get_analytics_dashboard(
                 remaining=item.remaining,
                 method=item.method,
                 history_days=item.history_days,
+                pace_variance_pct=item.pace_variance_pct,
             )
             for item in forecast.outlets
         ]
@@ -453,6 +456,7 @@ async def get_analytics_dashboard(
         month_end_history_days=me_history,
         month_end_sample_count=me_samples,
         month_end_outlets=me_outlets,
+        month_end_pace_variance_pct=me_pace_variance,
     )
 
     return AnalyticsDashboardResponse(

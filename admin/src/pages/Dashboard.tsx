@@ -128,6 +128,22 @@ function ProductBarList({ items, mode }: { items: TopProductItem[]; mode: 'reven
   );
 }
 
+// Small "+X% ahead / -X% behind" pill for actual-vs-expected pace.
+function PaceBadge({ pct }: { pct?: number | null }) {
+  if (pct === null || pct === undefined) return null;
+  const rounded = Math.round(pct * 10) / 10;
+  const ahead = rounded >= 0;
+  const cls = ahead ? 'bg-success/10 text-success' : 'bg-error/10 text-error';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}
+      title="Actual vs expected sales for completed days this month"
+    >
+      {ahead ? '▲' : '▼'} {ahead ? '+' : ''}{rounded}% {ahead ? 'ahead' : 'behind'}
+    </span>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────
 export default function Dashboard() {
   const { from, to } = useDateRangeParams();
@@ -299,6 +315,7 @@ export default function Dashboard() {
                 {formatCurrency(data!.kpis!.month_end_projected_total)}
               </p>
               <p className="text-sm text-text-muted">projected by month end</p>
+              <PaceBadge pct={data?.kpis?.month_end_pace_variance_pct} />
             </div>
             <div className="grid grid-cols-2 gap-6 text-sm border-t border-gray-100 pt-4">
               <div>
@@ -339,7 +356,10 @@ export default function Dashboard() {
                     return (
                       <div key={o.outlet_id} className="text-sm">
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="font-medium text-text">{o.outlet_name}</span>
+                          <span className="flex items-center gap-2 font-medium text-text">
+                            {o.outlet_name}
+                            <PaceBadge pct={o.pace_variance_pct} />
+                          </span>
                           <span className="text-text-muted">
                             {formatCurrency(o.earned_so_far)}
                             <span className="mx-1 text-gray-300">/</span>

@@ -198,3 +198,33 @@ async def test_current_month_qashier_days_count_as_earned_before_grid_cutover(db
     assert result.earned_so_far == pytest.approx(677.70 + 829.30 + 966.50 + 500.00 + 50.00)
     assert result.outlets[0].earned_so_far == pytest.approx(result.earned_so_far)
     assert result.projected_total >= result.earned_so_far
+
+
+@pytest.mark.asyncio
+async def test_pace_variance_flags_outlets_ahead_and_behind(db_session):
+    """Each outlet (and the group) reports actual-vs-expected pace as +/- %."""
+    current = date(2026, 9, 11)  # 10 completed days this month
+    ahead, ahead_staff = await _add_outlet(db_session, name="Ahead")
+    behind, behind_staff = await _add_outlet(db_session, name="Behind")
+    # Both have a flat ~100/day weekday+weekend history baseline.
+    for outlet in (ahead, behind):
+        await _add_history(db_session, outlet.id, date(2026, 9, 1), "100.00")
+
+    # Ahead outlet trades 150/day on completed days (ahead of ~100 expectation);
+    # Behind outlet trades 60/day (below expectation).
+    for offset in range(10):
+        await _add_order(db_session, ahead, ahead_staff,
+                         datetime(2026, 9, 1, 12, tzinfo=SGT) + timedelta(days=offset),
+                         "150.00", f"a{offset}")
+        await _add_order(db_session, behind, behind_staff,
+                         datetime(2026, 9, 1, 12, tzinfo=SGT) + timedelta(days=offset),
+                         "60.00", f"b{offset}")
+
+    result = await calculate_month_end_prediction(db_session, None, current)
+    by_name = {o.outlet_name: o for o in result.outlets}
+
+    assert by_name["Ahead"].pace_variance_pct is not None
+    assert by_name["Ahead"].pace_variance_pct > 0
+    assert by_name["Behind"].pace_variance_pct < 0
+    # Group is the blend of both: net positive here (150+60 vs 100+100 = +5%).
+    assert result.pace_variance_pct == pytest.approx(5.0, abs=0.5)

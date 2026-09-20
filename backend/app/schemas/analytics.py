@@ -13,6 +13,9 @@ class MonthEndOutletForecast(BaseModel):
     remaining: float
     method: str = "run_rate_fallback"
     history_days: int = 0
+    # Actual vs model-expected sales on completed days so far this month.
+    # Positive => ahead of historical trend; negative => behind; None => no basis.
+    pace_variance_pct: float | None = None
 
 
 class AnalyticsKpis(BaseModel):
@@ -44,6 +47,8 @@ class AnalyticsKpis(BaseModel):
     month_end_sample_count: int = 0
     # Per-outlet current/target breakdown for the current month (empty otherwise).
     month_end_outlets: list[MonthEndOutletForecast] = []
+    # Group actual-vs-expected pace variance % for completed days this month.
+    month_end_pace_variance_pct: float | None = None
 
 
 class PaymentBreakdownItem(BaseModel):
