@@ -128,7 +128,7 @@ function ProductBarList({ items, mode }: { items: TopProductItem[]; mode: 'reven
   );
 }
 
-// Small "+X% ahead / -X% behind" pill for actual-vs-expected pace.
+// Compact pace pill: arrow + magnitude only (colour conveys ahead/behind).
 function PaceBadge({ pct }: { pct?: number | null }) {
   if (pct === null || pct === undefined) return null;
   const rounded = Math.round(pct * 10) / 10;
@@ -136,10 +136,10 @@ function PaceBadge({ pct }: { pct?: number | null }) {
   const cls = ahead ? 'bg-success/10 text-success' : 'bg-error/10 text-error';
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}
-      title="Actual vs expected sales for completed days this month"
+      className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}
+      title={`${ahead ? 'Ahead of' : 'Behind'} the expected pace for completed days this month`}
     >
-      {ahead ? '▲' : '▼'} {ahead ? '+' : ''}{rounded}% {ahead ? 'ahead' : 'behind'}
+      {ahead ? '▲' : '▼'} {Math.abs(rounded)}%
     </span>
   );
 }
