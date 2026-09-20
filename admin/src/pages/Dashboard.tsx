@@ -217,6 +217,35 @@ export default function Dashboard() {
   const hasSales = (data?.kpis.transactions ?? 0) > 0;
   const topProducts = productMode === 'revenue' ? data?.top_by_revenue : data?.top_by_quantity;
 
+  // Sales-by-outlet card, shared between the top slot (all-outlets view) and
+  // the sidebar slot (single-outlet view). Only shown with 2+ outlets.
+  const showSalesByOutlet = !!data && data.sales_by_outlet.length > 1;
+  const salesByOutletCard = showSalesByOutlet ? (
+    <Card title="Sales by Outlet">
+      <div className="space-y-2">
+        {data!.sales_by_outlet.map((o) => {
+          const max = Math.max(...data!.sales_by_outlet.map((x) => x.net_sales), 1);
+          return (
+            <div key={o.outlet_id}>
+              <div className="mb-0.5 flex items-center justify-between text-sm">
+                <span className="truncate pr-2 text-text">{o.outlet_name}</span>
+                <span className="shrink-0 font-medium text-text">{formatCurrency(o.net_sales)}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${(o.net_sales / max) * 100}%`, backgroundColor: SERIES }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  ) : null;
+  // When "All outlets" is selected, surface the comparison at the very top.
+  const showSalesByOutletAtTop = showSalesByOutlet && !outletId;
+
   const scoop = data?.scoop_ratio;
   const scoopPieData = useMemo(
     () =>
@@ -277,6 +306,9 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+
+      {/* ── Sales by outlet (top slot when All Outlets is selected) ── */}
+      {showSalesByOutletAtTop && salesByOutletCard}
 
       {/* ── KPI cards ── */}
       {isLoading || !data ? (
@@ -604,29 +636,7 @@ export default function Dashboard() {
             )}
           </Card>
 
-          {data && data.sales_by_outlet.length > 1 && (
-            <Card title="Sales by Outlet">
-              <div className="space-y-2">
-                {data.sales_by_outlet.map((o) => {
-                  const max = Math.max(...data.sales_by_outlet.map((x) => x.net_sales), 1);
-                  return (
-                    <div key={o.outlet_id}>
-                      <div className="mb-0.5 flex items-center justify-between text-sm">
-                        <span className="truncate pr-2 text-text">{o.outlet_name}</span>
-                        <span className="shrink-0 font-medium text-text">{formatCurrency(o.net_sales)}</span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${(o.net_sales / max) * 100}%`, backgroundColor: SERIES }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
+          {!showSalesByOutletAtTop && salesByOutletCard}
         </div>
       </div>
 
