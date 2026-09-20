@@ -24,6 +24,7 @@ OUTLET_CUTOFFS = {
 }
 TAMPINES_ID = "b29fc9ca-ade6-4869-bb36-0db319092343"
 TAMPINES_SEPT_MIGRATION = BACKEND_ROOT / "migrations" / "0030_import_tampines_early_sept_qashier.sql"
+TAMPINES_RECON_MIGRATION = BACKEND_ROOT / "migrations" / "0031_reconcile_tampines_september_total.sql"
 
 
 def _history(start: date, weeks: int, weekday: float, weekend: float) -> dict[date, float]:
@@ -37,9 +38,9 @@ def test_qashier_source_data_is_complete_unique_and_pre_cutover() -> None:
     with CSV_PATH.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
 
-    assert len(rows) == 1183
-    assert sum(Decimal(row["net_sales"]) for row in rows) == Decimal("961227.88")
-    assert sum(int(row["transaction_count"]) for row in rows) == 66032
+    assert len(rows) == 1184
+    assert sum(Decimal(row["net_sales"]) for row in rows) == Decimal("962502.18")
+    assert sum(int(row["transaction_count"]) for row in rows) == 66123
     assert all("Bedok" not in row["outlet_name"] for row in rows)
     assert all(Decimal(row["net_sales"]) >= 0 for row in rows)
     assert all(int(row["transaction_count"]) >= 0 for row in rows)
@@ -51,14 +52,21 @@ def test_qashier_source_data_is_complete_unique_and_pre_cutover() -> None:
         date.fromisoformat(row["sales_date"]) < OUTLET_CUTOFFS[row["outlet_id"]]
         for row in rows
     )
-    # Tampines stayed on Qashier through 2026-09-09 (Grid cutover 09-10); 09-04
-    # has no report and is intentionally absent (not synthesised as zero).
+    # Tampines stayed on Qashier through 2026-09-09 (Grid cutover 09-10). No
+    # Qashier email existed for 09-04, so its value is a reconciliation row that
+    # trues the pre-cutover total up to the owner's authoritative S$8,604.30.
     tampines_sept = {
         row["sales_date"]
         for row in rows
         if row["outlet_id"] == TAMPINES_ID and row["sales_date"].startswith("2026-09")
     }
-    assert tampines_sept == {f"2026-09-0{d}" for d in (1, 2, 3, 5, 6, 7, 8, 9)}
+    assert tampines_sept == {f"2026-09-0{d}" for d in (1, 2, 3, 4, 5, 6, 7, 8, 9)}
+    tampines_sept_total = sum(
+        Decimal(row["net_sales"])
+        for row in rows
+        if row["outlet_id"] == TAMPINES_ID and row["sales_date"].startswith("2026-09")
+    )
+    assert tampines_sept_total == Decimal("8604.30")
     # Explicit closure days are retained as zero-valued observations.
     assert sum(Decimal(row["net_sales"]) == 0 for row in rows) == 9
 
@@ -97,6 +105,21 @@ def test_tampines_early_sept_migration_imports_five_days_with_guards() -> None:
     assert "tamp_sept_rows != 5" in sql
     assert "tamp_sept_net != 4856.50" in sql
     assert "tamp_sept_txns != 338" in sql
+
+
+def test_tampines_reconciliation_migration_trues_september_total() -> None:
+    sql = TAMPINES_RECON_MIGRATION.read_text(encoding="utf-8")
+    tuples = re.findall(
+        r"\('[0-9a-f-]{36}', '([0-9a-f-]{36})', '(\d{4}-\d{2}-\d{2})', (\d+\.\d{2}), (\d+),",
+        sql,
+    )
+    assert len(tuples) == 1
+    oid, d, net, _ = tuples[0]
+    assert oid == TAMPINES_ID
+    assert d == "2026-09-04"
+    assert Decimal(net) == Decimal("1274.30")
+    assert "ON CONFLICT (outlet_id, sales_date, source) DO NOTHING" in sql
+    assert "sept_net != 8604.30" in sql
 
 
 def test_bedok_hide_migration_targets_only_the_known_bedok_id() -> None:
