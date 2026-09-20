@@ -212,26 +212,58 @@ def _attach_rate(orders_with: int, order_count: int) -> float:
     return round(orders_with / order_count * 100, 1) if order_count > 0 else 0.0
 
 
+async def compute_attach_metrics(
+    db: AsyncSession, order_ids: list[UUID]
+) -> tuple[int, int, int]:
+    """Waffle-order count, drink-order count, and pints sold for a set of orders.
+
+    Shared by the POS "today" banner and the analytics dashboard so both use the
+    identical keyword-bucket definition. ``order_ids`` are the paid orders in the
+    caller's window. Returns (waffle_order_count, drink_order_count, pints_sold);
+    callers turn the counts into attach rates via ``_attach_rate``.
+    """
+    if not order_ids:
+        return 0, 0, 0
+
+    lines_stmt = (
+        select(OrderItem.order_id, OrderItem.quantity, OrderItem.product_name, Product.name, Category.name)
+        .outerjoin(Product, Product.id == OrderItem.product_id)
+        .outerjoin(Category, Category.id == Product.category_id)
+        .where(OrderItem.order_id.in_(order_ids))
+    )
+    waffle_keywords = settings.metrics_waffle_keyword_list
+    drink_keywords = settings.metrics_drink_keyword_list
+    pint_keywords = settings.metrics_pint_keyword_list
+
+    waffle_orders: set[UUID] = set()
+    drink_orders: set[UUID] = set()
+    pints_sold = 0
+    for order_id, quantity, line_name, product_name, category_name in (await db.execute(lines_stmt)).all():
+        # The catalogue name covers rows from before the name was stored on the line.
+        names = (line_name, product_name)
+        if _matches_bucket(category_name, names, waffle_keywords):
+            waffle_orders.add(order_id)
+        if _matches_bucket(category_name, names, drink_keywords):
+            drink_orders.add(order_id)
+        if _matches_bucket(category_name, names, pint_keywords):
+            pints_sold += int(quantity or 0)
+
+    return len(waffle_orders), len(drink_orders), pints_sold
+
+
 async def get_today_metrics(
     db: AsyncSession,
     report_date: date,
     outlet_id: UUID | None,
-    end_date: date | None = None,
 ) -> TodayMetricsResponse:
-    """Headline numbers for the POS Transactions banner / dashboard card.
+    """Headline numbers for the POS Transactions banner (one SGT business day).
 
     Net sales / order count follow the same definition as the daily report
     (paid orders only, SGT business day). Attachment rates are the share of
     paid orders that contain at least one waffle / drink line; pints are units
     sold. Bucket membership is keyword-based — see ``METRICS_*_KEYWORDS``.
-
-    ``end_date`` (inclusive) extends the window to an SGT date range; when it is
-    None the metrics cover the single SGT day ``report_date``.
     """
-    if end_date is not None and end_date != report_date:
-        start, end = _sgt_span_utc(report_date, end_date)
-    else:
-        start, end = _day_bounds(report_date)
+    start, end = _day_bounds(report_date)
     if outlet_id is not None:
         revenue, order_count, _, _ = await _get_period_sales(db, start, end, outlet_id)
     else:
@@ -252,39 +284,18 @@ async def get_today_metrics(
         revenue = Decimal(str(sales_row[0]))
         order_count = int(sales_row[1])
 
-    lines_stmt = (
-        select(OrderItem.order_id, OrderItem.quantity, OrderItem.product_name, Product.name, Category.name)
-        .join(Order, Order.id == OrderItem.order_id)
-        .outerjoin(Product, Product.id == OrderItem.product_id)
-        .outerjoin(Category, Category.id == Product.category_id)
-        .where(
-            Order.created_at >= start,
-            Order.created_at < end,
-            Order.status == OrderStatus.paid,
-        )
+    lines_scope = select(Order.id).where(
+        Order.created_at >= start,
+        Order.created_at < end,
+        Order.status == OrderStatus.paid,
     )
     if outlet_id is not None:
-        lines_stmt = lines_stmt.where(Order.outlet_id == outlet_id)
+        lines_scope = lines_scope.where(Order.outlet_id == outlet_id)
     else:
-        lines_stmt = lines_stmt.join(Outlet, Outlet.id == Order.outlet_id).where(Outlet.is_hidden == False)
+        lines_scope = lines_scope.join(Outlet, Outlet.id == Order.outlet_id).where(Outlet.is_hidden == False)
+    order_ids = [row[0] for row in (await db.execute(lines_scope)).all()]
 
-    waffle_keywords = settings.metrics_waffle_keyword_list
-    drink_keywords = settings.metrics_drink_keyword_list
-    pint_keywords = settings.metrics_pint_keyword_list
-
-    waffle_orders: set[UUID] = set()
-    drink_orders: set[UUID] = set()
-    pints_sold = 0
-    for order_id, quantity, line_name, product_name, category_name in (await db.execute(lines_stmt)).all():
-        # Only used when the category is missing: the line carries the name
-        # as sold, the catalogue name covers rows from before it was stored.
-        names = (line_name, product_name)
-        if _matches_bucket(category_name, names, waffle_keywords):
-            waffle_orders.add(order_id)
-        if _matches_bucket(category_name, names, drink_keywords):
-            drink_orders.add(order_id)
-        if _matches_bucket(category_name, names, pint_keywords):
-            pints_sold += int(quantity or 0)
+    waffle_count, drink_count, pints_sold = await compute_attach_metrics(db, order_ids)
 
     average = (revenue / order_count) if order_count > 0 else Decimal("0.00")
     return TodayMetricsResponse(
@@ -292,10 +303,10 @@ async def get_today_metrics(
         net_sales=revenue,
         order_count=order_count,
         average_ticket=average.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-        waffle_orders=len(waffle_orders),
-        waffle_attach_rate=_attach_rate(len(waffle_orders), order_count),
-        drink_orders=len(drink_orders),
-        drink_attach_rate=_attach_rate(len(drink_orders), order_count),
+        waffle_orders=waffle_count,
+        waffle_attach_rate=_attach_rate(waffle_count, order_count),
+        drink_orders=drink_count,
+        drink_attach_rate=_attach_rate(drink_count, order_count),
         pints_sold=pints_sold,
     )
 

@@ -60,7 +60,6 @@ import type {
   FlavorAnalysisParams,
   FlavorRankings,
   StaffLeaderboardEntry,
-  TodayMetrics,
 } from '@/types/analytics';
 import type { TillCarryOver, TillMovement, TillSession } from '@/types/till';
 
@@ -472,31 +471,6 @@ export const getPrintTemplatePreview = async (id: string, orderData?: Record<str
 };
 
 // Reports
-export type { TodayMetrics };
-
-export const getTodayMetrics = async (
-  outletId?: string,
-  fromDate?: string,
-  toDate?: string,
-): Promise<TodayMetrics> => {
-  const params: Record<string, string> = {};
-  if (outletId) params.outlet_id = outletId;
-  if (fromDate) params.from_date = fromDate;
-  if (toDate) params.to_date = toDate;
-  const { data } = await api.get<
-    Omit<TodayMetrics, 'net_sales' | 'average_ticket'> & {
-      net_sales: number | string;
-      average_ticket: number | string;
-    }
-  >('/reports/today-metrics', { params: Object.keys(params).length ? params : undefined });
-  return {
-    ...data,
-    // Money fields are serialized as decimal strings by the backend.
-    net_sales: Number(data.net_sales),
-    average_ticket: Number(data.average_ticket),
-  };
-};
-
 export const getSalesSummary = async (): Promise<SalesSummary> => {
   const { data } = await api.get('/reports/sales-summary');
   return data;

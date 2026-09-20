@@ -49,21 +49,10 @@ async def sales_summary(
 @router.get("/today-metrics", response_model=TodayMetricsResponse)
 async def today_metrics(
     outlet_id: UUID | None = Query(None, description="Filter by outlet"),
-    from_date: date | None = Query(None, description="Start of SGT date range (inclusive); defaults to today"),
-    to_date: date | None = Query(None, description="End of SGT date range (inclusive); defaults to today"),
     db: AsyncSession = Depends(get_db),
     current_staff: Staff = Depends(get_current_staff),
 ) -> TodayMetricsResponse:
-    """Headline metrics for the POS Transactions banner / dashboard card.
-
-    With no range, returns today's (SGT) figures — the POS banner's behaviour.
-    When from_date/to_date are supplied (the admin dashboard filter), returns
-    that SGT date range instead.
-    """
-    if from_date is not None or to_date is not None:
-        start = from_date or to_date or sgt_today()
-        end = to_date or from_date or sgt_today()
-        return await get_today_metrics(db, start, outlet_id, end_date=end)
+    """Today's (SGT) headline metrics for the POS Transactions banner."""
     return await get_today_metrics(db, sgt_today(), outlet_id)
 
 

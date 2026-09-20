@@ -25,6 +25,7 @@ from app.models.order_item import OrderItem
 from app.models.outlet import Outlet
 from app.models.voucher import OrderVoucher, Voucher
 from app.services.forecast import calculate_month_end_prediction
+from app.services.reports import compute_attach_metrics
 from app.schemas.analytics import (
     AnalyticsDashboardResponse,
     AnalyticsKpis,
@@ -442,6 +443,14 @@ async def get_analytics_dashboard(
         for h in range(24)
     ]
 
+    # Operational attach metrics over the exact same paid-order set the dashboard
+    # already aggregated. Shares the keyword-bucket definition with the POS
+    # "today" banner via reports.compute_attach_metrics.
+    order_ids = [o.id for o in orders]
+    waffle_count, drink_count, pints_sold = await compute_attach_metrics(db, order_ids)
+    waffle_attach_rate = round(waffle_count / agg.transactions * 100, 1) if agg.transactions else 0.0
+    drink_attach_rate = round(drink_count / agg.transactions * 100, 1) if agg.transactions else 0.0
+
     kpis = AnalyticsKpis(
         gross_sales=float(agg.gross),
         net_sales=float(agg.net),
@@ -457,6 +466,9 @@ async def get_analytics_dashboard(
         month_end_sample_count=me_samples,
         month_end_outlets=me_outlets,
         month_end_pace_variance_pct=me_pace_variance,
+        waffle_attach_rate=waffle_attach_rate,
+        drink_attach_rate=drink_attach_rate,
+        pints_sold=pints_sold,
     )
 
     return AnalyticsDashboardResponse(

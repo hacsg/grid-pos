@@ -49,6 +49,11 @@ class AnalyticsKpis(BaseModel):
     month_end_outlets: list[MonthEndOutletForecast] = []
     # Group actual-vs-expected pace variance % for completed days this month.
     month_end_pace_variance_pct: float | None = None
+    # Operational attach metrics over the selected range (waffle/drink attach
+    # rate as % of paid orders; pints = units sold).
+    waffle_attach_rate: float = 0.0
+    drink_attach_rate: float = 0.0
+    pints_sold: int = 0
 
 
 class PaymentBreakdownItem(BaseModel):

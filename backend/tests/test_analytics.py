@@ -298,6 +298,51 @@ async def test_dashboard_endpoint(client, db_session, outlet, cashier_staff, pro
 
 
 @pytest.mark.asyncio
+async def test_dashboard_attach_metrics(client, db_session, outlet, cashier_staff, product):
+    """Waffle/drink attach rates and pints come from the dashboard's own range."""
+    # 4 paid orders in-range (1-7 Jul 2026): 2 with a waffle, 1 with a drink,
+    # one order buys 2 pints. Plus a refunded order that must not count.
+    o1 = await _seed_order(
+        db_session, outlet.id, cashier_staff.id, Decimal("23.00"),
+        datetime(2026, 7, 2, 12, 0, tzinfo=SGT),
+    )
+    await _seed_item(db_session, o1.id, uuid4(), "Coconut Pandan Waffle", 1, "8.00")
+    await _seed_item(db_session, o1.id, uuid4(), "Iced Latte Coffee", 1, "6.00")
+    o2 = await _seed_order(
+        db_session, outlet.id, cashier_staff.id, Decimal("60.00"),
+        datetime(2026, 7, 3, 13, 0, tzinfo=SGT),
+    )
+    await _seed_item(db_session, o2.id, uuid4(), "Belgian Waffle", 1, "12.00")
+    await _seed_item(db_session, o2.id, uuid4(), "Pistachio Pint", 2, "24.00")
+    o3 = await _seed_order(
+        db_session, outlet.id, cashier_staff.id, Decimal("5.00"),
+        datetime(2026, 7, 4, 14, 0, tzinfo=SGT),
+    )
+    await _seed_item(db_session, o3.id, uuid4(), "Single Scoop", 1, "5.00")
+    o4 = await _seed_order(
+        db_session, outlet.id, cashier_staff.id, Decimal("5.00"),
+        datetime(2026, 7, 5, 15, 0, tzinfo=SGT),
+    )
+    await _seed_item(db_session, o4.id, uuid4(), "Single Scoop", 1, "5.00")
+    refunded = await _seed_order(
+        db_session, outlet.id, cashier_staff.id, Decimal("50.00"),
+        datetime(2026, 7, 6, 16, 0, tzinfo=SGT), status=OrderStatus.refunded,
+    )
+    await _seed_item(db_session, refunded.id, uuid4(), "Pistachio Pint", 3, "24.00")
+
+    resp = await client.get(
+        "/api/analytics/dashboard",
+        params={"from_date": "2026-07-01", "to_date": "2026-07-07"},
+    )
+    assert resp.status_code == 200
+    kpis = resp.json()["kpis"]
+    # 2 of 4 paid orders had a waffle → 50%; 1 of 4 a drink → 25%.
+    assert kpis["waffle_attach_rate"] == 50.0
+    assert kpis["drink_attach_rate"] == 25.0
+    assert kpis["pints_sold"] == 2  # refunded order's 3 pints excluded
+
+
+@pytest.mark.asyncio
 async def test_dashboard_redemptions_cdc_and_vouchers(client, db_session, outlet, cashier_staff):
     from app.models.voucher import OrderVoucher, Voucher, VoucherType
 

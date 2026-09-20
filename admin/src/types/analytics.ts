@@ -27,6 +27,12 @@ export interface AnalyticsKpis {
   month_end_outlets?: MonthEndOutletForecast[];
   /** Group actual-vs-expected pace variance % for completed days this month. */
   month_end_pace_variance_pct?: number | null;
+  /** Waffle attach rate (% of paid orders in range) — operational metric. */
+  waffle_attach_rate: number;
+  /** Drink attach rate (% of paid orders in range). */
+  drink_attach_rate: number;
+  /** Pints sold (units) in range. */
+  pints_sold: number;
 }
 
 export interface MonthEndOutletForecast {
@@ -221,16 +227,4 @@ export interface FlavorRankingItem {
 export interface FlavorRankings {
   months: string[];
   flavors: FlavorRankingItem[];
-}
-
-export interface TodayMetrics {
-  date: string;
-  net_sales: number;
-  order_count: number;
-  average_ticket: number;
-  waffle_orders: number;
-  waffle_attach_rate: number;
-  drink_orders: number;
-  drink_attach_rate: number;
-  pints_sold: number;
 }

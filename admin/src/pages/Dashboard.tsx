@@ -18,7 +18,7 @@ import {
 import Card from '@/components/ui/Card';
 import DateRangeSelector, { useDateRangeParams } from '@/components/analytics/DateRangeSelector';
 import KpiCard from '@/components/analytics/KpiCard';
-import { useAnalyticsDashboard, useStaffLeaderboard, useTodayMetrics } from '@/hooks/useAnalytics';
+import { useAnalyticsDashboard, useStaffLeaderboard } from '@/hooks/useAnalytics';
 import { useOutlets } from '@/hooks/useOutlets';
 import type { TopProductItem } from '@/types/analytics';
 
@@ -170,10 +170,6 @@ export default function Dashboard() {
   const outletsQuery = useOutlets();
   const outlets = outletsQuery.data?.data ?? [];
 
-  const todayMetricsQuery = useTodayMetrics(outletId, from ?? undefined, to ?? undefined);
-  const todayMetrics = todayMetricsQuery.data;
-  const isTodayLoading = todayMetricsQuery.isLoading;
-  const isTodayError = todayMetricsQuery.isError;
   const selectedOutletName = useMemo(() => {
     if (!outletId) return 'All Outlets';
     return outlets.find((o) => o.id === outletId)?.name ?? 'Selected Outlet';
@@ -331,7 +327,7 @@ export default function Dashboard() {
         title="Attach Rates & Pints (SGT)"
         subtitle={`${metricsPeriodLabel} · ${selectedOutletName}`}
       >
-        {isTodayLoading && !todayMetrics ? (
+        {isLoading && !data ? (
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i}>
@@ -340,21 +336,19 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        ) : isTodayError && !todayMetrics ? (
-          <div className="py-2 text-sm text-error">Could not load these figures.</div>
         ) : (
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Waffle Attach</p>
-              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.waffle_attach_rate ?? 0}%</p>
+              <p className="mt-1 text-lg font-semibold text-text">{data?.kpis?.waffle_attach_rate ?? 0}%</p>
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Drink Attach</p>
-              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.drink_attach_rate ?? 0}%</p>
+              <p className="mt-1 text-lg font-semibold text-text">{data?.kpis?.drink_attach_rate ?? 0}%</p>
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Pints Sold</p>
-              <p className="mt-1 text-lg font-semibold text-text">{todayMetrics?.pints_sold ?? 0}</p>
+              <p className="mt-1 text-lg font-semibold text-text">{data?.kpis?.pints_sold ?? 0}</p>
             </div>
           </div>
         )}

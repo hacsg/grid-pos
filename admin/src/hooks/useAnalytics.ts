@@ -4,19 +4,8 @@ import {
   getFlavorAnalysis,
   getFlavorRankings,
   getStaffLeaderboard,
-  getTodayMetrics,
 } from '@/api/client';
 import type { AnalyticsDashboardParams, FlavorAnalysisParams } from '@/types/analytics';
-
-export function useTodayMetrics(outletId?: string, fromDate?: string, toDate?: string) {
-  return useQuery({
-    queryKey: ['analytics', 'today-metrics', outletId, fromDate, toDate],
-    queryFn: () => getTodayMetrics(outletId, fromDate, toDate),
-    staleTime: 0,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
-  });
-}
 
 export function useAnalyticsDashboard(params?: AnalyticsDashboardParams) {
   return useQuery({
